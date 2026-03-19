@@ -22,6 +22,254 @@ describe('Dashboard Controller', () => {
     jest.clearAllMocks();
   });
 
+  // TC-005: Dashboard metrics calculation - Happy path and error scenarios
+  describe('TC-005: Dashboard metrics calculation', () => {
+    describe('Happy path - successful metrics calculation', () => {
+      it('should calculate all dashboard metrics correctly for admin user', async () => {
+        // Mock all required data for metrics calculation
+        const mockStats = {
+          totalEmployees: 15,
+          pendingLeaves: 5,
+          thisMonthLeaves: 18,
+          totalInventoryItems: 67,
+          lowStockItems: 4
+        };
+
+        const mockRecentLeaves = [
+          {
+            _id: 'leave1',
+            employeeId: { firstName: 'John', lastName: 'Doe', email: 'john@company.com' },
+            leaveType: 'annual',
+            startDate: '2024-02-20',
+            endDate: '2024-02-22',
+            status: 'pending',
+            totalDays: 3
+          }
+        ];
+
+        const mockLowBalanceEmployees = [
+          {
+            firstName: 'Alice',
+            lastName: 'Johnson',
+            email: 'alice@company.com',
+            leaveBalance: { annual: 2 }
+          }
+        ];
+
+        // Setup all mocks for successful calculation
+        Employee.countDocuments.mockImplementation((filter) => {
+          if (filter.status === 'active') return Promise.resolve(mockStats.totalEmployees);
+          return Promise.resolve(0);
+        });
+
+        LeaveRequest.countDocuments.mockImplementation((filter) => {
+          if (filter.status === 'pending') return Promise.resolve(mockStats.pendingLeaves);
+          if (filter.startDate) return Promise.resolve(mockStats.thisMonthLeaves);
+          return Promise.resolve(0);
+        });
+
+        LeaveRequest.find.mockReturnValue({
+          populate: jest.fn().mockReturnValue({
+            sort: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue(mockRecentLeaves)
+            })
+          })
+        });
+
+        Employee.find.mockReturnValue({
+          select: jest.fn().mockResolvedValue(mockLowBalanceEmployees)
+        });
+
+        InventoryItem.countDocuments.mockImplementation((filter) => {
+          if (filter.companyId) {
+            if (filter.$expr) return Promise.resolve(mockStats.lowStockItems);
+            return Promise.resolve(mockStats.totalInventoryItems);
+          }
+          return Promise.resolve(0);
+        });
+
+        const response = await request(app)
+          .get('/api/dashboard');
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        
+        // Validate metrics calculation results
+        expect(response.body.data.stats).toEqual({
+          totalEmployees: mockStats.totalEmployees,
+          pendingLeaves: mockStats.pendingLeaves,
+          thisMonthLeaves: mockStats.thisMonthLeaves,
+          inventoryStats: {
+            totalItems: mockStats.totalInventoryItems,
+            lowStockItems: mockStats.lowStockItems
+          }
+        });
+        
+        expect(response.body.data.recentLeaveRequests).toEqual(mockRecentLeaves);
+        expect(response.body.data.lowLeaveBalanceEmployees).toEqual(mockLowBalanceEmployees);
+      });
+
+      it('should calculate personal metrics correctly for employee user', async () => {
+        // Mock employee authentication
+        mockAuth.authenticateToken = (req, res, next) => {
+          req.user = { id: 'emp123', role: 'employee', email: 'employee@company.com' };
+          next();
+        };
+
+        const mockEmployee = {
+          _id: 'emp123',
+          firstName: 'John',
+          lastName: 'Employee',
+          leaveBalance: { annual: 12, sick: 6, personal: 3 }
+        };
+
+        const mockMyLeaves = [
+          {
+            _id: 'leave1',
+            leaveType: 'annual',
+            startDate: '2024-03-01',
+            endDate: '2024-03-03',
+            status: 'approved',
+            totalDays: 3
+          }
+        ];
+
+        Employee.findById.mockResolvedValue(mockEmployee);
+        LeaveRequest.find.mockReturnValue({
+          sort: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue(mockMyLeaves)
+          })
+        });
+
+        const response = await request(app)
+          .get('/api/dashboard');
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.personalStats).toBeDefined();
+        expect(response.body.data.myRecentLeaves).toEqual(mockMyLeaves);
+        expect(response.body.data.leaveBalance).toEqual(mockEmployee.leaveBalance);
+      });
+
+      it('should handle zero metrics calculation correctly', async () => {
+        // Mock scenario with all zero values
+        Employee.countDocuments.mockResolvedValue(0);
+        LeaveRequest.countDocuments.mockResolvedValue(0);
+        LeaveRequest.find.mockReturnValue({
+          populate: jest.fn().mockReturnValue({
+            sort: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([])
+            })
+          })
+        });
+        Employee.find.mockReturnValue({
+          select: jest.fn().mockResolvedValue([])
+        });
+        InventoryItem.countDocuments.mockResolvedValue(0);
+
+        const response = await request(app)
+          .get('/api/dashboard');
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.stats).toEqual({
+          totalEmployees: 0,
+          pendingLeaves: 0,
+          thisMonthLeaves: 0,
+          inventoryStats: {
+            totalItems: 0,
+            lowStockItems: 0
+          }
+        });
+        expect(response.body.data.recentLeaveRequests).toEqual([]);
+        expect(response.body.data.lowLeaveBalanceEmployees).toEqual([]);
+      });
+    });
+
+    describe('Error path - metrics calculation failures', () => {
+      it('should handle employee count calculation error', async () => {
+        Employee.countDocuments.mockRejectedValue(new Error('Database connection failed'));
+        
+        const response = await request(app)
+          .get('/api/dashboard');
+
+        expect(response.status).toBe(500);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Failed to load dashboard data');
+      });
+
+      it('should handle leave request metrics calculation error', async () => {
+        Employee.countDocuments.mockResolvedValue(10);
+        LeaveRequest.countDocuments.mockRejectedValue(new Error('Leave query failed'));
+        
+        const response = await request(app)
+          .get('/api/dashboard');
+
+        expect(response.status).toBe(500);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Failed to load dashboard data');
+      });
+
+      it('should handle inventory metrics calculation error', async () => {
+        Employee.countDocuments.mockResolvedValue(10);
+        LeaveRequest.countDocuments.mockResolvedValue(5);
+        LeaveRequest.find.mockReturnValue({
+          populate: jest.fn().mockReturnValue({
+            sort: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([])
+            })
+          })
+        });
+        Employee.find.mockReturnValue({
+          select: jest.fn().mockResolvedValue([])
+        });
+        InventoryItem.countDocuments.mockRejectedValue(new Error('Inventory query failed'));
+        
+        const response = await request(app)
+          .get('/api/dashboard');
+
+        expect(response.status).toBe(500);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Failed to load dashboard data');
+      });
+
+      it('should handle partial data fetch errors gracefully', async () => {
+        Employee.countDocuments.mockResolvedValue(10);
+        LeaveRequest.countDocuments.mockResolvedValue(5);
+        LeaveRequest.find.mockReturnValue({
+          populate: jest.fn().mockReturnValue({
+            sort: jest.fn().mockReturnValue({
+              limit: jest.fn().mockRejectedValue(new Error('Recent leaves fetch failed'))
+            })
+          })
+        });
+        
+        const response = await request(app)
+          .get('/api/dashboard');
+
+        expect(response.status).toBe(500);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Failed to load dashboard data');
+      });
+
+      it('should handle employee profile fetch error for personal dashboard', async () => {
+        mockAuth.authenticateToken = (req, res, next) => {
+          req.user = { id: 'emp123', role: 'employee', email: 'employee@company.com' };
+          next();
+        };
+
+        Employee.findById.mockRejectedValue(new Error('Employee not found'));
+        
+        const response = await request(app)
+          .get('/api/dashboard');
+
+        expect(response.status).toBe(500);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Failed to load dashboard data');
+      });
+    });
+  });
+
   // TC-006: Dashboard showing company overview with key metrics and pending leave requests
   describe('GET /api/dashboard', () => {
     it('should return admin dashboard with company overview and key metrics', async () => {

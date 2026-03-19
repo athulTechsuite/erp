@@ -26,87 +26,299 @@ describe('Leave Controller', () => {
     jest.clearAllMocks();
   });
 
-  // TC-003: Leave request submission workflow for employees
-  describe('POST /api/leaves', () => {
-    it('should create leave request successfully with valid data', async () => {
-      const leaveRequestData = {
-        leaveType: 'annual',
-        startDate: '2024-02-15',
-        endDate: '2024-02-17',
-        reason: 'Personal vacation',
-        totalDays: 3
-      };
+  // TC-003: Leave request submission and validation - comprehensive test coverage
+  describe('TC-003: Leave request submission and validation - POST /api/leaves', () => {
+    // Happy path scenarios for TC-003
+    describe('Happy path scenarios', () => {
+      it('should create leave request successfully with valid data', async () => {
+        const leaveRequestData = {
+          leaveType: 'annual',
+          startDate: '2024-02-15',
+          endDate: '2024-02-17',
+          reason: 'Personal vacation',
+          totalDays: 3
+        };
 
-      const mockEmployee = {
-        _id: 'user123',
-        firstName: 'John',
-        lastName: 'Doe',
-        leaveBalances: { annual: 20 }
-      };
+        const mockEmployee = {
+          _id: 'user123',
+          firstName: 'John',
+          lastName: 'Doe',
+          leaveBalances: { annual: 20 }
+        };
 
-      const mockLeaveRequest = {
-        _id: 'leave123',
-        ...leaveRequestData,
-        employee: 'user123',
-        status: 'pending',
-        save: jest.fn().mockResolvedValue(true)
-      };
+        const mockLeaveRequest = {
+          _id: 'leave123',
+          ...leaveRequestData,
+          employee: 'user123',
+          status: 'pending',
+          save: jest.fn().mockResolvedValue(true)
+        };
 
-      Employee.findById.mockResolvedValue(mockEmployee);
-      Leave.mockImplementation(() => mockLeaveRequest);
-      Leave.prototype.save = jest.fn().mockResolvedValue(mockLeaveRequest);
+        Employee.findById.mockResolvedValue(mockEmployee);
+        Leave.mockImplementation(() => mockLeaveRequest);
+        Leave.prototype.save = jest.fn().mockResolvedValue(mockLeaveRequest);
 
-      const response = await request(app)
-        .post('/api/leaves')
-        .send(leaveRequestData);
+        const response = await request(app)
+          .post('/api/leaves')
+          .send(leaveRequestData);
 
-      expect(response.status).toBe(201);
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.status).toBe('pending');
-      expect(response.body.message).toContain('submitted successfully');
+        expect(response.status).toBe(201);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.status).toBe('pending');
+        expect(response.body.message).toContain('submitted successfully');
+      });
+
+      it('should create sick leave request with zero balance check', async () => {
+        const leaveRequestData = {
+          leaveType: 'sick',
+          startDate: '2024-02-20',
+          endDate: '2024-02-21',
+          reason: 'Medical appointment',
+          totalDays: 2
+        };
+
+        const mockEmployee = {
+          _id: 'user123',
+          firstName: 'John',
+          lastName: 'Doe',
+          leaveBalances: { sick: 10 }
+        };
+
+        const mockLeaveRequest = {
+          _id: 'leave124',
+          ...leaveRequestData,
+          employee: 'user123',
+          status: 'pending',
+          save: jest.fn().mockResolvedValue(true)
+        };
+
+        Employee.findById.mockResolvedValue(mockEmployee);
+        Leave.mockImplementation(() => mockLeaveRequest);
+        Leave.prototype.save = jest.fn().mockResolvedValue(mockLeaveRequest);
+
+        const response = await request(app)
+          .post('/api/leaves')
+          .send(leaveRequestData);
+
+        expect(response.status).toBe(201);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.leaveType).toBe('sick');
+      });
+
+      it('should create single day leave request', async () => {
+        const leaveRequestData = {
+          leaveType: 'personal',
+          startDate: '2024-02-25',
+          endDate: '2024-02-25',
+          reason: 'Personal matter',
+          totalDays: 1
+        };
+
+        const mockEmployee = {
+          _id: 'user123',
+          leaveBalances: { personal: 5 }
+        };
+
+        const mockLeaveRequest = {
+          _id: 'leave125',
+          ...leaveRequestData,
+          employee: 'user123',
+          status: 'pending',
+          save: jest.fn().mockResolvedValue(true)
+        };
+
+        Employee.findById.mockResolvedValue(mockEmployee);
+        Leave.mockImplementation(() => mockLeaveRequest);
+        Leave.prototype.save = jest.fn().mockResolvedValue(mockLeaveRequest);
+
+        const response = await request(app)
+          .post('/api/leaves')
+          .send(leaveRequestData);
+
+        expect(response.status).toBe(201);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.totalDays).toBe(1);
+      });
     });
 
-    it('should reject leave request when insufficient balance', async () => {
-      const leaveRequestData = {
-        leaveType: 'annual',
-        startDate: '2024-02-15',
-        endDate: '2024-03-01',
-        reason: 'Long vacation',
-        totalDays: 15
-      };
+    // Error path scenarios for TC-003
+    describe('Error path scenarios', () => {
+      it('should reject leave request when insufficient balance', async () => {
+        const leaveRequestData = {
+          leaveType: 'annual',
+          startDate: '2024-02-15',
+          endDate: '2024-03-01',
+          reason: 'Long vacation',
+          totalDays: 15
+        };
 
-      const mockEmployee = {
-        _id: 'user123',
-        leaveBalances: { annual: 5 } // Insufficient balance
-      };
+        const mockEmployee = {
+          _id: 'user123',
+          leaveBalances: { annual: 5 } // Insufficient balance
+        };
 
-      Employee.findById.mockResolvedValue(mockEmployee);
+        Employee.findById.mockResolvedValue(mockEmployee);
 
-      const response = await request(app)
-        .post('/api/leaves')
-        .send(leaveRequestData);
+        const response = await request(app)
+          .post('/api/leaves')
+          .send(leaveRequestData);
 
-      expect(response.status).toBe(400);
-      expect(response.body.success).toBe(false);
-      expect(response.body.message).toContain('Insufficient leave balance');
-    });
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Insufficient leave balance');
+      });
 
-    it('should reject leave request with invalid date range', async () => {
-      const leaveRequestData = {
-        leaveType: 'annual',
-        startDate: '2024-02-17',
-        endDate: '2024-02-15', // End date before start date
-        reason: 'Invalid dates',
-        totalDays: 3
-      };
+      it('should reject leave request with invalid date range', async () => {
+        const leaveRequestData = {
+          leaveType: 'annual',
+          startDate: '2024-02-17',
+          endDate: '2024-02-15', // End date before start date
+          reason: 'Invalid dates',
+          totalDays: 3
+        };
 
-      const response = await request(app)
-        .post('/api/leaves')
-        .send(leaveRequestData);
+        const response = await request(app)
+          .post('/api/leaves')
+          .send(leaveRequestData);
 
-      expect(response.status).toBe(400);
-      expect(response.body.success).toBe(false);
-      expect(response.body.message).toContain('Invalid date range');
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Invalid date range');
+      });
+
+      it('should reject leave request with missing required fields', async () => {
+        const leaveRequestData = {
+          leaveType: 'annual',
+          startDate: '2024-02-15'
+          // Missing endDate, reason, totalDays
+        };
+
+        const response = await request(app)
+          .post('/api/leaves')
+          .send(leaveRequestData);
+
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('required');
+      });
+
+      it('should reject leave request with invalid leave type', async () => {
+        const leaveRequestData = {
+          leaveType: 'invalid_type',
+          startDate: '2024-02-15',
+          endDate: '2024-02-17',
+          reason: 'Test reason',
+          totalDays: 3
+        };
+
+        const response = await request(app)
+          .post('/api/leaves')
+          .send(leaveRequestData);
+
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Invalid leave type');
+      });
+
+      it('should reject leave request with past dates', async () => {
+        const leaveRequestData = {
+          leaveType: 'annual',
+          startDate: '2020-02-15',
+          endDate: '2020-02-17',
+          reason: 'Past dates',
+          totalDays: 3
+        };
+
+        const response = await request(app)
+          .post('/api/leaves')
+          .send(leaveRequestData);
+
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Cannot create leave request for past dates');
+      });
+
+      it('should reject leave request when employee not found', async () => {
+        const leaveRequestData = {
+          leaveType: 'annual',
+          startDate: '2024-02-15',
+          endDate: '2024-02-17',
+          reason: 'Valid request',
+          totalDays: 3
+        };
+
+        Employee.findById.mockResolvedValue(null);
+
+        const response = await request(app)
+          .post('/api/leaves')
+          .send(leaveRequestData);
+
+        expect(response.status).toBe(404);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Employee not found');
+      });
+
+      it('should handle database save errors gracefully', async () => {
+        const leaveRequestData = {
+          leaveType: 'annual',
+          startDate: '2024-02-15',
+          endDate: '2024-02-17',
+          reason: 'Valid request',
+          totalDays: 3
+        };
+
+        const mockEmployee = {
+          _id: 'user123',
+          leaveBalances: { annual: 20 }
+        };
+
+        Employee.findById.mockResolvedValue(mockEmployee);
+        Leave.prototype.save = jest.fn().mockRejectedValue(new Error('Database error'));
+
+        const response = await request(app)
+          .post('/api/leaves')
+          .send(leaveRequestData);
+
+        expect(response.status).toBe(500);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Internal server error');
+      });
+
+      it('should reject leave request with zero total days', async () => {
+        const leaveRequestData = {
+          leaveType: 'annual',
+          startDate: '2024-02-15',
+          endDate: '2024-02-17',
+          reason: 'Valid reason',
+          totalDays: 0
+        };
+
+        const response = await request(app)
+          .post('/api/leaves')
+          .send(leaveRequestData);
+
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Total days must be greater than 0');
+      });
+
+      it('should reject leave request with negative total days', async () => {
+        const leaveRequestData = {
+          leaveType: 'annual',
+          startDate: '2024-02-15',
+          endDate: '2024-02-17',
+          reason: 'Valid reason',
+          totalDays: -3
+        };
+
+        const response = await request(app)
+          .post('/api/leaves')
+          .send(leaveRequestData);
+
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Total days must be greater than 0');
+      });
     });
   });
 

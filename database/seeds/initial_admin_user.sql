@@ -1,6 +1,6 @@
 -- Initial admin user seed data for ERP system
 -- This creates a default admin user for system initialization
--- Password: admin123 (should be changed on first login)
+-- Password hash should be set via environment variable ADMIN_PASSWORD_HASH during deployment
 
 INSERT INTO users (
     id,
@@ -16,7 +16,7 @@ INSERT INTO users (
 ) VALUES (
     1,
     'admin@company.com',
-    '$2b$12$LQv3c1yqBwEHxE03uSesLOktET/Q9TDE9GdkAiOvHuOdHlBvKw4vK', -- admin123
+    COALESCE(NULLIF('${ADMIN_PASSWORD_HASH}', ''), '$2b$12$defaulthashshouldbereplaced'), -- Password hash from environment variable
     'System',
     'Administrator',
     'admin',

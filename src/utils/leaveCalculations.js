@@ -112,6 +112,111 @@ export const validateLeaveRequest = (requestedDays, leaveBalance) => {
 };
 
 /**
+ * Process leave balance update with transaction safety
+ * This function should be used within a database transaction to prevent race conditions
+ * @param {Object} employeeId - Employee identifier
+ * @param {number} requestedDays - Number of days being requested/updated
+ * @param {string} operation - Operation type ('request', 'approve', 'cancel')
+ * @param {Function} dbTransaction - Database transaction function
+ * @returns {Promise<Object>} Updated balance information
+ */
+export const processLeaveBalanceUpdate = async (employeeId, requestedDays, operation, dbTransaction) => {
+  if (!dbTransaction) {
+    throw new Error('Database transaction function is required to prevent race conditions');
+  }
+  
+  return await dbTransaction(async (trx) => {
+    // Lock the employee record for update to prevent concurrent modifications
+    const currentBalance = await trx('employee_leave_balances')
+      .where('employee_id', employeeId)
+      .forUpdate()
+      .first();
+    
+    if (!currentBalance) {
+      throw new Error('Employee leave balance not found');
+    }
+    
+    let updatedBalance = { ...currentBalance };
+    
+    switch (operation) {
+      case 'request':
+        // Validate sufficient balance before creating pending request
+        if (currentBalance.available < requestedDays) {
+          throw new Error(`Insufficient leave balance. Available: ${currentBalance.available}, Requested: ${requestedDays}`);
+        }
+        updatedBalance.pending = currentBalance.pending + requestedDays;
+        updatedBalance.available = currentBalance.available - requestedDays;
+        break;
+        
+      case 'approve':
+        updatedBalance.pending = Math.max(0, currentBalance.pending - requestedDays);
+        updatedBalance.used = currentBalance.used + requestedDays;
+        break;
+        
+      case 'cancel':
+        updatedBalance.pending = Math.max(0, currentBalance.pending - requestedDays);
+        updatedBalance.available = currentBalance.available + requestedDays;
+        break;
+        
+      default:
+        throw new Error(`Invalid operation: ${operation}`);
+    }
+    
+    // Update the balance with optimistic locking using version number
+    const updateResult = await trx('employee_leave_balances')
+      .where({
+        employee_id: employeeId,
+        version: currentBalance.version // Optimistic locking
+      })
+      .update({
+        ...updatedBalance,
+        version: currentBalance.version + 1,
+        updated_at: new Date()
+      });
+    
+    if (updateResult === 0) {
+      throw new Error('Concurrent update detected. Please retry the operation.');
+    }
+    
+    return {
+      ...updatedBalance,
+      version: currentBalance.version + 1
+    };
+  });
+};
+
+/**
+ * Safely validate and prepare leave request with concurrency protection
+ * @param {Object} requestData - Leave request data
+ * @param {Function} getEmployeeBalance - Function to get current employee balance
+ * @returns {Promise<Object>} Validation result with balance snapshot
+ */
+export const validateLeaveRequestSafely = async (requestData, getEmployeeBalance) => {
+  const { employeeId, requestedDays, leaveType } = requestData;
+  
+  // Get current balance with timestamp for optimistic locking
+  const balanceSnapshot = await getEmployeeBalance(employeeId, leaveType);
+  
+  if (!balanceSnapshot) {
+    return {
+      isValid: false,
+      message: 'Employee leave balance not found',
+      balanceSnapshot: null
+    };
+  }
+  
+  const validation = validateLeaveRequest(requestedDays, balanceSnapshot);
+  
+  return {
+    ...validation,
+    balanceSnapshot: {
+      ...balanceSnapshot,
+      snapshotTime: new Date().toISOString()
+    }
+  };
+};
+
+/**
  * Calculate leave accrual for monthly accumulation
  * @param {number} annualEntitlement - Annual leave entitlement
  * @param {Date} employeeStartDate - Employee start date
@@ -248,4 +353,31 @@ export const calculateLeaveStatistics = (employees) => {
     totalPendingRequests: stats.totalPendingRequests,
     leaveUtilizationRate: Math.round(leaveUtilizationRate * 100) / 100
   };
+};
+
+/**
+ * Retry wrapper for handling concurrent update conflicts
+ * @param {Function} operation - Operation to retry
+ * @param {number} maxRetries - Maximum number of retry attempts
+ * @param {number} baseDelay - Base delay in milliseconds between retries
+ * @returns {Promise<any>} Operation result
+ */
+export const retryOnConcurrencyConflict = async (operation, maxRetries = 3, baseDelay = 100) => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      const isConcurrencyError = error.message.includes('Concurrent update detected') ||
+                                error.message.includes('deadlock') ||
+                                error.code === 'SQLITE_BUSY';
+      
+      if (!isConcurrencyError || attempt === maxRetries) {
+        throw error;
+      }
+      
+      // Exponential backoff with jitter
+      const delay = baseDelay * Math.pow(2, attempt - 1) + Math.random() * 100;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
 };

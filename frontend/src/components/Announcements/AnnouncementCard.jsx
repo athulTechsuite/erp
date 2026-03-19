@@ -3,6 +3,7 @@ import { Card, CardContent, Typography, Box, Chip, IconButton, Menu, MenuItem } 
 import { MoreVert as MoreVertIcon, Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { useState } from 'react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
+import DOMPurify from 'dompurify';
 
 const AnnouncementCard = ({ 
   announcement, 
@@ -34,10 +35,12 @@ const AnnouncementCard = ({
   };
 
   const formatContent = (content) => {
-    return content.split('\n').map((line, index) => (
+    // Sanitize the content to prevent XSS attacks
+    const sanitizedContent = DOMPurify.sanitize(content);
+    return sanitizedContent.split('\n').map((line, index) => (
       <React.Fragment key={index}>
         {line}
-        {index < content.split('\n').length - 1 && <br />}
+        {index < sanitizedContent.split('\n').length - 1 && <br />}
       </React.Fragment>
     ));
   };
@@ -88,7 +91,7 @@ const AnnouncementCard = ({
               pr: showActions ? 1 : 0
             }}
           >
-            {announcement.title}
+            {DOMPurify.sanitize(announcement.title)}
           </Typography>
           
           {showActions && isAdmin && (
@@ -140,7 +143,7 @@ const AnnouncementCard = ({
 
         <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
           <Typography variant="body2" color="text.secondary">
-            {announcement.createdBy && `By ${announcement.createdBy} • `}
+            {announcement.createdBy && `By ${DOMPurify.sanitize(announcement.createdBy)} • `}
             {formatDistanceToNow(parseISO(announcement.createdAt), { addSuffix: true })}
           </Typography>
 

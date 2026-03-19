@@ -12,7 +12,7 @@ CREATE TABLE announcements (
     expires_at TIMESTAMP NULL,
     is_archived BOOLEAN DEFAULT FALSE,
     is_active BOOLEAN DEFAULT TRUE,
-    priority INTEGER DEFAULT 1 CHECK (priority IN (1, 2, 3)), -- 1=low, 2=medium, 3=high
+    priority INTEGER DEFAULT 1 CHECK (priority >= 1 AND priority <= 3), -- 1=low, 2=medium, 3=high
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 );
 

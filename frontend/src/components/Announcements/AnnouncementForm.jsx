@@ -29,6 +29,8 @@ const AnnouncementForm = ({
     }
   }, [announcement]);
 
+  // Client-side validation for immediate user feedback
+  // Note: Server-side validation is also required for security
   const validateForm = () => {
     const errors = {};
     

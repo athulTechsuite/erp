@@ -1,5 +1,74 @@
 const Announcement = require('../models/Announcement');
 const { validationResult } = require('express-validator');
+const Joi = require('joi');
+const DOMPurify = require('isomorphic-dompurify');
+
+// Validation schemas
+const announcementSchema = Joi.object({
+  title: Joi.string()
+    .trim()
+    .min(1)
+    .max(200)
+    .pattern(/^[a-zA-Z0-9\s\-_.,!?()]+$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'Title contains invalid characters',
+      'string.max': 'Title must not exceed 200 characters',
+      'string.min': 'Title is required'
+    }),
+  content: Joi.string()
+    .trim()
+    .min(1)
+    .max(5000)
+    .required()
+    .messages({
+      'string.max': 'Content must not exceed 5000 characters',
+      'string.min': 'Content is required'
+    }),
+  type: Joi.string().valid('general', 'urgent', 'maintenance', 'event').default('general'),
+  priority: Joi.string().valid('low', 'normal', 'high', 'critical').default('normal'),
+  expiresAt: Joi.date().greater('now').allow(null, '').optional(),
+  tags: Joi.array().items(Joi.string().trim().max(50)).max(10).default([]),
+  archived: Joi.boolean().default(false)
+});
+
+// Input sanitization helper
+const sanitizeInput = (input) => {
+  if (typeof input === 'string') {
+    return DOMPurify.sanitize(input.trim(), { ALLOWED_TAGS: [] });
+  }
+  return input;
+};
+
+// Validate and sanitize announcement data
+const validateAnnouncementData = (data) => {
+  // First sanitize the input
+  const sanitizedData = {
+    title: sanitizeInput(data.title),
+    content: sanitizeInput(data.content),
+    type: sanitizeInput(data.type),
+    priority: sanitizeInput(data.priority),
+    expiresAt: data.expiresAt,
+    tags: Array.isArray(data.tags) ? data.tags.map(tag => sanitizeInput(tag)) : [],
+    archived: data.archived
+  };
+
+  // Then validate with Joi
+  const { error, value } = announcementSchema.validate(sanitizedData, { 
+    abortEarly: false,
+    stripUnknown: true 
+  });
+
+  if (error) {
+    const validationErrors = error.details.map(detail => ({
+      field: detail.path.join('.'),
+      message: detail.message
+    }));
+    throw new Error(JSON.stringify(validationErrors));
+  }
+
+  return value;
+};
 
 /**
  * Get all announcements with pagination and filtering
@@ -141,7 +210,7 @@ const createAnnouncement = async (req, res) => {
       });
     }
 
-    // Check validation errors
+    // Check validation errors from express-validator middleware
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -150,8 +219,21 @@ const createAnnouncement = async (req, res) => {
         errors: errors.array()
       });
     }
+
+    // Validate and sanitize input data
+    let validatedData;
+    try {
+      validatedData = validateAnnouncementData(req.body);
+    } catch (error) {
+      const validationErrors = JSON.parse(error.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Input validation failed',
+        errors: validationErrors
+      });
+    }
     
-    const { title, content, type, priority, expiresAt, tags } = req.body;
+    const { title, content, type, priority, expiresAt, tags } = validatedData;
     
     // Parse expiration date if provided
     let parsedExpiresAt = null;
@@ -166,12 +248,12 @@ const createAnnouncement = async (req, res) => {
     }
     
     const announcement = new Announcement({
-      title: title.trim(),
-      content: content.trim(),
-      type: type || 'general',
-      priority: priority || 'normal',
+      title,
+      content,
+      type,
+      priority,
       expiresAt: parsedExpiresAt,
-      tags: tags || [],
+      tags,
       createdBy: req.user._id,
       updatedBy: req.user._id
     });
@@ -209,7 +291,7 @@ const updateAnnouncement = async (req, res) => {
       });
     }
 
-    // Check validation errors
+    // Check validation errors from express-validator middleware
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -218,9 +300,22 @@ const updateAnnouncement = async (req, res) => {
         errors: errors.array()
       });
     }
+
+    // Validate and sanitize input data
+    let validatedData;
+    try {
+      validatedData = validateAnnouncementData(req.body);
+    } catch (error) {
+      const validationErrors = JSON.parse(error.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Input validation failed',
+        errors: validationErrors
+      });
+    }
     
     const { id } = req.params;
-    const { title, content, type, priority, expiresAt, tags, archived } = req.body;
+    const { title, content, type, priority, expiresAt, tags, archived } = validatedData;
     
     const announcement = await Announcement.findById(id);
     if (!announcement) {
@@ -246,9 +341,9 @@ const updateAnnouncement = async (req, res) => {
       }
     }
     
-    // Update fields
-    if (title !== undefined) announcement.title = title.trim();
-    if (content !== undefined) announcement.content = content.trim();
+    // Update fields with validated data
+    if (title !== undefined) announcement.title = title;
+    if (content !== undefined) announcement.content = content;
     if (type !== undefined) announcement.type = type;
     if (priority !== undefined) announcement.priority = priority;
     if (expiresAt !== undefined) announcement.expiresAt = parsedExpiresAt;

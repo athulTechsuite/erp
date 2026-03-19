@@ -4,6 +4,7 @@ const { authenticateToken, requireRole } = require('../middleware/auth');
 const Employee = require('../models/Employee');
 const Leave = require('../models/Leave');
 const Asset = require('../models/Asset');
+const Announcement = require('../models/Announcement');
 
 // Dashboard overview - accessible to all authenticated users
 router.get('/', authenticateToken, async (req, res) => {
@@ -12,6 +13,18 @@ router.get('/', authenticateToken, async (req, res) => {
     const userRole = req.user.role;
     
     let dashboardData = {};
+    
+    // Get recent announcements for all users
+    const recentAnnouncements = await Announcement.find({
+      isActive: true,
+      $or: [
+        { expiresAt: null },
+        { expiresAt: { $gt: new Date() } }
+      ]
+    })
+    .sort({ createdAt: -1 })
+    .limit(3)
+    .populate('createdBy', 'firstName lastName');
     
     if (userRole === 'admin' || userRole === 'manager') {
       // Admin/Manager dashboard - company overview
@@ -43,6 +56,7 @@ router.get('/', authenticateToken, async (req, res) => {
           assetsNeedingMaintenance
         },
         recentLeaveRequests,
+        recentAnnouncements,
         userInfo: {
           name: `${req.user.firstName} ${req.user.lastName}`,
           role: userRole,
@@ -74,6 +88,7 @@ router.get('/', authenticateToken, async (req, res) => {
           totalRequests: myLeaves.length
         },
         myRecentLeaves: myLeaves,
+        recentAnnouncements,
         userInfo: {
           name: `${req.user.firstName} ${req.user.lastName}`,
           role: userRole,
@@ -157,6 +172,19 @@ router.get('/metrics', authenticateToken, requireRole(['admin']), async (req, re
       isActive: true
     });
     
+    // Announcement metrics
+    const totalAnnouncements = await Announcement.countDocuments({
+      createdAt: { $gte: startDate }
+    });
+    
+    const activeAnnouncements = await Announcement.countDocuments({
+      isActive: true,
+      $or: [
+        { expiresAt: null },
+        { expiresAt: { $gt: new Date() } }
+      ]
+    });
+    
     // Monthly trend data
     const monthlyLeaves = await Leave.aggregate([
       {
@@ -196,6 +224,10 @@ router.get('/metrics', authenticateToken, requireRole(['admin']), async (req, re
         total: totalAssets,
         needingMaintenance: assetsNeedingMaintenance
       },
+      announcements: {
+        total: totalAnnouncements,
+        active: activeAnnouncements
+      },
       trends: {
         monthlyLeaves
       }
@@ -225,6 +257,7 @@ router.get('/quick-actions', authenticateToken, async (req, res) => {
     if (userRole === 'admin') {
       actions = [
         { id: 'add-employee', label: 'Add New Employee', icon: 'user-plus', url: '/employees/new' },
+        { id: 'create-announcement', label: 'Create Announcement', icon: 'megaphone', url: '/announcements/new' },
         { id: 'review-leaves', label: 'Review Leave Requests', icon: 'clock', url: '/leaves/pending' },
         { id: 'view-reports', label: 'Generate Reports', icon: 'chart-bar', url: '/reports' },
         { id: 'manage-assets', label: 'Manage Assets', icon: 'box', url: '/assets' },
@@ -240,6 +273,7 @@ router.get('/quick-actions', authenticateToken, async (req, res) => {
       actions = [
         { id: 'request-leave', label: 'Request Leave', icon: 'calendar-plus', url: '/leaves/new' },
         { id: 'my-leaves', label: 'My Leave History', icon: 'history', url: '/leaves/my-requests' },
+        { id: 'view-announcements', label: 'View Announcements', icon: 'megaphone', url: '/announcements' },
         { id: 'my-profile', label: 'Update Profile', icon: 'user', url: '/profile' }
       ];
     }
@@ -266,6 +300,31 @@ router.get('/notifications', authenticateToken, async (req, res) => {
     const userRole = req.user.role;
     let notifications = [];
     
+    // Get recent announcements as notifications for all users
+    const recentAnnouncements = await Announcement.find({
+      isActive: true,
+      createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, // Last 7 days
+      $or: [
+        { expiresAt: null },
+        { expiresAt: { $gt: new Date() } }
+      ]
+    })
+    .populate('createdBy', 'firstName lastName')
+    .sort({ createdAt: -1 })
+    .limit(5);
+    
+    const announcementNotifications = recentAnnouncements.map(announcement => ({
+      id: `announcement_${announcement._id}`,
+      type: 'announcement',
+      title: 'New Company Announcement',
+      message: announcement.title,
+      timestamp: announcement.createdAt,
+      actionUrl: `/announcements/${announcement._id}`,
+      priority: 'medium'
+    }));
+    
+    notifications = [...announcementNotifications];
+    
     if (userRole === 'admin' || userRole === 'manager') {
       // Get pending leave requests as notifications
       const pendingLeaves = await Leave.find({ status: 'pending' })
@@ -273,7 +332,7 @@ router.get('/notifications', authenticateToken, async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(10);
       
-      notifications = pendingLeaves.map(leave => ({
+      const leaveNotifications = pendingLeaves.map(leave => ({
         id: leave._id,
         type: 'leave_request',
         title: 'New Leave Request',
@@ -282,6 +341,8 @@ router.get('/notifications', authenticateToken, async (req, res) => {
         actionUrl: `/leaves/${leave._id}`,
         priority: 'medium'
       }));
+      
+      notifications = [...notifications, ...leaveNotifications];
       
       // Check for assets needing maintenance
       const assetsNeedingMaintenance = await Asset.find({
@@ -308,7 +369,7 @@ router.get('/notifications', authenticateToken, async (req, res) => {
         updatedAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } // Last 7 days
       }).sort({ updatedAt: -1 }).limit(10);
       
-      notifications = myLeaves.map(leave => ({
+      const leaveNotifications = myLeaves.map(leave => ({
         id: leave._id,
         type: `leave_${leave.status}`,
         title: `Leave Request ${leave.status.charAt(0).toUpperCase() + leave.status.slice(1)}`,
@@ -317,6 +378,8 @@ router.get('/notifications', authenticateToken, async (req, res) => {
         actionUrl: `/leaves/${leave._id}`,
         priority: leave.status === 'approved' ? 'low' : 'medium'
       }));
+      
+      notifications = [...notifications, ...leaveNotifications];
     }
     
     // Sort by timestamp (newest first)

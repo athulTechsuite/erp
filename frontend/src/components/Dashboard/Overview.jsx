@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { 
   Users, 
   Calendar, 
@@ -12,10 +16,230 @@ import {
   AlertCircle,
   CheckCircle,
   XCircle,
-  PendingIcon
+  PendingIcon,
+  Megaphone,
+  Plus,
+  Send,
+  CalendarDays
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { dashboardService } from '@/services/dashboardService';
+import { announcementsService } from '@/services/announcementsService';
+
+const AnnouncementWidget = () => {
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [newAnnouncement, setNewAnnouncement] = useState({
+    title: '',
+    content: '',
+    expirationDate: ''
+  });
+  const [recentAnnouncements, setRecentAnnouncements] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    fetchRecentAnnouncements();
+  }, []);
+
+  const fetchRecentAnnouncements = async () => {
+    try {
+      const announcements = await announcementsService.getActive();
+      setRecentAnnouncements(announcements.slice(0, 3)); // Show only 3 most recent
+    } catch (error) {
+      console.error('Failed to fetch announcements:', error);
+    }
+  };
+
+  const handleCreateAnnouncement = async (e) => {
+    e.preventDefault();
+    
+    if (!newAnnouncement.title.trim() || !newAnnouncement.content.trim()) {
+      setError('Title and content are required');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      await announcementsService.create({
+        title: newAnnouncement.title.trim(),
+        content: newAnnouncement.content.trim(),
+        expirationDate: newAnnouncement.expirationDate || null
+      });
+      
+      setNewAnnouncement({ title: '', content: '', expirationDate: '' });
+      setIsCreateDialogOpen(false);
+      fetchRecentAnnouncements();
+    } catch (error) {
+      setError('Failed to create announcement. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  };
+
+  const isExpiringSoon = (expirationDate) => {
+    if (!expirationDate) return false;
+    const expiry = new Date(expirationDate);
+    const threeDaysFromNow = new Date();
+    threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
+    return expiry <= threeDaysFromNow;
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center">
+            <Megaphone className="h-5 w-5 mr-2" />
+            Company Announcements
+          </CardTitle>
+          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="h-8">
+                <Plus className="h-4 w-4 mr-1" />
+                New
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[525px]">
+              <DialogHeader>
+                <DialogTitle>Create Company Announcement</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleCreateAnnouncement}>
+                <div className="grid gap-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="title">Title *</Label>
+                    <Input
+                      id="title"
+                      placeholder="Enter announcement title..."
+                      value={newAnnouncement.title}
+                      onChange={(e) => setNewAnnouncement(prev => ({ ...prev, title: e.target.value }))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="content">Content *</Label>
+                    <Textarea
+                      id="content"
+                      placeholder="Enter announcement content..."
+                      value={newAnnouncement.content}
+                      onChange={(e) => setNewAnnouncement(prev => ({ ...prev, content: e.target.value }))}
+                      className="w-full min-h-[100px] resize-none"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="expirationDate" className="flex items-center">
+                      <CalendarDays className="h-4 w-4 mr-1" />
+                      Expiration Date (Optional)
+                    </Label>
+                    <Input
+                      id="expirationDate"
+                      type="date"
+                      value={newAnnouncement.expirationDate}
+                      onChange={(e) => setNewAnnouncement(prev => ({ ...prev, expirationDate: e.target.value }))}
+                      min={new Date().toISOString().split('T')[0]}
+                      className="w-full"
+                    />
+                  </div>
+                  {error && (
+                    <div className="text-sm text-red-600 flex items-center">
+                      <AlertCircle className="h-4 w-4 mr-1" />
+                      {error}
+                    </div>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => {
+                      setIsCreateDialogOpen(false);
+                      setNewAnnouncement({ title: '', content: '', expirationDate: '' });
+                      setError(null);
+                    }}
+                    disabled={isSubmitting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Publishing...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4 mr-1" />
+                        Publish
+                      </>
+                    )}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          {recentAnnouncements.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Megaphone className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p className="text-sm">No active announcements</p>
+              <p className="text-xs mt-1">Create your first company announcement above</p>
+            </div>
+          ) : (
+            recentAnnouncements.map((announcement) => (
+              <div key={announcement.id} className="p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
+                <div className="flex items-start justify-between mb-2">
+                  <h4 className="font-medium text-sm leading-tight pr-2">
+                    {announcement.title}
+                  </h4>
+                  {announcement.expirationDate && isExpiringSoon(announcement.expirationDate) && (
+                    <Badge variant="secondary" className="text-xs px-1.5 py-0.5 h-5 shrink-0">
+                      <Clock className="h-3 w-3 mr-1" />
+                      Expiring
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
+                  {announcement.content}
+                </p>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    Posted {formatDate(announcement.createdAt)}
+                  </span>
+                  {announcement.expirationDate && (
+                    <span className="flex items-center">
+                      <CalendarDays className="h-3 w-3 mr-1" />
+                      Until {formatDate(announcement.expirationDate)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+          
+          {recentAnnouncements.length > 0 && (
+            <div className="pt-2 border-t">
+              <Button variant="ghost" size="sm" className="w-full h-8 text-xs">
+                View All Announcements
+              </Button>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
 
 const Overview = () => {
   const { user } = useAuth();
@@ -143,6 +367,8 @@ const Overview = () => {
     );
   }
 
+  const isAdmin = user?.role === 'admin' || user?.role === 'manager';
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -199,7 +425,7 @@ const Overview = () => {
         />
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* Recent Leave Requests */}
         <Card>
           <CardHeader>
@@ -298,10 +524,13 @@ const Overview = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Global Announcements Widget - Only for Admins */}
+        {isAdmin && <AnnouncementWidget />}
       </div>
 
       {/* Quick Actions */}
-      {user?.role === 'admin' || user?.role === 'manager' ? (
+      {isAdmin ? (
         <Card>
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>

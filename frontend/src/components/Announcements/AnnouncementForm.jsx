@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Save, X, AlertCircle } from 'lucide-react';
+import { Calendar, Save, X, AlertCircle, Loader2 } from 'lucide-react';
+
+// Constants for character limits
+const MAX_TITLE_LENGTH = 200;
+const MAX_CONTENT_LENGTH = 5000;
 
 const AnnouncementForm = ({ 
   announcement = null, 
@@ -36,14 +40,14 @@ const AnnouncementForm = ({
     
     if (!formData.title.trim()) {
       errors.title = 'Title is required';
-    } else if (formData.title.length > 200) {
-      errors.title = 'Title must be 200 characters or less';
+    } else if (formData.title.length > MAX_TITLE_LENGTH) {
+      errors.title = `Title must be ${MAX_TITLE_LENGTH} characters or less`;
     }
     
     if (!formData.content.trim()) {
       errors.content = 'Content is required';
-    } else if (formData.content.length > 5000) {
-      errors.content = 'Content must be 5000 characters or less';
+    } else if (formData.content.length > MAX_CONTENT_LENGTH) {
+      errors.content = `Content must be ${MAX_CONTENT_LENGTH} characters or less`;
     }
     
     if (formData.expirationDate) {
@@ -102,6 +106,16 @@ const AnnouncementForm = ({
 
   return (
     <div className="w-full max-w-2xl mx-auto bg-white rounded-lg shadow border">
+      {/* Loading overlay */}
+      {loading && (
+        <div className="absolute inset-0 bg-white/50 rounded-lg flex items-center justify-center z-10">
+          <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow-lg border">
+            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+            <span className="text-sm text-gray-700">Processing...</span>
+          </div>
+        </div>
+      )}
+      
       <div className="p-6 border-b">
         <h3 className="text-lg font-semibold flex items-center gap-2">
           {announcement ? 'Edit Announcement' : 'Create New Announcement'}
@@ -111,7 +125,10 @@ const AnnouncementForm = ({
         {error && (
           <div className="mb-6 p-4 border border-red-200 rounded-lg bg-red-50 text-red-800 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-            <span>{error}</span>
+            <div className="flex-1">
+              <div className="font-medium">Error</div>
+              <div className="text-sm mt-1">{error}</div>
+            </div>
           </div>
         )}
         
@@ -120,23 +137,33 @@ const AnnouncementForm = ({
             <label htmlFor="title" className="block text-sm font-medium text-gray-700">
               Title <span className="text-red-500">*</span>
             </label>
-            <input
-              id="title"
-              type="text"
-              placeholder="Enter announcement title"
-              value={formData.title}
-              onChange={(e) => handleInputChange('title', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                validationErrors.title ? 'border-red-500' : 'border-gray-300'
-              }`}
-              maxLength={200}
-              disabled={loading}
-            />
+            <div className="relative">
+              <input
+                id="title"
+                type="text"
+                placeholder="Enter announcement title"
+                value={formData.title}
+                onChange={(e) => handleInputChange('title', e.target.value)}
+                className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                  validationErrors.title ? 'border-red-500' : 'border-gray-300'
+                } ${loading ? 'bg-gray-50' : ''}`}
+                maxLength={MAX_TITLE_LENGTH}
+                disabled={loading}
+              />
+              {loading && (
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                  <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                </div>
+              )}
+            </div>
             {validationErrors.title && (
-              <p className="text-sm text-red-500">{validationErrors.title}</p>
+              <div className="flex items-center gap-1 text-sm text-red-600">
+                <AlertCircle className="h-3 w-3" />
+                <span>{validationErrors.title}</span>
+              </div>
             )}
             <p className="text-sm text-gray-500">
-              {formData.title.length}/200 characters
+              {formData.title.length}/{MAX_TITLE_LENGTH} characters
             </p>
           </div>
 
@@ -144,22 +171,32 @@ const AnnouncementForm = ({
             <label htmlFor="content" className="block text-sm font-medium text-gray-700">
               Content <span className="text-red-500">*</span>
             </label>
-            <textarea
-              id="content"
-              placeholder="Enter announcement content"
-              value={formData.content}
-              onChange={(e) => handleInputChange('content', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[120px] resize-vertical ${
-                validationErrors.content ? 'border-red-500' : 'border-gray-300'
-              }`}
-              maxLength={5000}
-              disabled={loading}
-            />
+            <div className="relative">
+              <textarea
+                id="content"
+                placeholder="Enter announcement content"
+                value={formData.content}
+                onChange={(e) => handleInputChange('content', e.target.value)}
+                className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[120px] resize-vertical ${
+                  validationErrors.content ? 'border-red-500' : 'border-gray-300'
+                } ${loading ? 'bg-gray-50' : ''}`}
+                maxLength={MAX_CONTENT_LENGTH}
+                disabled={loading}
+              />
+              {loading && (
+                <div className="absolute right-3 top-3">
+                  <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                </div>
+              )}
+            </div>
             {validationErrors.content && (
-              <p className="text-sm text-red-500">{validationErrors.content}</p>
+              <div className="flex items-center gap-1 text-sm text-red-600">
+                <AlertCircle className="h-3 w-3" />
+                <span>{validationErrors.content}</span>
+              </div>
             )}
             <p className="text-sm text-gray-500">
-              {formData.content.length}/5000 characters
+              {formData.content.length}/{MAX_CONTENT_LENGTH} characters
             </p>
           </div>
 
@@ -175,12 +212,15 @@ const AnnouncementForm = ({
               onChange={(e) => handleInputChange('expirationDate', e.target.value)}
               className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
                 validationErrors.expirationDate ? 'border-red-500' : 'border-gray-300'
-              }`}
+              } ${loading ? 'bg-gray-50' : ''}`}
               min={new Date().toISOString().split('T')[0]}
               disabled={loading}
             />
             {validationErrors.expirationDate && (
-              <p className="text-sm text-red-500">{validationErrors.expirationDate}</p>
+              <div className="flex items-center gap-1 text-sm text-red-600">
+                <AlertCircle className="h-3 w-3" />
+                <span>{validationErrors.expirationDate}</span>
+              </div>
             )}
             <p className="text-sm text-gray-500">
               Leave blank for permanent announcement
@@ -191,16 +231,22 @@ const AnnouncementForm = ({
             <button
               type="submit"
               disabled={loading}
-              className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+                loading ? 'bg-blue-500' : ''
+              }`}
             >
-              <Save className="h-4 w-4" />
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
               {loading ? 'Saving...' : (announcement ? 'Update Announcement' : 'Create Announcement')}
             </button>
             <button
               type="button"
               onClick={handleCancel}
               disabled={loading}
-              className="flex items-center justify-center gap-2 px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <X className="h-4 w-4" />
               Cancel

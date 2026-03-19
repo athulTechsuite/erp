@@ -45,23 +45,38 @@ const AnnouncementCard = ({
     ));
   };
 
+  const isExpired = (expirationDate, currentDate) => {
+    return expirationDate <= currentDate;
+  };
+
+  const getDaysUntilExpiration = (expirationDate, currentDate) => {
+    return Math.ceil((expirationDate - currentDate) / (1000 * 60 * 60 * 24));
+  };
+
+  const isExpiringSoon = (daysUntilExpiration) => {
+    return daysUntilExpiration <= 7;
+  };
+
+  const createExpirationStatus = (status, label, color) => {
+    return { status, label, color };
+  };
+
   const getExpirationStatus = () => {
     if (!announcement.expiresAt) return null;
     
     const expirationDate = parseISO(announcement.expiresAt);
     const now = new Date();
     
-    if (expirationDate <= now) {
-      return { status: 'expired', label: 'Expired', color: 'error' };
+    if (isExpired(expirationDate, now)) {
+      return createExpirationStatus('expired', 'Expired', 'error');
     }
     
-    const daysUntilExpiration = Math.ceil((expirationDate - now) / (1000 * 60 * 60 * 24));
-    if (daysUntilExpiration <= 7) {
-      return { 
-        status: 'expiring', 
-        label: `Expires in ${daysUntilExpiration} day${daysUntilExpiration === 1 ? '' : 's'}`, 
-        color: 'warning' 
-      };
+    const daysUntilExpiration = getDaysUntilExpiration(expirationDate, now);
+    
+    if (isExpiringSoon(daysUntilExpiration)) {
+      const dayText = daysUntilExpiration === 1 ? 'day' : 'days';
+      const label = `Expires in ${daysUntilExpiration} ${dayText}`;
+      return createExpirationStatus('expiring', label, 'warning');
     }
     
     return null;

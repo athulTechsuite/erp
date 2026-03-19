@@ -59,11 +59,11 @@ This system provides a unified platform for managing employee data, leave reques
 - **Validation:** Joi schema validation
 
 ### Frontend
-- **Framework:** React.js with TypeScript
-- **State Management:** Redux Toolkit
-- **UI Components:** Material-UI (MUI)
-- **Styling:** CSS Modules with SCSS
-- **Forms:** React Hook Form
+- **Framework:** React.js with JavaScript
+- **State Management:** React Context API
+- **UI Components:** Custom components with modern CSS
+- **Styling:** CSS3 with Flexbox/Grid
+- **Forms:** Controlled components with validation
 
 ### DevOps & Tools
 - **Containerization:** Docker

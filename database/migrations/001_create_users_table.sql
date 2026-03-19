@@ -58,7 +58,10 @@ CREATE TRIGGER update_users_updated_at
 -- To create the default admin user, run the application setup command:
 -- npm run setup:admin
 -- 
--- Or use the following template in your application code:
+-- Or use the following template in your application code with explicit error handling:
+-- First check if admin user exists:
+-- SELECT COUNT(*) FROM users WHERE username = 'admin';
+-- If count is 0, then create:
 -- INSERT INTO users (username, email, password_hash, first_name, last_name, role, hire_date, job_title, department)
--- VALUES ('admin', 'admin@company.com', $ADMIN_PASSWORD_HASH, 'System', 'Administrator', 'admin', CURRENT_DATE, 'System Administrator', 'IT')
--- ON CONFLICT (username) DO NOTHING;
+-- VALUES ('admin', 'admin@company.com', $ADMIN_PASSWORD_HASH, 'System', 'Administrator', 'admin', CURRENT_DATE, 'System Administrator', 'IT');
+-- This approach ensures proper error handling and prevents masking of data integrity issues.

@@ -51,26 +51,14 @@ CREATE TRIGGER update_users_updated_at
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
 
--- Insert default admin user (password should be changed on first login)
--- Default password: 'admin123' (hashed with bcrypt)
-INSERT INTO users (
-    username, 
-    email, 
-    password_hash, 
-    first_name, 
-    last_name, 
-    role, 
-    hire_date,
-    job_title,
-    department
-) VALUES (
-    'admin',
-    'admin@company.com',
-    '$2b$10$rQZ8qHwF5qF5qF5qF5qF5uF5qF5qF5qF5qF5qF5qF5qF5qF5qF5qF',
-    'System',
-    'Administrator',
-    'admin',
-    CURRENT_DATE,
-    'System Administrator',
-    'IT'
-) ON CONFLICT (username) DO NOTHING;
+-- NOTE: Default admin user creation has been moved to application setup
+-- For security reasons, the admin user should be created programmatically
+-- with a dynamically generated password hash from environment variables.
+-- 
+-- To create the default admin user, run the application setup command:
+-- npm run setup:admin
+-- 
+-- Or use the following template in your application code:
+-- INSERT INTO users (username, email, password_hash, first_name, last_name, role, hire_date, job_title, department)
+-- VALUES ('admin', 'admin@company.com', $ADMIN_PASSWORD_HASH, 'System', 'Administrator', 'admin', CURRENT_DATE, 'System Administrator', 'IT')
+-- ON CONFLICT (username) DO NOTHING;

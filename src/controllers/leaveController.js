@@ -1,6 +1,7 @@
 const Leave = require('../models/Leave');
 const Employee = require('../models/Employee');
 const { validationResult } = require('express-validator');
+const mongoose = require('mongoose');
 
 // Get all leave requests (admin/manager view)
 const getAllLeaveRequests = async (req, res) => {
@@ -115,6 +116,8 @@ const getLeaveRequest = async (req, res) => {
 
 // Create leave request
 const createLeaveRequest = async (req, res) => {
+  const session = await mongoose.startSession();
+  
   try {
     // Check validation errors
     const errors = validationResult(req);
@@ -138,76 +141,74 @@ const createLeaveRequest = async (req, res) => {
       daysRequested = 0.5;
     }
 
-    // Get employee to check leave balance
-    const employee = await Employee.findById(req.user.id);
-    if (!employee) {
-      return res.status(404).json({
-        success: false,
-        message: 'Employee not found'
-      });
-    }
+    await session.withTransaction(async () => {
+      // Get employee to check leave balance with session lock
+      const employee = await Employee.findById(req.user.id).session(session);
+      if (!employee) {
+        throw new Error('Employee not found');
+      }
 
-    // Check if employee has sufficient balance
-    const currentBalance = employee.leaveBalance[leaveType] || 0;
-    if (currentBalance < daysRequested) {
-      return res.status(400).json({
-        success: false,
-        message: `Insufficient ${leaveType} balance. Available: ${currentBalance} days, Requested: ${daysRequested} days`
-      });
-    }
+      // Check if employee has sufficient balance
+      const currentBalance = employee.leaveBalance[leaveType] || 0;
+      if (currentBalance < daysRequested) {
+        throw new Error(`Insufficient ${leaveType} balance. Available: ${currentBalance} days, Requested: ${daysRequested} days`);
+      }
 
-    // Check for overlapping leave requests
-    const overlappingLeave = await Leave.findOne({
-      employee: req.user.id,
-      status: { $in: ['pending', 'approved'] },
-      $or: [
-        {
-          startDate: { $lte: end },
-          endDate: { $gte: start }
-        }
-      ]
+      // Check for overlapping leave requests
+      const overlappingLeave = await Leave.findOne({
+        employee: req.user.id,
+        status: { $in: ['pending', 'approved'] },
+        $or: [
+          {
+            startDate: { $lte: end },
+            endDate: { $gte: start }
+          }
+        ]
+      }).session(session);
+
+      if (overlappingLeave) {
+        throw new Error('You already have a leave request for this period');
+      }
+
+      // Create leave request within transaction
+      const leave = new Leave({
+        employee: req.user.id,
+        leaveType,
+        startDate: start,
+        endDate: end,
+        daysRequested,
+        reason,
+        halfDay: halfDay || false,
+        status: 'pending'
+      });
+
+      await leave.save({ session });
+
+      // Populate employee data for response
+      await leave.populate('employee', 'firstName lastName email department');
+
+      res.status(201).json({
+        success: true,
+        message: 'Leave request submitted successfully',
+        data: leave
+      });
     });
 
-    if (overlappingLeave) {
-      return res.status(400).json({
-        success: false,
-        message: 'You already have a leave request for this period'
-      });
-    }
-
-    // Create leave request
-    const leave = new Leave({
-      employee: req.user.id,
-      leaveType,
-      startDate: start,
-      endDate: end,
-      daysRequested,
-      reason,
-      halfDay: halfDay || false,
-      status: 'pending'
-    });
-
-    await leave.save();
-
-    // Populate employee data for response
-    await leave.populate('employee', 'firstName lastName email department');
-
-    res.status(201).json({
-      success: true,
-      message: 'Leave request submitted successfully',
-      data: leave
-    });
   } catch (error) {
     console.error('Create leave request error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to create leave request'
+      message: error.message || 'Failed to create leave request'
     });
+  } finally {
+    await session.endSession();
   }
 };
 
 // Update leave request (employee can only update pending requests)
 const updateLeaveRequest = async (req, res) => {
+  const session = await mongoose.startSession();
+  
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -221,93 +222,83 @@ const updateLeaveRequest = async (req, res) => {
     const { id } = req.params;
     const { leaveType, startDate, endDate, reason, halfDay } = req.body;
 
-    const leave = await Leave.findById(id);
-    if (!leave) {
-      return res.status(404).json({
-        success: false,
-        message: 'Leave request not found'
+    await session.withTransaction(async () => {
+      const leave = await Leave.findById(id).session(session);
+      if (!leave) {
+        throw new Error('Leave request not found');
+      }
+
+      // Check if user can update this leave request
+      if (leave.employee.toString() !== req.user.id) {
+        throw new Error('Access denied');
+      }
+
+      // Only allow updates to pending requests
+      if (leave.status !== 'pending') {
+        throw new Error('Can only update pending leave requests');
+      }
+
+      // Calculate new days requested
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const timeDiff = end.getTime() - start.getTime();
+      let daysRequested = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1;
+      
+      if (halfDay) {
+        daysRequested = 0.5;
+      }
+
+      // Get employee to check leave balance
+      const employee = await Employee.findById(req.user.id).session(session);
+      const currentBalance = employee.leaveBalance[leaveType] || 0;
+      if (currentBalance < daysRequested) {
+        throw new Error(`Insufficient ${leaveType} balance. Available: ${currentBalance} days, Requested: ${daysRequested} days`);
+      }
+
+      // Check for overlapping leave requests (excluding current request)
+      const overlappingLeave = await Leave.findOne({
+        _id: { $ne: id },
+        employee: req.user.id,
+        status: { $in: ['pending', 'approved'] },
+        $or: [
+          {
+            startDate: { $lte: end },
+            endDate: { $gte: start }
+          }
+        ]
+      }).session(session);
+
+      if (overlappingLeave) {
+        throw new Error('You already have a leave request for this period');
+      }
+
+      // Update leave request
+      leave.leaveType = leaveType;
+      leave.startDate = start;
+      leave.endDate = end;
+      leave.daysRequested = daysRequested;
+      leave.reason = reason;
+      leave.halfDay = halfDay || false;
+      leave.updatedAt = new Date();
+
+      await leave.save({ session });
+      await leave.populate('employee', 'firstName lastName email department');
+
+      res.json({
+        success: true,
+        message: 'Leave request updated successfully',
+        data: leave
       });
-    }
-
-    // Check if user can update this leave request
-    if (leave.employee.toString() !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied'
-      });
-    }
-
-    // Only allow updates to pending requests
-    if (leave.status !== 'pending') {
-      return res.status(400).json({
-        success: false,
-        message: 'Can only update pending leave requests'
-      });
-    }
-
-    // Calculate new days requested
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const timeDiff = end.getTime() - start.getTime();
-    let daysRequested = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1;
-    
-    if (halfDay) {
-      daysRequested = 0.5;
-    }
-
-    // Get employee to check leave balance
-    const employee = await Employee.findById(req.user.id);
-    const currentBalance = employee.leaveBalance[leaveType] || 0;
-    if (currentBalance < daysRequested) {
-      return res.status(400).json({
-        success: false,
-        message: `Insufficient ${leaveType} balance. Available: ${currentBalance} days, Requested: ${daysRequested} days`
-      });
-    }
-
-    // Check for overlapping leave requests (excluding current request)
-    const overlappingLeave = await Leave.findOne({
-      _id: { $ne: id },
-      employee: req.user.id,
-      status: { $in: ['pending', 'approved'] },
-      $or: [
-        {
-          startDate: { $lte: end },
-          endDate: { $gte: start }
-        }
-      ]
     });
 
-    if (overlappingLeave) {
-      return res.status(400).json({
-        success: false,
-        message: 'You already have a leave request for this period'
-      });
-    }
-
-    // Update leave request
-    leave.leaveType = leaveType;
-    leave.startDate = start;
-    leave.endDate = end;
-    leave.daysRequested = daysRequested;
-    leave.reason = reason;
-    leave.halfDay = halfDay || false;
-    leave.updatedAt = new Date();
-
-    await leave.save();
-    await leave.populate('employee', 'firstName lastName email department');
-
-    res.json({
-      success: true,
-      message: 'Leave request updated successfully',
-      data: leave
-    });
   } catch (error) {
     console.error('Update leave request error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to update leave request'
+      message: error.message || 'Failed to update leave request'
     });
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -357,6 +348,8 @@ const deleteLeaveRequest = async (req, res) => {
 
 // Approve/reject leave request (admin/manager only)
 const updateLeaveStatus = async (req, res) => {
+  const session = await mongoose.startSession();
+  
   try {
     const { id } = req.params;
     const { status, rejectionReason } = req.body;
@@ -368,54 +361,61 @@ const updateLeaveStatus = async (req, res) => {
       });
     }
 
-    const leave = await Leave.findById(id).populate('employee');
-    if (!leave) {
-      return res.status(404).json({
-        success: false,
-        message: 'Leave request not found'
-      });
-    }
-
-    if (leave.status !== 'pending') {
-      return res.status(400).json({
-        success: false,
-        message: 'Leave request has already been processed'
-      });
-    }
-
-    // Update leave request status
-    leave.status = status;
-    leave.approvedBy = req.user.id;
-    leave.approvedAt = new Date();
-    
-    if (status === 'rejected' && rejectionReason) {
-      leave.rejectionReason = rejectionReason;
-    }
-
-    // If approved, deduct from employee leave balance
-    if (status === 'approved') {
-      const employee = leave.employee;
-      if (!employee.leaveBalance[leave.leaveType]) {
-        employee.leaveBalance[leave.leaveType] = 0;
+    await session.withTransaction(async () => {
+      const leave = await Leave.findById(id).populate('employee').session(session);
+      if (!leave) {
+        throw new Error('Leave request not found');
       }
-      employee.leaveBalance[leave.leaveType] -= leave.daysRequested;
-      await employee.save();
-    }
 
-    await leave.save();
-    await leave.populate('approvedBy', 'firstName lastName');
+      if (leave.status !== 'pending') {
+        throw new Error('Leave request has already been processed');
+      }
 
-    res.json({
-      success: true,
-      message: `Leave request ${status} successfully`,
-      data: leave
+      // If approving, check balance again and deduct atomically
+      if (status === 'approved') {
+        const employee = await Employee.findById(leave.employee._id).session(session);
+        
+        // Re-check balance to prevent race conditions
+        const currentBalance = employee.leaveBalance[leave.leaveType] || 0;
+        if (currentBalance < leave.daysRequested) {
+          throw new Error(`Insufficient ${leave.leaveType} balance. Available: ${currentBalance} days, Requested: ${leave.daysRequested} days`);
+        }
+
+        // Atomically update balance
+        if (!employee.leaveBalance[leave.leaveType]) {
+          employee.leaveBalance[leave.leaveType] = 0;
+        }
+        employee.leaveBalance[leave.leaveType] -= leave.daysRequested;
+        await employee.save({ session });
+      }
+
+      // Update leave request status
+      leave.status = status;
+      leave.approvedBy = req.user.id;
+      leave.approvedAt = new Date();
+      
+      if (status === 'rejected' && rejectionReason) {
+        leave.rejectionReason = rejectionReason;
+      }
+
+      await leave.save({ session });
+      await leave.populate('approvedBy', 'firstName lastName');
+
+      res.json({
+        success: true,
+        message: `Leave request ${status} successfully`,
+        data: leave
+      });
     });
+
   } catch (error) {
     console.error('Update leave status error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to update leave request status'
+      message: error.message || 'Failed to update leave request status'
     });
+  } finally {
+    await session.endSession();
   }
 };
 

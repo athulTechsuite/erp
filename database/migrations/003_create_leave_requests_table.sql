@@ -1,22 +1,53 @@
 -- Migration: Create leave_requests table
 -- This table handles employee leave requests with approval workflow and tracking
 
+-- Create ENUM types for PostgreSQL compatibility
+CREATE TYPE leave_type_enum AS ENUM (
+    'annual', 
+    'sick', 
+    'personal', 
+    'maternity', 
+    'paternity', 
+    'emergency', 
+    'unpaid', 
+    'bereavement', 
+    'study', 
+    'sabbatical', 
+    'jury_duty', 
+    'military',
+    'compassionate',
+    'public_holiday',
+    'religious'
+);
+
+CREATE TYPE leave_status_enum AS ENUM (
+    'pending', 
+    'approved', 
+    'rejected', 
+    'cancelled'
+);
+
+CREATE TYPE half_day_period_enum AS ENUM (
+    'morning', 
+    'afternoon'
+);
+
 CREATE TABLE leave_requests (
     id BIGSERIAL PRIMARY KEY,
     employee_id BIGINT NOT NULL,
-    leave_type VARCHAR(20) NOT NULL,
+    leave_type leave_type_enum NOT NULL,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     total_days DECIMAL(4,2) NOT NULL,
     reason TEXT,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    status leave_status_enum NOT NULL DEFAULT 'pending',
     requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     approved_by BIGINT NULL,
     approved_at TIMESTAMP NULL,
     rejection_reason TEXT NULL,
     emergency_contact VARCHAR(255) NULL,
     is_half_day BOOLEAN DEFAULT FALSE,
-    half_day_period VARCHAR(20) NULL,
+    half_day_period half_day_period_enum NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
@@ -28,18 +59,6 @@ CREATE TABLE leave_requests (
     CONSTRAINT fk_leave_requests_approved_by 
         FOREIGN KEY (approved_by) REFERENCES employees(id) 
         ON DELETE SET NULL ON UPDATE CASCADE,
-    
-    -- Check constraints for leave_type validation
-    CONSTRAINT chk_leave_requests_leave_type 
-        CHECK (leave_type IN ('annual', 'sick', 'personal', 'maternity', 'paternity', 'emergency', 'unpaid', 'bereavement', 'study', 'sabbatical', 'jury_duty', 'military')),
-    
-    -- Check constraints for status validation
-    CONSTRAINT chk_leave_requests_status 
-        CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
-    
-    -- Check constraints for half_day_period validation
-    CONSTRAINT chk_leave_requests_half_day_period_values 
-        CHECK (half_day_period IN ('morning', 'afternoon') OR half_day_period IS NULL),
     
     -- Check constraints for dates
     CONSTRAINT chk_leave_requests_dates 
@@ -83,7 +102,7 @@ CREATE INDEX idx_leave_requests_status_dates ON leave_requests(status, start_dat
 
 -- Add comments for documentation
 COMMENT ON TABLE leave_requests IS 'Stores employee leave requests with approval workflow and tracking information';
-COMMENT ON COLUMN leave_requests.leave_type IS 'Type of leave: annual, sick, personal, maternity, paternity, emergency, unpaid, bereavement, study, sabbatical, jury_duty, military';
+COMMENT ON COLUMN leave_requests.leave_type IS 'Type of leave: annual, sick, personal, maternity, paternity, emergency, unpaid, bereavement, study, sabbatical, jury_duty, military, compassionate, public_holiday, religious';
 COMMENT ON COLUMN leave_requests.status IS 'Request status: pending, approved, rejected, cancelled';
 COMMENT ON COLUMN leave_requests.half_day_period IS 'For half-day leaves: morning or afternoon';
 

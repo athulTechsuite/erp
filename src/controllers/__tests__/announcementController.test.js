@@ -202,6 +202,204 @@ describe('Announcement Controller', () => {
     });
   });
 
+  describe('TC-006: Only admins can create/edit/delete announcements', () => {
+    describe('Happy path - Admin access granted', () => {
+      let adminApp;
+      
+      beforeEach(() => {
+        adminApp = express();
+        adminApp.use(express.json());
+        adminApp.use((req, res, next) => {
+          req.user = { id: 1, role: 'admin' };
+          next();
+        });
+        adminApp.use((req, res, next) => {
+          if (req.user.role === 'admin') {
+            next();
+          } else {
+            return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+          }
+        });
+        adminApp.post('/api/announcements', announcementController.createAnnouncement);
+        adminApp.put('/api/announcements/:id', announcementController.updateAnnouncement);
+        adminApp.delete('/api/announcements/:id', announcementController.deleteAnnouncement);
+      });
+
+      it('should allow admin to create announcements', async () => {
+        const mockAnnouncement = {
+          id: 1,
+          title: 'Admin Announcement',
+          content: 'Admin created this',
+          createdBy: 1,
+          save: jest.fn().mockResolvedValue(true)
+        };
+
+        Announcement.mockImplementation(() => mockAnnouncement);
+
+        const response = await request(adminApp)
+          .post('/api/announcements')
+          .send({
+            title: 'Admin Announcement',
+            content: 'Admin created this'
+          });
+
+        expect(response.status).toBe(201);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.title).toBe('Admin Announcement');
+      });
+
+      it('should allow admin to edit announcements', async () => {
+        const mockAnnouncement = {
+          id: 1,
+          title: 'Updated by Admin',
+          content: 'Admin updated this',
+          save: jest.fn().mockResolvedValue(true)
+        };
+
+        Announcement.findByPk = jest.fn().mockResolvedValue(mockAnnouncement);
+
+        const response = await request(adminApp)
+          .put('/api/announcements/1')
+          .send({
+            title: 'Updated by Admin',
+            content: 'Admin updated this'
+          });
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.title).toBe('Updated by Admin');
+      });
+
+      it('should allow admin to delete announcements', async () => {
+        const mockAnnouncement = {
+          id: 1,
+          title: 'To be deleted by admin',
+          destroy: jest.fn().mockResolvedValue(true)
+        };
+
+        Announcement.findByPk = jest.fn().mockResolvedValue(mockAnnouncement);
+
+        const response = await request(adminApp)
+          .delete('/api/announcements/1');
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.message).toBe('Announcement deleted successfully');
+      });
+    });
+
+    describe('Error path - Non-admin access denied', () => {
+      let nonAdminApp;
+      
+      beforeEach(() => {
+        nonAdminApp = express();
+        nonAdminApp.use(express.json());
+        nonAdminApp.use((req, res, next) => {
+          req.user = { id: 2, role: 'employee' };
+          next();
+        });
+        nonAdminApp.use((req, res, next) => {
+          if (req.user.role !== 'admin') {
+            return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+          }
+          next();
+        });
+        nonAdminApp.post('/api/announcements', announcementController.createAnnouncement);
+        nonAdminApp.put('/api/announcements/:id', announcementController.updateAnnouncement);
+        nonAdminApp.delete('/api/announcements/:id', announcementController.deleteAnnouncement);
+      });
+
+      it('should deny employee from creating announcements', async () => {
+        const response = await request(nonAdminApp)
+          .post('/api/announcements')
+          .send({
+            title: 'Employee Attempt',
+            content: 'This should fail'
+          });
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toBe('Access denied. Admin role required.');
+      });
+
+      it('should deny employee from editing announcements', async () => {
+        const response = await request(nonAdminApp)
+          .put('/api/announcements/1')
+          .send({
+            title: 'Employee Edit Attempt',
+            content: 'This should fail'
+          });
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toBe('Access denied. Admin role required.');
+      });
+
+      it('should deny employee from deleting announcements', async () => {
+        const response = await request(nonAdminApp)
+          .delete('/api/announcements/1');
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toBe('Access denied. Admin role required.');
+      });
+
+      it('should deny manager from creating announcements', async () => {
+        const managerApp = express();
+        managerApp.use(express.json());
+        managerApp.use((req, res, next) => {
+          req.user = { id: 3, role: 'manager' };
+          next();
+        });
+        managerApp.use((req, res, next) => {
+          if (req.user.role !== 'admin') {
+            return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+          }
+          next();
+        });
+        managerApp.post('/api/announcements', announcementController.createAnnouncement);
+
+        const response = await request(managerApp)
+          .post('/api/announcements')
+          .send({
+            title: 'Manager Attempt',
+            content: 'This should also fail'
+          });
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toBe('Access denied. Admin role required.');
+      });
+
+      it('should deny user without role from creating announcements', async () => {
+        const noRoleApp = express();
+        noRoleApp.use(express.json());
+        noRoleApp.use((req, res, next) => {
+          req.user = { id: 4 }; // No role property
+          next();
+        });
+        noRoleApp.use((req, res, next) => {
+          if (req.user.role !== 'admin') {
+            return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+          }
+          next();
+        });
+        noRoleApp.post('/api/announcements', announcementController.createAnnouncement);
+
+        const response = await request(noRoleApp)
+          .post('/api/announcements')
+          .send({
+            title: 'No Role Attempt',
+            content: 'This should fail too'
+          });
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toBe('Access denied. Admin role required.');
+      });
+    });
+  });
+
   describe('TC-008: Employees can view all current announcements', () => {
     it('should return all active announcements for employees', async () => {
       const mockAnnouncements = [

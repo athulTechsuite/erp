@@ -26,6 +26,7 @@ const AnnouncementWidget = () => {
   const [success, setSuccess] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
     content: '',
@@ -58,6 +59,10 @@ const AnnouncementWidget = () => {
       return;
     }
 
+    setSubmitting(true);
+    setError('');
+    setSuccess('');
+
     try {
       const payload = {
         title: formData.title.trim(),
@@ -65,19 +70,34 @@ const AnnouncementWidget = () => {
         expirationDate: formData.expirationDate || null
       };
 
+      let result;
       if (editingId) {
-        await announcementService.update(editingId, payload);
-        setSuccess('Announcement updated successfully');
+        result = await announcementService.update(editingId, payload);
+        if (result && result.success !== false) {
+          setSuccess('Announcement updated successfully');
+        } else {
+          throw new Error('Update failed');
+        }
       } else {
-        await announcementService.create(payload);
-        setSuccess('Announcement created successfully');
+        result = await announcementService.create(payload);
+        if (result && result.success !== false) {
+          setSuccess('Announcement created successfully');
+        } else {
+          throw new Error('Create failed');
+        }
       }
 
       resetForm();
-      fetchAnnouncements();
+      await fetchAnnouncements();
     } catch (err) {
-      setError(editingId ? 'Failed to update announcement' : 'Failed to create announcement');
+      const errorMessage = err.response?.data?.message || err.message;
+      setError(editingId ? 
+        `Failed to update announcement: ${errorMessage}` : 
+        `Failed to create announcement: ${errorMessage}`
+      );
       console.error('Error saving announcement:', err);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -112,6 +132,7 @@ const AnnouncementWidget = () => {
     setShowCreateForm(false);
     setEditingId(null);
     setError('');
+    setSubmitting(false);
   };
 
   const formatDate = (dateString) => {
@@ -145,6 +166,7 @@ const AnnouncementWidget = () => {
             size="sm"
             variant={showCreateForm ? "outline" : "default"}
             className="flex items-center gap-1"
+            disabled={submitting}
           >
             {showCreateForm ? (
               <>
@@ -201,6 +223,7 @@ const AnnouncementWidget = () => {
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                 className="w-full"
                 maxLength={100}
+                disabled={submitting}
               />
               
               <Textarea
@@ -209,6 +232,7 @@ const AnnouncementWidget = () => {
                 onChange={(e) => setFormData({ ...formData, content: e.target.value })}
                 className="w-full min-h-[80px] resize-none"
                 maxLength={500}
+                disabled={submitting}
               />
               
               <div className="flex flex-col sm:flex-row gap-2">
@@ -219,18 +243,34 @@ const AnnouncementWidget = () => {
                   onChange={(e) => setFormData({ ...formData, expirationDate: e.target.value })}
                   min={new Date().toISOString().split('T')[0]}
                   className="flex-1"
+                  disabled={submitting}
                 />
                 
                 <div className="flex gap-2">
-                  <Button type="submit" size="sm" className="flex items-center gap-1">
-                    <Save className="h-4 w-4" />
-                    {editingId ? 'Update' : 'Create'}
+                  <Button 
+                    type="submit" 
+                    size="sm" 
+                    className="flex items-center gap-1"
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <>
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                        {editingId ? 'Updating...' : 'Creating...'}
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4" />
+                        {editingId ? 'Update' : 'Create'}
+                      </>
+                    )}
                   </Button>
                   <Button 
                     type="button" 
                     variant="outline" 
                     size="sm" 
                     onClick={resetForm}
+                    disabled={submitting}
                   >
                     Cancel
                   </Button>
@@ -273,6 +313,7 @@ const AnnouncementWidget = () => {
                         size="sm"
                         onClick={() => handleEdit(announcement)}
                         className="h-6 w-6 p-0"
+                        disabled={submitting}
                       >
                         <Edit className="h-3 w-3" />
                       </Button>
@@ -281,6 +322,7 @@ const AnnouncementWidget = () => {
                         size="sm"
                         onClick={() => handleDelete(announcement.id)}
                         className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                        disabled={submitting}
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>

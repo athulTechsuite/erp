@@ -95,8 +95,9 @@ describe('AnnouncementsPage', () => {
     mockAnnouncementsService.delete = jest.fn();
   });
 
-  describe('TC-005: Dedicated announcements section displays all announcements in chronological order', () => {
-    it('should display all announcements in chronological order (newest first)', async () => {
+  describe('TC-005: Announcements display in chronological order', () => {
+    // Happy path: Successfully display announcements in chronological order
+    it('TC-005 - should display all announcements in chronological order (newest first) - Happy Path', async () => {
       mockUseAuth.mockReturnValue({ 
         user: mockEmployeeUser,
         hasPermission: () => false 
@@ -117,12 +118,212 @@ describe('AnnouncementsPage', () => {
         expect(screen.getByText('System Maintenance')).toBeInTheDocument();
       });
 
-      // Verify chronological order (newest first)
-      const announcementTitles = screen.getAllByRole('heading').map(h => h.textContent);
-      const expectedOrder = ['Company Policy Update', 'Holiday Schedule', 'System Maintenance'];
-      expect(announcementTitles).toEqual(expect.arrayContaining(expectedOrder));
+      // Verify chronological order (newest first) by checking the DOM order
+      const announcementElements = screen.getAllByTestId('announcement-card');
+      expect(announcementElements).toHaveLength(3);
+      
+      // Check the order by looking at the titles within each card
+      expect(announcementElements[0]).toHaveTextContent('Company Policy Update'); // 2024-01-15 (newest)
+      expect(announcementElements[1]).toHaveTextContent('Holiday Schedule'); // 2024-01-14
+      expect(announcementElements[2]).toHaveTextContent('System Maintenance'); // 2024-01-13 (oldest)
     });
 
+    // Happy path: Verify chronological ordering with mixed timestamps
+    it('TC-005 - should maintain chronological order with mixed timestamps - Happy Path', async () => {
+      const mixedTimestampAnnouncements = [
+        {
+          id: 4,
+          title: 'Oldest Announcement',
+          content: 'This is the oldest',
+          createdAt: '2024-01-10T08:00:00Z',
+          expirationDate: null,
+          createdBy: { firstName: 'Admin', lastName: 'User' }
+        },
+        {
+          id: 5,
+          title: 'Newest Announcement',
+          content: 'This is the newest',
+          createdAt: '2024-01-20T16:30:00Z',
+          expirationDate: null,
+          createdBy: { firstName: 'Admin', lastName: 'User' }
+        },
+        {
+          id: 6,
+          title: 'Middle Announcement',
+          content: 'This is in the middle',
+          createdAt: '2024-01-15T12:15:00Z',
+          expirationDate: null,
+          createdBy: { firstName: 'Admin', lastName: 'User' }
+        }
+      ];
+
+      mockUseAuth.mockReturnValue({ 
+        user: mockEmployeeUser,
+        hasPermission: () => false 
+      });
+      mockAnnouncementsService.getAll.mockResolvedValue(mixedTimestampAnnouncements);
+
+      await act(async () => {
+        render(
+          <TestWrapper>
+            <AnnouncementsPage />
+          </TestWrapper>
+        );
+      });
+
+      await waitFor(() => {
+        const announcementElements = screen.getAllByTestId('announcement-card');
+        expect(announcementElements[0]).toHaveTextContent('Newest Announcement'); // 2024-01-20 (newest)
+        expect(announcementElements[1]).toHaveTextContent('Middle Announcement'); // 2024-01-15
+        expect(announcementElements[2]).toHaveTextContent('Oldest Announcement'); // 2024-01-10 (oldest)
+      });
+    });
+
+    // Happy path: Single announcement display
+    it('TC-005 - should display single announcement correctly - Happy Path', async () => {
+      const singleAnnouncement = [mockAnnouncements[0]];
+      
+      mockUseAuth.mockReturnValue({ 
+        user: mockEmployeeUser,
+        hasPermission: () => false 
+      });
+      mockAnnouncementsService.getAll.mockResolvedValue(singleAnnouncement);
+
+      await act(async () => {
+        render(
+          <TestWrapper>
+            <AnnouncementsPage />
+          </TestWrapper>
+        );
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Company Policy Update')).toBeInTheDocument();
+        const announcementElements = screen.getAllByTestId('announcement-card');
+        expect(announcementElements).toHaveLength(1);
+      });
+    });
+
+    // Error path: Failed to load announcements
+    it('TC-005 - should handle error when failing to load announcements - Error Path', async () => {
+      mockUseAuth.mockReturnValue({ 
+        user: mockEmployeeUser,
+        hasPermission: () => false 
+      });
+      mockAnnouncementsService.getAll.mockRejectedValue(new Error('Network error loading announcements'));
+
+      await act(async () => {
+        render(
+          <TestWrapper>
+            <AnnouncementsPage />
+          </TestWrapper>
+        );
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/failed to load announcements/i)).toBeInTheDocument();
+        expect(screen.queryByTestId('announcement-card')).not.toBeInTheDocument();
+      });
+    });
+
+    // Error path: Empty announcements array
+    it('TC-005 - should handle empty announcements list gracefully - Error Path', async () => {
+      mockUseAuth.mockReturnValue({ 
+        user: mockEmployeeUser,
+        hasPermission: () => false 
+      });
+      mockAnnouncementsService.getAll.mockResolvedValue([]);
+
+      await act(async () => {
+        render(
+          <TestWrapper>
+            <AnnouncementsPage />
+          </TestWrapper>
+        );
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/no announcements available/i)).toBeInTheDocument();
+        expect(screen.queryByTestId('announcement-card')).not.toBeInTheDocument();
+      });
+    });
+
+    // Error path: Malformed announcement data
+    it('TC-005 - should handle malformed announcement data gracefully - Error Path', async () => {
+      const malformedAnnouncements = [
+        {
+          id: 1,
+          title: 'Valid Announcement',
+          content: 'This has valid data',
+          createdAt: '2024-01-15T10:00:00Z',
+          createdBy: { firstName: 'Admin', lastName: 'User' }
+        },
+        {
+          id: 2,
+          title: 'Invalid Date Announcement',
+          content: 'This has invalid date',
+          createdAt: 'invalid-date',
+          createdBy: { firstName: 'Admin', lastName: 'User' }
+        },
+        {
+          // Missing required fields
+          id: 3,
+          createdAt: '2024-01-14T10:00:00Z'
+        }
+      ];
+
+      mockUseAuth.mockReturnValue({ 
+        user: mockEmployeeUser,
+        hasPermission: () => false 
+      });
+      mockAnnouncementsService.getAll.mockResolvedValue(malformedAnnouncements);
+
+      await act(async () => {
+        render(
+          <TestWrapper>
+            <AnnouncementsPage />
+          </TestWrapper>
+        );
+      });
+
+      await waitFor(() => {
+        // Should still render valid announcements and handle invalid ones gracefully
+        expect(screen.getByText('Valid Announcement')).toBeInTheDocument();
+        // Should show error message for malformed data
+        expect(screen.getByText(/some announcements could not be displayed/i)).toBeInTheDocument();
+      });
+    });
+
+    // Error path: Service timeout
+    it('TC-005 - should handle service timeout gracefully - Error Path', async () => {
+      mockUseAuth.mockReturnValue({ 
+        user: mockEmployeeUser,
+        hasPermission: () => false 
+      });
+      
+      // Mock timeout error
+      mockAnnouncementsService.getAll.mockImplementation(() => 
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Request timeout')), 100)
+        )
+      );
+
+      await act(async () => {
+        render(
+          <TestWrapper>
+            <AnnouncementsPage />
+          </TestWrapper>
+        );
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/failed to load announcements/i)).toBeInTheDocument();
+        expect(screen.queryByTestId('announcement-card')).not.toBeInTheDocument();
+      }, { timeout: 2000 });
+    });
+  });
+
+  describe('TC-005: Dedicated announcements section displays all announcements in chronological order', () => {
     it('should display announcement content with proper formatting', async () => {
       mockUseAuth.mockReturnValue({ 
         user: mockEmployeeUser,

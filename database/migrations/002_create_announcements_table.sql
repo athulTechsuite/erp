@@ -12,7 +12,7 @@ CREATE TABLE announcements (
     expires_at TIMESTAMP NULL,
     is_archived BOOLEAN DEFAULT FALSE,
     is_active BOOLEAN DEFAULT TRUE,
-    priority INTEGER DEFAULT 1, -- 1=low, 2=medium, 3=high
+    priority INTEGER DEFAULT 1 CHECK (priority IN (1, 2, 3)), -- 1=low, 2=medium, 3=high
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -53,17 +53,12 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Insert initial announcement for testing (optional - can be removed in production)
-INSERT INTO announcements (title, content, created_by, priority) VALUES (
-    'Welcome to the Company Announcements System',
-    'This is the new announcements system where administrators can share important company-wide information. Stay tuned for updates!',
-    1, -- Assumes admin user with ID 1 exists
-    2
-);
+-- Note: Initial test announcement removed to avoid hard-coded user ID dependency
+-- Add test data through application seeding or after confirming admin user exists
 
 -- Add comment to table for documentation
 COMMENT ON TABLE announcements IS 'Stores company-wide announcements with automatic archiving functionality';
-COMMENT ON COLUMN announcements.priority IS '1=low, 2=medium, 3=high priority level';
+COMMENT ON COLUMN announcements.priority IS '1=low, 2=medium, 3=high priority level (validated by CHECK constraint)';
 COMMENT ON COLUMN announcements.expires_at IS 'Null means announcement never expires';
 COMMENT ON COLUMN announcements.is_archived IS 'Automatically set to true when expires_at is reached';
 COMMENT ON COLUMN announcements.is_active IS 'Manual toggle for admin to activate/deactivate announcements';

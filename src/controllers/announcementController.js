@@ -133,6 +133,14 @@ const getAnnouncementById = async (req, res) => {
  */
 const createAnnouncement = async (req, res) => {
   try {
+    // Check if user is admin
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin privileges required.'
+      });
+    }
+
     // Check validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -193,6 +201,14 @@ const createAnnouncement = async (req, res) => {
  */
 const updateAnnouncement = async (req, res) => {
   try {
+    // Check if user is admin
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin privileges required.'
+      });
+    }
+
     // Check validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -270,6 +286,14 @@ const updateAnnouncement = async (req, res) => {
  */
 const deleteAnnouncement = async (req, res) => {
   try {
+    // Check if user is admin
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin privileges required.'
+      });
+    }
+
     const { id } = req.params;
     
     const announcement = await Announcement.findById(id);
@@ -301,6 +325,14 @@ const deleteAnnouncement = async (req, res) => {
  */
 const archiveExpiredAnnouncements = async (req, res) => {
   try {
+    // Check if user is admin
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin privileges required.'
+      });
+    }
+
     const now = new Date();
     
     const result = await Announcement.updateMany(
@@ -339,6 +371,14 @@ const archiveExpiredAnnouncements = async (req, res) => {
  */
 const getAnnouncementStats = async (req, res) => {
   try {
+    // Check if user is admin
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin privileges required.'
+      });
+    }
+
     const now = new Date();
     
     const stats = await Promise.all([

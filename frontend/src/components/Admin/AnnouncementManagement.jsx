@@ -30,6 +30,7 @@ import {
   FormControlLabel,
   Tooltip,
   LinearProgress,
+  FormHelperText,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -46,13 +47,16 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
+import DOMPurify from 'dompurify';
 import { announcementService } from '../../services/announcementService';
 import { fileService } from '../../services/fileService';
 import { notificationService } from '../../services/notificationService';
 
+// Synchronized with backend database CHECK constraint values
 const PRIORITY_LEVELS = {
-  normal: { label: 'Normal', color: 'default' },
-  important: { label: 'Important', color: 'warning' },
+  low: { label: 'Low', color: 'default' },
+  normal: { label: 'Normal', color: 'primary' },
+  high: { label: 'High', color: 'warning' },
   urgent: { label: 'Urgent', color: 'error' },
 };
 
@@ -61,6 +65,27 @@ const STATUS_TYPES = {
   scheduled: { label: 'Scheduled', color: 'info' },
   published: { label: 'Published', color: 'success' },
   archived: { label: 'Archived', color: 'secondary' },
+};
+
+// File upload constraints
+const FILE_UPLOAD_CONSTRAINTS = {
+  MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
+  MAX_TOTAL_SIZE: 50 * 1024 * 1024, // 50MB
+  ALLOWED_TYPES: [
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'text/plain',
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp'
+  ],
+  ALLOWED_EXTENSIONS: ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.jpg', '.jpeg', '.png', '.gif', '.webp']
 };
 
 const AnnouncementManagement = () => {
@@ -75,6 +100,8 @@ const AnnouncementManagement = () => {
   const [selectedAnalytics, setSelectedAnalytics] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
+  const [submitting, setSubmitting] = useState(false);
+  const [validationErrors, setValidationErrors] = useState({});
 
   const [formData, setFormData] = useState({
     title: '',
@@ -83,6 +110,7 @@ const AnnouncementManagement = () => {
     publishDate: new Date(),
     isScheduled: false,
     attachments: [],
+    version: null, // For optimistic locking
   });
 
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -108,6 +136,62 @@ const AnnouncementManagement = () => {
     }
   };
 
+  const validateForm = () => {
+    const errors = {};
+
+    // Title validation
+    if (!formData.title.trim()) {
+      errors.title = 'Title is required';
+    } else if (formData.title.trim().length < 3) {
+      errors.title = 'Title must be at least 3 characters';
+    } else if (formData.title.trim().length > 200) {
+      errors.title = 'Title must be less than 200 characters';
+    }
+
+    // Content validation
+    const strippedContent = formData.content.replace(/<[^>]*>/g, '').trim();
+    if (!strippedContent) {
+      errors.content = 'Content is required';
+    } else if (strippedContent.length < 10) {
+      errors.content = 'Content must be at least 10 characters';
+    }
+
+    // Priority validation
+    if (!Object.keys(PRIORITY_LEVELS).includes(formData.priority)) {
+      errors.priority = 'Invalid priority level';
+    }
+
+    // Date validation for scheduled announcements
+    if (formData.isScheduled) {
+      if (!formData.publishDate) {
+        errors.publishDate = 'Publish date is required for scheduled announcements';
+      } else if (new Date(formData.publishDate) <= new Date()) {
+        errors.publishDate = 'Publish date must be in the future';
+      }
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const validateFile = (file) => {
+    // Check file size
+    if (file.size > FILE_UPLOAD_CONSTRAINTS.MAX_FILE_SIZE) {
+      return `File "${file.name}" exceeds maximum size of ${FILE_UPLOAD_CONSTRAINTS.MAX_FILE_SIZE / 1024 / 1024}MB`;
+    }
+
+    // Check file type
+    if (!FILE_UPLOAD_CONSTRAINTS.ALLOWED_TYPES.includes(file.type)) {
+      // Also check by extension as fallback
+      const extension = '.' + file.name.split('.').pop().toLowerCase();
+      if (!FILE_UPLOAD_CONSTRAINTS.ALLOWED_EXTENSIONS.includes(extension)) {
+        return `File type not allowed for "${file.name}". Allowed types: ${FILE_UPLOAD_CONSTRAINTS.ALLOWED_EXTENSIONS.join(', ')}`;
+      }
+    }
+
+    return null;
+  };
+
   const handleCreateAnnouncement = () => {
     setEditingAnnouncement(null);
     setFormData({
@@ -117,7 +201,9 @@ const AnnouncementManagement = () => {
       publishDate: new Date(),
       isScheduled: false,
       attachments: [],
+      version: null,
     });
+    setValidationErrors({});
     setDialogOpen(true);
   };
 
@@ -130,19 +216,43 @@ const AnnouncementManagement = () => {
       publishDate: new Date(announcement.publishDate),
       isScheduled: announcement.status === 'scheduled',
       attachments: announcement.attachments || [],
+      version: announcement.version, // For optimistic locking
     });
+    setValidationErrors({});
     setDialogOpen(true);
   };
 
   const handleSubmit = async () => {
+    if (!validateForm()) {
+      showSnackbar('Please fix validation errors', 'error');
+      return;
+    }
+
+    if (submitting) {
+      return; // Prevent double submission
+    }
+
     try {
+      setSubmitting(true);
+      
+      // Sanitize content before submission
+      const sanitizedContent = DOMPurify.sanitize(formData.content, {
+        ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'h1', 'h2', 'h3', 'ul', 'ol', 'li', 'blockquote', 'a'],
+        ALLOWED_ATTR: ['href', 'target'],
+        ALLOW_DATA_ATTR: false
+      });
+
       const announcementData = {
         ...formData,
+        title: formData.title.trim(),
+        content: sanitizedContent,
         publishDate: formData.isScheduled ? formData.publishDate : new Date(),
         status: formData.isScheduled ? 'scheduled' : 'published',
       };
 
       if (editingAnnouncement) {
+        // Include version for optimistic locking
+        announcementData.version = formData.version;
         await announcementService.updateAnnouncement(editingAnnouncement.id, announcementData);
         showSnackbar('Announcement updated successfully');
       } else {
@@ -159,7 +269,13 @@ const AnnouncementManagement = () => {
       setDialogOpen(false);
       fetchAnnouncements();
     } catch (error) {
-      showSnackbar('Error saving announcement', 'error');
+      if (error.code === 'VERSION_MISMATCH') {
+        showSnackbar('Announcement was modified by another user. Please refresh and try again.', 'error');
+      } else {
+        showSnackbar('Error saving announcement', 'error');
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -178,6 +294,29 @@ const AnnouncementManagement = () => {
   const handleFileUpload = async (event) => {
     const files = Array.from(event.target.files);
     if (files.length === 0) return;
+
+    // Validate files before upload
+    const validationErrors = [];
+    let totalSize = formData.attachments.reduce((sum, file) => sum + (file.size || 0), 0);
+    
+    for (const file of files) {
+      const error = validateFile(file);
+      if (error) {
+        validationErrors.push(error);
+        continue;
+      }
+      totalSize += file.size;
+    }
+
+    // Check total size limit
+    if (totalSize > FILE_UPLOAD_CONSTRAINTS.MAX_TOTAL_SIZE) {
+      validationErrors.push(`Total file size exceeds limit of ${FILE_UPLOAD_CONSTRAINTS.MAX_TOTAL_SIZE / 1024 / 1024}MB`);
+    }
+
+    if (validationErrors.length > 0) {
+      showSnackbar(validationErrors.join('. '), 'error');
+      return;
+    }
 
     setIsUploading(true);
     setUploadProgress(0);
@@ -248,6 +387,17 @@ const AnnouncementManagement = () => {
 
   const getReadPercentage = (readCount, totalEmployees) => {
     return totalEmployees > 0 ? Math.round((readCount / totalEmployees) * 100) : 0;
+  };
+
+  // Sanitize content for display
+  const sanitizeContentForDisplay = (content) => {
+    return DOMPurify.sanitize(content, {
+      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'h1', 'h2', 'h3', 'ul', 'ol', 'li', 'blockquote', 'a'],
+      ALLOWED_ATTR: ['href', 'target'],
+      ALLOW_DATA_ATTR: false,
+      ADD_ATTR: ['target'],
+      ADD_TAGS: [],
+    });
   };
 
   const quillModules = {
@@ -458,11 +608,14 @@ const AnnouncementManagement = () => {
                   value={formData.title}
                   onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
                   margin="normal"
+                  error={!!validationErrors.title}
+                  helperText={validationErrors.title}
+                  inputProps={{ maxLength: 200 }}
                 />
               </Grid>
               
               <Grid item xs={12} sm={6}>
-                <FormControl fullWidth margin="normal">
+                <FormControl fullWidth margin="normal" error={!!validationErrors.priority}>
                   <InputLabel>Priority</InputLabel>
                   <Select
                     value={formData.priority}
@@ -473,6 +626,9 @@ const AnnouncementManagement = () => {
                       <MenuItem key={key} value={key}>{label}</MenuItem>
                     ))}
                   </Select>
+                  {validationErrors.priority && (
+                    <FormHelperText>{validationErrors.priority}</FormHelperText>
+                  )}
                 </FormControl>
               </Grid>
 
@@ -495,7 +651,15 @@ const AnnouncementManagement = () => {
                     label="Publish Date"
                     value={formData.publishDate}
                     onChange={(date) => setFormData(prev => ({ ...prev, publishDate: date }))}
-                    renderInput={(params) => <TextField {...params} fullWidth margin="normal" />}
+                    renderInput={(params) => (
+                      <TextField 
+                        {...params} 
+                        fullWidth 
+                        margin="normal" 
+                        error={!!validationErrors.publishDate}
+                        helperText={validationErrors.publishDate}
+                      />
+                    )}
                     minDateTime={new Date()}
                   />
                 </Grid>
@@ -512,11 +676,21 @@ const AnnouncementManagement = () => {
                   modules={quillModules}
                   style={{ minHeight: 200 }}
                 />
+                {validationErrors.content && (
+                  <Typography variant="caption" color="error" sx={{ mt: 1, display: 'block' }}>
+                    {validationErrors.content}
+                  </Typography>
+                )}
               </Grid>
 
               <Grid item xs={12}>
                 <Typography variant="subtitle2" gutterBottom sx={{ mt: 2 }}>
                   Attachments
+                </Typography>
+                <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mb: 1 }}>
+                  Max file size: {FILE_UPLOAD_CONSTRAINTS.MAX_FILE_SIZE / 1024 / 1024}MB per file, 
+                  {FILE_UPLOAD_CONSTRAINTS.MAX_TOTAL_SIZE / 1024 / 1024}MB total. 
+                  Allowed types: {FILE_UPLOAD_CONSTRAINTS.ALLOWED_EXTENSIONS.join(', ')}
                 </Typography>
                 <Button
                   variant="outlined"
@@ -530,6 +704,7 @@ const AnnouncementManagement = () => {
                     type="file"
                     hidden
                     multiple
+                    accept={FILE_UPLOAD_CONSTRAINTS.ALLOWED_EXTENSIONS.join(',')}
                     onChange={handleFileUpload}
                   />
                 </Button>
@@ -550,13 +725,15 @@ const AnnouncementManagement = () => {
             </Grid>
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={() => setDialogOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
             <Button 
               onClick={handleSubmit}
               variant="contained"
-              disabled={!formData.title.trim() || !formData.content.trim()}
+              disabled={submitting || !formData.title.trim() || !formData.content.trim()}
             >
-              {editingAnnouncement ? 'Update' : 'Create'}
+              {submitting ? 'Saving...' : (editingAnnouncement ? 'Update' : 'Create')}
             </Button>
           </DialogActions>
         </Dialog>
@@ -590,6 +767,12 @@ const AnnouncementManagement = () => {
               <Grid container spacing={2} sx={{ pt: 1 }}>
                 <Grid item xs={12}>
                   <Typography variant="h6">{selectedAnalytics.title}</Typography>
+                  <Box 
+                    dangerouslySetInnerHTML={{ 
+                      __html: sanitizeContentForDisplay(selectedAnalytics.content) 
+                    }} 
+                    sx={{ mt: 1, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}
+                  />
                 </Grid>
                 <Grid item xs={6}>
                   <Typography variant="body2" color="textSecondary">Total Employees</Typography>

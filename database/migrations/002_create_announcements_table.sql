@@ -66,23 +66,105 @@ CREATE TRIGGER update_announcements_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_announcements_updated_at();
 
--- Create function to automatically archive old announcements
+-- Create function to automatically archive old announcements with safety checks
 CREATE OR REPLACE FUNCTION archive_old_announcements()
 RETURNS INTEGER AS $$
 DECLARE
     archived_count INTEGER;
+    cutoff_date TIMESTAMP WITH TIME ZONE;
 BEGIN
+    -- Calculate cutoff date (6 months ago)
+    cutoff_date := CURRENT_TIMESTAMP - INTERVAL '6 months';
+    
+    -- Safety check: ensure cutoff date is reasonable (not in the future or too far in the past)
+    IF cutoff_date > CURRENT_TIMESTAMP OR cutoff_date < CURRENT_TIMESTAMP - INTERVAL '5 years' THEN
+        RAISE EXCEPTION 'Invalid cutoff date calculated: %', cutoff_date;
+    END IF;
+    
+    -- Additional safety check: verify we have valid records to update
+    IF NOT EXISTS (
+        SELECT 1 FROM announcements 
+        WHERE published_at < cutoff_date
+        AND is_published = TRUE
+        AND is_archived = FALSE
+        AND published_at IS NOT NULL
+    ) THEN
+        RETURN 0;
+    END IF;
+    
+    -- Perform the archive operation with strict WHERE clause validation
     UPDATE announcements 
     SET is_archived = TRUE, 
         archived_at = CURRENT_TIMESTAMP
-    WHERE published_at < (CURRENT_TIMESTAMP - INTERVAL '6 months')
+    WHERE published_at IS NOT NULL
+    AND published_at < cutoff_date
     AND is_published = TRUE
-    AND is_archived = FALSE;
+    AND is_archived = FALSE
+    AND id IS NOT NULL;
     
     GET DIAGNOSTICS archived_count = ROW_COUNT;
+    
+    -- Log the operation
+    INSERT INTO system_logs (action, details, created_at) 
+    VALUES (
+        'auto_archive_announcements', 
+        format('Archived %s announcements older than %s', archived_count, cutoff_date::date),
+        CURRENT_TIMESTAMP
+    );
+    
     RETURN archived_count;
+EXCEPTION
+    WHEN OTHERS THEN
+        -- Log error and re-raise
+        INSERT INTO system_logs (action, details, created_at) 
+        VALUES (
+            'auto_archive_announcements_error', 
+            format('Error archiving announcements: %s', SQLERRM),
+            CURRENT_TIMESTAMP
+        );
+        RAISE;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Create automated job scheduler for archiving old announcements
+-- This uses PostgreSQL's pg_cron extension for scheduling
+-- Note: pg_cron extension must be installed and configured
+
+-- Schedule the archive job to run daily at 2 AM
+-- This requires pg_cron extension: CREATE EXTENSION IF NOT EXISTS pg_cron;
+DO $$
+BEGIN
+    -- Check if pg_cron is available
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+        -- Schedule daily archiving job at 2:00 AM
+        PERFORM cron.schedule('archive-old-announcements', '0 2 * * *', 'SELECT archive_old_announcements();');
+        
+        -- Log the scheduler setup
+        INSERT INTO system_logs (action, details, created_at) 
+        VALUES (
+            'setup_archive_scheduler', 
+            'Automated archiving job scheduled for daily execution at 2:00 AM',
+            CURRENT_TIMESTAMP
+        );
+    ELSE
+        -- Log warning if pg_cron is not available
+        INSERT INTO system_logs (action, details, created_at) 
+        VALUES (
+            'setup_archive_scheduler_warning', 
+            'pg_cron extension not available. Manual scheduling required for announcement archiving.',
+            CURRENT_TIMESTAMP
+        );
+    END IF;
+EXCEPTION
+    WHEN OTHERS THEN
+        -- Fallback: create a note for manual setup if automated scheduling fails
+        INSERT INTO system_logs (action, details, created_at) 
+        VALUES (
+            'setup_archive_scheduler_fallback', 
+            'Automated scheduler setup failed. Please configure cron job manually: 0 2 * * * psql -d database -c "SELECT archive_old_announcements();"',
+            CURRENT_TIMESTAMP
+        );
+END $$;
 
 -- Create view for announcement statistics
 CREATE VIEW announcement_stats AS
@@ -102,12 +184,8 @@ LEFT JOIN announcement_reads ar ON a.id = ar.announcement_id
 WHERE a.is_published = TRUE AND a.is_archived = FALSE
 GROUP BY a.id, a.title, a.priority, a.published_at;
 
--- Insert sample data for testing (optional - remove in production)
--- INSERT INTO announcements (title, content, priority, created_by, is_published, published_at) VALUES
--- ('Welcome to the Company Portal', 'We are excited to announce the launch of our new company portal. This platform will serve as your central hub for all company communications and updates.', 'important', 1, TRUE, CURRENT_TIMESTAMP),
--- ('Office Holiday Schedule', 'Please note the upcoming holiday schedule for the office. The office will be closed on the following dates...', 'normal', 1, TRUE, CURRENT_TIMESTAMP - INTERVAL '1 day');
-
 COMMENT ON TABLE announcements IS 'Stores company-wide announcements with scheduling and priority support';
 COMMENT ON TABLE announcement_attachments IS 'Stores file attachments associated with announcements';
 COMMENT ON TABLE announcement_reads IS 'Tracks which users have read which announcements';
 COMMENT ON VIEW announcement_stats IS 'Provides read statistics for published announcements';
+COMMENT ON FUNCTION archive_old_announcements() IS 'Archives announcements older than 6 months with safety checks and logging';

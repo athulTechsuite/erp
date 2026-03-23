@@ -84,8 +84,467 @@ describe('AnnouncementsList Component', () => {
     jest.clearAllMocks();
   });
 
-  // TC-006: Employees can view all published announcements in chronological order
-  describe('TC-006: Display Published Announcements', () => {
+  // TC-001: Admin can create announcements
+  describe('TC-001: Admin Create Announcements', () => {
+    const adminState = {
+      auth: {
+        user: {
+          id: 1,
+          email: 'admin@company.com',
+          role: 'admin'
+        },
+        isAuthenticated: true
+      }
+    };
+
+    it('should allow admin to create new announcement - happy path', async () => {
+      announcementService.createAnnouncement = jest.fn().mockResolvedValue({
+        id: 1,
+        title: 'New Announcement',
+        content: 'Announcement content',
+        priority: 'normal',
+        publishedAt: null,
+        scheduledFor: null
+      });
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const titleInput = screen.getByTestId('announcement-title-input');
+      const contentInput = screen.getByTestId('announcement-content-input');
+      const submitButton = screen.getByTestId('submit-announcement');
+
+      fireEvent.change(titleInput, { target: { value: 'New Announcement' } });
+      fireEvent.change(contentInput, { target: { value: 'Announcement content' } });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(announcementService.createAnnouncement).toHaveBeenCalledWith({
+          title: 'New Announcement',
+          content: 'Announcement content',
+          priority: 'normal'
+        });
+      });
+
+      expect(screen.getByText('Announcement created successfully')).toBeInTheDocument();
+    });
+
+    it('should handle create announcement errors - error path', async () => {
+      announcementService.createAnnouncement = jest.fn().mockRejectedValue(
+        new Error('Failed to create announcement')
+      );
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const titleInput = screen.getByTestId('announcement-title-input');
+      const submitButton = screen.getByTestId('submit-announcement');
+
+      fireEvent.change(titleInput, { target: { value: 'Test' } });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Failed to create announcement')).toBeInTheDocument();
+      });
+    });
+
+    it('should validate required fields on create', async () => {
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const submitButton = screen.getByTestId('submit-announcement');
+      fireEvent.click(submitButton);
+
+      expect(screen.getByText('Title is required')).toBeInTheDocument();
+      expect(screen.getByText('Content is required')).toBeInTheDocument();
+    });
+  });
+
+  // TC-002: Admin can edit announcements
+  describe('TC-002: Admin Edit Announcements', () => {
+    const adminState = {
+      auth: {
+        user: {
+          id: 1,
+          email: 'admin@company.com',
+          role: 'admin'
+        },
+        isAuthenticated: true
+      },
+      announcements: {
+        items: [{
+          id: 1,
+          title: 'Original Title',
+          content: 'Original content',
+          priority: 'normal',
+          publishedAt: '2024-01-15T10:00:00Z',
+          author: { name: 'Admin' },
+          attachments: []
+        }],
+        loading: false
+      }
+    };
+
+    it('should allow admin to edit existing announcement - happy path', async () => {
+      announcementService.updateAnnouncement = jest.fn().mockResolvedValue({
+        id: 1,
+        title: 'Updated Title',
+        content: 'Updated content',
+        priority: 'important'
+      });
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const editButton = screen.getByTestId('edit-announcement-1');
+      fireEvent.click(editButton);
+
+      const titleInput = screen.getByTestId('edit-title-input-1');
+      const contentInput = screen.getByTestId('edit-content-input-1');
+      const prioritySelect = screen.getByTestId('edit-priority-select-1');
+      const saveButton = screen.getByTestId('save-announcement-1');
+
+      fireEvent.change(titleInput, { target: { value: 'Updated Title' } });
+      fireEvent.change(contentInput, { target: { value: 'Updated content' } });
+      fireEvent.change(prioritySelect, { target: { value: 'important' } });
+      fireEvent.click(saveButton);
+
+      await waitFor(() => {
+        expect(announcementService.updateAnnouncement).toHaveBeenCalledWith(1, {
+          title: 'Updated Title',
+          content: 'Updated content',
+          priority: 'important'
+        });
+      });
+
+      expect(screen.getByText('Announcement updated successfully')).toBeInTheDocument();
+    });
+
+    it('should handle edit announcement errors - error path', async () => {
+      announcementService.updateAnnouncement = jest.fn().mockRejectedValue(
+        new Error('Failed to update announcement')
+      );
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const editButton = screen.getByTestId('edit-announcement-1');
+      fireEvent.click(editButton);
+
+      const saveButton = screen.getByTestId('save-announcement-1');
+      fireEvent.click(saveButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Failed to update announcement')).toBeInTheDocument();
+      });
+    });
+
+    it('should cancel edit mode when cancel button is clicked', () => {
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const editButton = screen.getByTestId('edit-announcement-1');
+      fireEvent.click(editButton);
+
+      expect(screen.getByTestId('edit-title-input-1')).toBeInTheDocument();
+
+      const cancelButton = screen.getByTestId('cancel-edit-1');
+      fireEvent.click(cancelButton);
+
+      expect(screen.queryByTestId('edit-title-input-1')).not.toBeInTheDocument();
+    });
+  });
+
+  // TC-003: Admin can delete announcements
+  describe('TC-003: Admin Delete Announcements', () => {
+    const adminState = {
+      auth: {
+        user: {
+          id: 1,
+          email: 'admin@company.com',
+          role: 'admin'
+        },
+        isAuthenticated: true
+      },
+      announcements: {
+        items: [{
+          id: 1,
+          title: 'Announcement to Delete',
+          content: 'Content to delete',
+          priority: 'normal',
+          publishedAt: '2024-01-15T10:00:00Z',
+          author: { name: 'Admin' },
+          attachments: []
+        }],
+        loading: false
+      }
+    };
+
+    it('should allow admin to delete announcement with confirmation - happy path', async () => {
+      announcementService.deleteAnnouncement = jest.fn().mockResolvedValue({ success: true });
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const deleteButton = screen.getByTestId('delete-announcement-1');
+      fireEvent.click(deleteButton);
+
+      // Confirm deletion in modal
+      const confirmButton = screen.getByTestId('confirm-delete-announcement');
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(announcementService.deleteAnnouncement).toHaveBeenCalledWith(1);
+      });
+
+      expect(screen.getByText('Announcement deleted successfully')).toBeInTheDocument();
+    });
+
+    it('should handle delete announcement errors - error path', async () => {
+      announcementService.deleteAnnouncement = jest.fn().mockRejectedValue(
+        new Error('Failed to delete announcement')
+      );
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const deleteButton = screen.getByTestId('delete-announcement-1');
+      fireEvent.click(deleteButton);
+
+      const confirmButton = screen.getByTestId('confirm-delete-announcement');
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Failed to delete announcement')).toBeInTheDocument();
+      });
+    });
+
+    it('should cancel deletion when cancel button is clicked', () => {
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const deleteButton = screen.getByTestId('delete-announcement-1');
+      fireEvent.click(deleteButton);
+
+      const cancelButton = screen.getByTestId('cancel-delete-announcement');
+      fireEvent.click(cancelButton);
+
+      expect(screen.queryByTestId('confirm-delete-announcement')).not.toBeInTheDocument();
+    });
+  });
+
+  // TC-004: Priority levels work correctly
+  describe('TC-004: Priority Levels Functionality', () => {
+    it('should display and sort announcements by priority correctly - happy path', () => {
+      const priorityAnnouncements = [
+        {
+          id: 1,
+          title: 'Normal Priority',
+          content: 'Normal content',
+          priority: 'normal',
+          publishedAt: '2024-01-15T10:00:00Z',
+          author: { name: 'Admin' },
+          attachments: []
+        },
+        {
+          id: 2,
+          title: 'Urgent Alert',
+          content: 'Urgent content',
+          priority: 'urgent',
+          publishedAt: '2024-01-14T10:00:00Z',
+          author: { name: 'Admin' },
+          attachments: []
+        },
+        {
+          id: 3,
+          title: 'Important Notice',
+          content: 'Important content',
+          priority: 'important',
+          publishedAt: '2024-01-13T10:00:00Z',
+          author: { name: 'Admin' },
+          attachments: []
+        }
+      ];
+
+      renderWithProviders(<AnnouncementsList />, {
+        announcements: {
+          items: priorityAnnouncements,
+          loading: false
+        }
+      });
+
+      // Check priority chips are displayed with correct colors
+      const urgentChip = screen.getByText('Urgent');
+      const importantChip = screen.getByText('Important');
+      const normalChip = screen.getByText('Normal');
+
+      expect(urgentChip).toBeInTheDocument();
+      expect(importantChip).toBeInTheDocument();
+      expect(normalChip).toBeInTheDocument();
+
+      // Check priority-specific styling
+      expect(urgentChip.closest('.MuiChip-root')).toHaveClass('MuiChip-colorError');
+      expect(importantChip.closest('.MuiChip-root')).toHaveClass('MuiChip-colorWarning');
+      expect(normalChip.closest('.MuiChip-root')).toHaveClass('MuiChip-colorDefault');
+    });
+
+    it('should handle invalid priority values gracefully - error path', () => {
+      const invalidPriorityAnnouncement = [{
+        id: 1,
+        title: 'Invalid Priority',
+        content: 'Content with invalid priority',
+        priority: 'invalid_priority',
+        publishedAt: '2024-01-15T10:00:00Z',
+        author: { name: 'Admin' },
+        attachments: []
+      }];
+
+      renderWithProviders(<AnnouncementsList />, {
+        announcements: {
+          items: invalidPriorityAnnouncement,
+          loading: false
+        }
+      });
+
+      // Should default to normal priority display
+      expect(screen.getByText('Normal')).toBeInTheDocument();
+    });
+
+    it('should filter announcements by priority level', async () => {
+      renderWithProviders(<AnnouncementsList />);
+
+      const priorityFilter = screen.getByTestId('priority-filter');
+      fireEvent.change(priorityFilter, { target: { value: 'urgent' } });
+
+      await waitFor(() => {
+        expect(announcementService.getAnnouncements).toHaveBeenCalledWith(
+          expect.objectContaining({
+            priority: 'urgent'
+          })
+        );
+      });
+    });
+  });
+
+  // TC-005: Scheduling functionality works
+  describe('TC-005: Announcement Scheduling Functionality', () => {
+    const adminState = {
+      auth: {
+        user: {
+          id: 1,
+          email: 'admin@company.com',
+          role: 'admin'
+        },
+        isAuthenticated: true
+      }
+    };
+
+    it('should allow admin to schedule announcements for future publication - happy path', async () => {
+      announcementService.createAnnouncement = jest.fn().mockResolvedValue({
+        id: 1,
+        title: 'Scheduled Announcement',
+        content: 'Future content',
+        priority: 'normal',
+        publishedAt: null,
+        scheduledFor: '2024-02-15T10:00:00Z'
+      });
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const titleInput = screen.getByTestId('announcement-title-input');
+      const contentInput = screen.getByTestId('announcement-content-input');
+      const scheduleCheckbox = screen.getByTestId('schedule-announcement-checkbox');
+      const scheduleDateInput = screen.getByTestId('schedule-date-input');
+      const submitButton = screen.getByTestId('submit-announcement');
+
+      fireEvent.change(titleInput, { target: { value: 'Scheduled Announcement' } });
+      fireEvent.change(contentInput, { target: { value: 'Future content' } });
+      fireEvent.click(scheduleCheckbox);
+      fireEvent.change(scheduleDateInput, { target: { value: '2024-02-15T10:00' } });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(announcementService.createAnnouncement).toHaveBeenCalledWith({
+          title: 'Scheduled Announcement',
+          content: 'Future content',
+          priority: 'normal',
+          scheduledFor: '2024-02-15T10:00:00.000Z'
+        });
+      });
+
+      expect(screen.getByText('Announcement scheduled successfully')).toBeInTheDocument();
+    });
+
+    it('should handle scheduling errors - error path', async () => {
+      announcementService.createAnnouncement = jest.fn().mockRejectedValue(
+        new Error('Failed to schedule announcement')
+      );
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const titleInput = screen.getByTestId('announcement-title-input');
+      const scheduleCheckbox = screen.getByTestId('schedule-announcement-checkbox');
+      const scheduleDateInput = screen.getByTestId('schedule-date-input');
+      const submitButton = screen.getByTestId('submit-announcement');
+
+      fireEvent.change(titleInput, { target: { value: 'Failed Schedule' } });
+      fireEvent.click(scheduleCheckbox);
+      fireEvent.change(scheduleDateInput, { target: { value: '2024-02-15T10:00' } });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Failed to schedule announcement')).toBeInTheDocument();
+      });
+    });
+
+    it('should validate scheduled date is in the future', async () => {
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const scheduleCheckbox = screen.getByTestId('schedule-announcement-checkbox');
+      const scheduleDateInput = screen.getByTestId('schedule-date-input');
+
+      fireEvent.click(scheduleCheckbox);
+      // Set date in the past
+      fireEvent.change(scheduleDateInput, { target: { value: '2020-01-01T10:00' } });
+
+      expect(screen.getByText('Scheduled date must be in the future')).toBeInTheDocument();
+    });
+
+    it('should display scheduled announcements with appropriate indicators', () => {
+      const scheduledAnnouncement = [{
+        id: 1,
+        title: 'Future Announcement',
+        content: 'Scheduled content',
+        priority: 'normal',
+        publishedAt: null,
+        scheduledFor: '2024-02-15T10:00:00Z',
+        author: { name: 'Admin' },
+        attachments: []
+      }];
+
+      renderWithProviders(<AnnouncementsList />, {
+        announcements: {
+          items: scheduledAnnouncement,
+          loading: false
+        }
+      });
+
+      expect(screen.getByTestId('scheduled-indicator-1')).toBeInTheDocument();
+      expect(screen.getByText('Scheduled for Feb 15, 2024 10:00 AM')).toBeInTheDocument();
+    });
+  });
+
+  // TC-006: Employee view shows announcements (enhanced coverage)
+  describe('TC-006: Employee View Shows Announcements', () => {
     const mockAnnouncements = [
       {
         id: 1,
@@ -115,7 +574,7 @@ describe('AnnouncementsList Component', () => {
       }
     ];
 
-    it('should display announcements in chronological order (latest first)', () => {
+    it('should display announcements in chronological order (latest first) - happy path', () => {
       renderWithProviders(<AnnouncementsList />, {
         announcements: {
           items: mockAnnouncements,
@@ -139,7 +598,7 @@ describe('AnnouncementsList Component', () => {
       expect(screen.getByTestId('loading-spinner')).toBeInTheDocument();
     });
 
-    it('should display error message when fetch fails', () => {
+    it('should display error message when fetch fails - error path', () => {
       renderWithProviders(<AnnouncementsList />, {
         announcements: {
           items: [],
@@ -161,6 +620,41 @@ describe('AnnouncementsList Component', () => {
       });
 
       expect(screen.getByText('No announcements available')).toBeInTheDocument();
+    });
+
+    it('should handle network errors gracefully - error path', () => {
+      renderWithProviders(<AnnouncementsList />, {
+        announcements: {
+          items: [],
+          loading: false,
+          error: 'Network error occurred'
+        }
+      });
+
+      expect(screen.getByText('Network error occurred')).toBeInTheDocument();
+      expect(screen.getByTestId('retry-fetch-button')).toBeInTheDocument();
+    });
+
+    it('should refresh announcements when retry button is clicked', async () => {
+      announcementService.getAnnouncements = jest.fn().mockResolvedValue({
+        announcements: mockAnnouncements,
+        pagination: { page: 1, totalPages: 1, totalItems: 2 }
+      });
+
+      renderWithProviders(<AnnouncementsList />, {
+        announcements: {
+          items: [],
+          loading: false,
+          error: 'Network error occurred'
+        }
+      });
+
+      const retryButton = screen.getByTestId('retry-fetch-button');
+      fireEvent.click(retryButton);
+
+      await waitFor(() => {
+        expect(announcementService.getAnnouncements).toHaveBeenCalled();
+      });
     });
   });
 

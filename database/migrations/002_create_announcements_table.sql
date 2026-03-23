@@ -6,6 +6,11 @@ CREATE TABLE announcements (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
+    -- Priority enum values: 'normal', 'important', 'urgent'
+    -- To extend priority values in the future:
+    -- 1. Add new constraint: ALTER TABLE announcements DROP CONSTRAINT announcements_priority_check;
+    -- 2. Add new values: ALTER TABLE announcements ADD CONSTRAINT announcements_priority_check CHECK (priority IN ('normal', 'important', 'urgent', 'new_value'));
+    -- 3. Update application logic to handle new priority levels
     priority VARCHAR(20) NOT NULL DEFAULT 'normal' CHECK (priority IN ('normal', 'important', 'urgent')),
     created_by INTEGER NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -66,15 +71,20 @@ CREATE TRIGGER update_announcements_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_announcements_updated_at();
 
--- Create function to automatically archive old announcements with safety checks
-CREATE OR REPLACE FUNCTION archive_old_announcements()
+-- Create function to automatically archive old announcements with parameterized inputs
+CREATE OR REPLACE FUNCTION archive_old_announcements(archive_interval_months INTEGER DEFAULT 6)
 RETURNS INTEGER AS $$
 DECLARE
     archived_count INTEGER;
     cutoff_date TIMESTAMP WITH TIME ZONE;
 BEGIN
-    -- Calculate cutoff date (6 months ago)
-    cutoff_date := CURRENT_TIMESTAMP - INTERVAL '6 months';
+    -- Validate input parameters
+    IF archive_interval_months IS NULL OR archive_interval_months <= 0 OR archive_interval_months > 60 THEN
+        RAISE EXCEPTION 'Invalid archive interval: % months. Must be between 1 and 60.', archive_interval_months;
+    END IF;
+    
+    -- Calculate cutoff date using parameterized interval
+    cutoff_date := CURRENT_TIMESTAMP - (archive_interval_months || ' months')::INTERVAL;
     
     -- Safety check: ensure cutoff date is reasonable (not in the future or too far in the past)
     IF cutoff_date > CURRENT_TIMESTAMP OR cutoff_date < CURRENT_TIMESTAMP - INTERVAL '5 years' THEN
@@ -92,7 +102,7 @@ BEGIN
         RETURN 0;
     END IF;
     
-    -- Perform the archive operation with strict WHERE clause validation
+    -- Perform the archive operation with parameterized query
     UPDATE announcements 
     SET is_archived = TRUE, 
         archived_at = CURRENT_TIMESTAMP
@@ -108,7 +118,7 @@ BEGIN
     INSERT INTO system_logs (action, details, created_at) 
     VALUES (
         'auto_archive_announcements', 
-        format('Archived %s announcements older than %s', archived_count, cutoff_date::date),
+        'Archived ' || archived_count || ' announcements older than ' || cutoff_date::date,
         CURRENT_TIMESTAMP
     );
     
@@ -119,7 +129,7 @@ EXCEPTION
         INSERT INTO system_logs (action, details, created_at) 
         VALUES (
             'auto_archive_announcements_error', 
-            format('Error archiving announcements: %s', SQLERRM),
+            'Error archiving announcements: ' || SQLERRM,
             CURRENT_TIMESTAMP
         );
         RAISE;
@@ -188,4 +198,4 @@ COMMENT ON TABLE announcements IS 'Stores company-wide announcements with schedu
 COMMENT ON TABLE announcement_attachments IS 'Stores file attachments associated with announcements';
 COMMENT ON TABLE announcement_reads IS 'Tracks which users have read which announcements';
 COMMENT ON VIEW announcement_stats IS 'Provides read statistics for published announcements';
-COMMENT ON FUNCTION archive_old_announcements() IS 'Archives announcements older than 6 months with safety checks and logging';
+COMMENT ON FUNCTION archive_old_announcements(INTEGER) IS 'Archives announcements older than specified months (default 6) with input validation and parameterized queries';

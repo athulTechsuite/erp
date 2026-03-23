@@ -84,15 +84,42 @@ class AnnouncementService {
   }
 
   /**
-   * Mark announcement as read for current user
+   * Mark announcement as read for current user with race condition protection
    * @param {string} id - Announcement ID
+   * @param {number} maxRetries - Maximum number of retries (default: 3)
    * @returns {Promise<void>}
    */
-  async markAsRead(id) {
-    try {
-      await axios.post(`${API_BASE_URL}/${id}/mark-read`);
-    } catch (error) {
-      throw this.handleError(error);
+  async markAsRead(id, maxRetries = 3) {
+    let retryCount = 0;
+    
+    while (retryCount <= maxRetries) {
+      try {
+        await axios.post(`${API_BASE_URL}/${id}/mark-read`);
+        return; // Success, exit the retry loop
+      } catch (error) {
+        // Check if the error is due to duplicate entry (race condition)
+        const isDuplicateError = error.response?.status === 409 || 
+                                error.response?.data?.code === 'DUPLICATE_READ_ENTRY' ||
+                                (error.response?.data?.message && 
+                                 error.response.data.message.toLowerCase().includes('duplicate'));
+        
+        if (isDuplicateError) {
+          // If it's a duplicate entry error, the announcement is already marked as read
+          // This is actually the desired state, so we can return successfully
+          return;
+        }
+        
+        // If it's not the last retry and the error might be transient, retry
+        if (retryCount < maxRetries && (error.response?.status >= 500 || !error.response)) {
+          retryCount++;
+          // Exponential backoff: wait 100ms, 200ms, 400ms between retries
+          await this.delay(100 * Math.pow(2, retryCount - 1));
+          continue;
+        }
+        
+        // If we've exhausted retries or it's a non-retryable error, throw
+        throw this.handleError(error);
+      }
     }
   }
 
@@ -226,6 +253,15 @@ class AnnouncementService {
     } catch (error) {
       throw this.handleError(error);
     }
+  }
+
+  /**
+   * Delay execution for a specified number of milliseconds
+   * @param {number} ms - Milliseconds to delay
+   * @returns {Promise<void>}
+   */
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**

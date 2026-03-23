@@ -100,6 +100,33 @@ class EmailService {
     });
   }
 
+  // Announcement notifications
+  async sendUrgentAnnouncementNotification(announcement, employees) {
+    const subject = `🚨 URGENT: ${announcement.title}`;
+    const html = this.generateUrgentAnnouncementTemplate(announcement);
+    
+    const employeeEmails = employees.map(employee => employee.email);
+    
+    return await this.sendEmail({
+      to: employeeEmails,
+      subject,
+      html
+    });
+  }
+
+  async sendAnnouncementNotification(announcement, employees) {
+    const subject = `📢 Company Announcement: ${announcement.title}`;
+    const html = this.generateAnnouncementTemplate(announcement);
+    
+    const employeeEmails = employees.map(employee => employee.email);
+    
+    return await this.sendEmail({
+      to: employeeEmails,
+      subject,
+      html
+    });
+  }
+
   // System notifications
   async sendSystemAlert(recipients, alertType, message, details = {}) {
     const subject = `System Alert: ${alertType}`;
@@ -260,6 +287,89 @@ class EmailService {
     `;
   }
 
+  generateUrgentAnnouncementTemplate(announcement) {
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #dc3545; color: white; padding: 15px; text-align: center; border-radius: 5px 5px 0 0;">
+          <h2 style="margin: 0; font-size: 24px;">🚨 URGENT ANNOUNCEMENT</h2>
+        </div>
+        <div style="background: #f8d7da; padding: 20px; border-left: 4px solid #dc3545;">
+          <h3 style="color: #721c24; margin-top: 0; font-size: 20px;">${announcement.title}</h3>
+          <div style="color: #721c24; line-height: 1.6;">
+            ${announcement.content}
+          </div>
+          <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #f5c6cb;">
+            <p style="margin: 5px 0; font-size: 14px; color: #721c24;">
+              <strong>Published:</strong> ${this.formatDateTime(announcement.publishDate)}
+            </p>
+            ${announcement.expiryDate ? `
+              <p style="margin: 5px 0; font-size: 14px; color: #721c24;">
+                <strong>Expires:</strong> ${this.formatDateTime(announcement.expiryDate)}
+              </p>
+            ` : ''}
+          </div>
+        </div>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${process.env.FRONTEND_URL}/announcements" 
+             style="background: #dc3545; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
+            View All Announcements
+          </a>
+        </div>
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <p style="margin: 0; font-size: 14px; color: #6c757d; text-align: center;">
+            This is an urgent company announcement. Please read and acknowledge in the ERP system.
+          </p>
+        </div>
+      </div>
+    `;
+  }
+
+  generateAnnouncementTemplate(announcement) {
+    const priorityColor = announcement.priority === 'high' ? '#ffc107' : '#007bff';
+    const priorityBg = announcement.priority === 'high' ? '#fff3cd' : '#cce7ff';
+    const priorityIcon = announcement.priority === 'high' ? '📢' : '📋';
+
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: ${priorityColor}; color: ${announcement.priority === 'high' ? '#856404' : 'white'}; padding: 15px; text-align: center; border-radius: 5px 5px 0 0;">
+          <h2 style="margin: 0; font-size: 22px;">${priorityIcon} Company Announcement</h2>
+        </div>
+        <div style="background: ${priorityBg}; padding: 20px; ${announcement.priority === 'high' ? 'border-left: 4px solid #ffc107;' : 'border-left: 4px solid #007bff;'}">
+          <h3 style="color: ${announcement.priority === 'high' ? '#856404' : '#004085'}; margin-top: 0; font-size: 20px;">${announcement.title}</h3>
+          <div style="color: ${announcement.priority === 'high' ? '#856404' : '#004085'}; line-height: 1.6;">
+            ${announcement.content}
+          </div>
+          <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid ${announcement.priority === 'high' ? '#ffeaa7' : '#b3d7ff'};">
+            <p style="margin: 5px 0; font-size: 14px; color: ${announcement.priority === 'high' ? '#856404' : '#004085'};">
+              <strong>Published:</strong> ${this.formatDateTime(announcement.publishDate)}
+            </p>
+            ${announcement.expiryDate ? `
+              <p style="margin: 5px 0; font-size: 14px; color: ${announcement.priority === 'high' ? '#856404' : '#004085'};">
+                <strong>Expires:</strong> ${this.formatDateTime(announcement.expiryDate)}
+              </p>
+            ` : ''}
+            ${announcement.priority ? `
+              <p style="margin: 5px 0; font-size: 14px; color: ${announcement.priority === 'high' ? '#856404' : '#004085'};">
+                <strong>Priority:</strong> ${announcement.priority.toUpperCase()}
+              </p>
+            ` : ''}
+          </div>
+        </div>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${process.env.FRONTEND_URL}/announcements" 
+             style="background: ${priorityColor}; color: ${announcement.priority === 'high' ? '#856404' : 'white'}; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+            View All Announcements
+          </a>
+        </div>
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <p style="margin: 0; font-size: 14px; color: #6c757d; text-align: center;">
+            Log in to the ERP system to mark this announcement as read and view other company updates.
+          </p>
+        </div>
+      </div>
+    `;
+  }
+
   generateSystemAlertTemplate(alertType, message, details) {
     return `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -288,6 +398,16 @@ class EmailService {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
+    });
+  }
+
+  formatDateTime(date) {
+    return new Date(date).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
     });
   }
 

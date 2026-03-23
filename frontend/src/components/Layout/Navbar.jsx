@@ -32,7 +32,8 @@ import {
   Settings as SettingsIcon,
   Logout as LogoutIcon,
   Notifications as NotificationsIcon,
-  Badge
+  Badge,
+  Campaign as AnnouncementsIcon
 } from '@mui/icons-material';
 
 const Navbar = () => {
@@ -76,6 +77,7 @@ const Navbar = () => {
     { title: 'Dashboard', path: '/dashboard', icon: <DashboardIcon />, roles: ['admin', 'employee'] },
     { title: 'Employees', path: '/employees', icon: <PeopleIcon />, roles: ['admin'] },
     { title: 'Leave Management', path: '/leave', icon: <LeaveIcon />, roles: ['admin', 'employee'] },
+    { title: 'Announcements', path: '/announcements', icon: <AnnouncementsIcon />, roles: ['admin', 'employee'] },
     { title: 'Reports', path: '/reports', icon: <ReportsIcon />, roles: ['admin'] },
     { title: 'Inventory', path: '/inventory', icon: <InventoryIcon />, roles: ['admin'] },
     { title: 'Finance', path: '/finance', icon: <FinanceIcon />, roles: ['admin'] }

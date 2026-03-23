@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { NotificationProvider } from './contexts/NotificationContext';
@@ -11,12 +11,61 @@ import AnnouncementForm from './components/Announcements/AnnouncementForm';
 import AdminPanel from './components/Admin/AdminPanel';
 import './App.css';
 
+// Error Boundary component
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('Route Error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="error-boundary">
+          <h2>Something went wrong.</h2>
+          <p>We're sorry, but something unexpected happened.</p>
+          <button onClick={() => this.setState({ hasError: false, error: null })}>
+            Try again
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// Loading component
+const LoadingSpinner = () => (
+  <div className="loading-spinner">
+    <div className="spinner"></div>
+    <p>Loading...</p>
+  </div>
+);
+
+// Route wrapper with error boundary and loading state
+const RouteWrapper = ({ children }) => (
+  <ErrorBoundary>
+    <Suspense fallback={<LoadingSpinner />}>
+      {children}
+    </Suspense>
+  </ErrorBoundary>
+);
+
 // Protected Route component
 const ProtectedRoute = ({ children, adminOnly = false }) => {
   const { user, isAuthenticated, loading } = useAuth();
   
   if (loading) {
-    return <div className="loading">Loading...</div>;
+    return <LoadingSpinner />;
   }
   
   if (!isAuthenticated) {
@@ -27,7 +76,11 @@ const ProtectedRoute = ({ children, adminOnly = false }) => {
     return <Navigate to="/" replace />;
   }
   
-  return children;
+  return (
+    <RouteWrapper>
+      {children}
+    </RouteWrapper>
+  );
 };
 
 // App Routes component
@@ -39,7 +92,9 @@ const AppRoutes = () => {
       <Route 
         path="/login" 
         element={
-          isAuthenticated ? <Navigate to="/" replace /> : <Login />
+          <RouteWrapper>
+            {isAuthenticated ? <Navigate to="/" replace /> : <Login />}
+          </RouteWrapper>
         } 
       />
       
@@ -109,7 +164,14 @@ const AppRoutes = () => {
         } 
       />
       
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route 
+        path="*" 
+        element={
+          <RouteWrapper>
+            <Navigate to="/" replace />
+          </RouteWrapper>
+        } 
+      />
     </Routes>
   );
 };
@@ -121,7 +183,9 @@ function App() {
       <Router>
         <AuthProvider>
           <NotificationProvider>
-            <AppRoutes />
+            <ErrorBoundary>
+              <AppRoutes />
+            </ErrorBoundary>
           </NotificationProvider>
         </AuthProvider>
       </Router>

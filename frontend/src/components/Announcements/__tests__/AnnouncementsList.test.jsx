@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
 import { BrowserRouter } from 'react-router-dom';
 import { configureStore } from '@reduxjs/toolkit';
@@ -969,6 +970,595 @@ describe('AnnouncementsList Component', () => {
 
       expect(screen.queryByTestId('edit-announcement-1')).not.toBeInTheDocument();
       expect(screen.queryByTestId('delete-announcement-1')).not.toBeInTheDocument();
+    });
+  });
+
+  // Enhanced Form Validation Test Coverage
+  describe('Form Validation Scenarios', () => {
+    const adminState = {
+      auth: {
+        user: {
+          id: 1,
+          email: 'admin@company.com',
+          role: 'admin'
+        },
+        isAuthenticated: true
+      }
+    };
+
+    it('should validate title length requirements', async () => {
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const titleInput = screen.getByTestId('announcement-title-input');
+      const submitButton = screen.getByTestId('submit-announcement');
+
+      // Test empty title
+      fireEvent.click(submitButton);
+      expect(screen.getByText('Title is required')).toBeInTheDocument();
+
+      // Test title too short
+      fireEvent.change(titleInput, { target: { value: 'a' } });
+      fireEvent.blur(titleInput);
+      expect(screen.getByText('Title must be at least 3 characters')).toBeInTheDocument();
+
+      // Test title too long
+      fireEvent.change(titleInput, { target: { value: 'a'.repeat(256) } });
+      fireEvent.blur(titleInput);
+      expect(screen.getByText('Title must be less than 255 characters')).toBeInTheDocument();
+
+      // Test valid title
+      fireEvent.change(titleInput, { target: { value: 'Valid Title' } });
+      fireEvent.blur(titleInput);
+      expect(screen.queryByText('Title must be at least 3 characters')).not.toBeInTheDocument();
+    });
+
+    it('should validate content length requirements', async () => {
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const contentInput = screen.getByTestId('announcement-content-input');
+      const submitButton = screen.getByTestId('submit-announcement');
+
+      // Test empty content
+      fireEvent.click(submitButton);
+      expect(screen.getByText('Content is required')).toBeInTheDocument();
+
+      // Test content too short
+      fireEvent.change(contentInput, { target: { value: 'ab' } });
+      fireEvent.blur(contentInput);
+      expect(screen.getByText('Content must be at least 10 characters')).toBeInTheDocument();
+
+      // Test content too long
+      fireEvent.change(contentInput, { target: { value: 'a'.repeat(5001) } });
+      fireEvent.blur(contentInput);
+      expect(screen.getByText('Content must be less than 5000 characters')).toBeInTheDocument();
+
+      // Test valid content
+      fireEvent.change(contentInput, { target: { value: 'This is valid content for the announcement' } });
+      fireEvent.blur(contentInput);
+      expect(screen.queryByText('Content must be at least 10 characters')).not.toBeInTheDocument();
+    });
+
+    it('should validate priority selection', async () => {
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const prioritySelect = screen.getByTestId('announcement-priority-select');
+      
+      // Test invalid priority
+      fireEvent.change(prioritySelect, { target: { value: 'invalid' } });
+      fireEvent.blur(prioritySelect);
+      expect(screen.getByText('Please select a valid priority')).toBeInTheDocument();
+
+      // Test valid priority
+      fireEvent.change(prioritySelect, { target: { value: 'urgent' } });
+      fireEvent.blur(prioritySelect);
+      expect(screen.queryByText('Please select a valid priority')).not.toBeInTheDocument();
+    });
+
+    it('should validate scheduled date when scheduling is enabled', async () => {
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const scheduleCheckbox = screen.getByTestId('schedule-announcement-checkbox');
+      const scheduleDateInput = screen.getByTestId('schedule-date-input');
+
+      fireEvent.click(scheduleCheckbox);
+
+      // Test empty date when scheduling is enabled
+      fireEvent.blur(scheduleDateInput);
+      expect(screen.getByText('Scheduled date is required when scheduling is enabled')).toBeInTheDocument();
+
+      // Test past date
+      const pastDate = new Date();
+      pastDate.setDate(pastDate.getDate() - 1);
+      fireEvent.change(scheduleDateInput, { 
+        target: { value: pastDate.toISOString().slice(0, 16) } 
+      });
+      fireEvent.blur(scheduleDateInput);
+      expect(screen.getByText('Scheduled date must be in the future')).toBeInTheDocument();
+
+      // Test valid future date
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 1);
+      fireEvent.change(scheduleDateInput, { 
+        target: { value: futureDate.toISOString().slice(0, 16) } 
+      });
+      fireEvent.blur(scheduleDateInput);
+      expect(screen.queryByText('Scheduled date must be in the future')).not.toBeInTheDocument();
+    });
+
+    it('should validate form prevents submission with multiple errors', async () => {
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const titleInput = screen.getByTestId('announcement-title-input');
+      const contentInput = screen.getByTestId('announcement-content-input');
+      const scheduleCheckbox = screen.getByTestId('schedule-announcement-checkbox');
+      const submitButton = screen.getByTestId('submit-announcement');
+
+      // Create multiple validation errors
+      fireEvent.change(titleInput, { target: { value: 'a' } }); // Too short
+      fireEvent.change(contentInput, { target: { value: 'ab' } }); // Too short
+      fireEvent.click(scheduleCheckbox); // Enable scheduling without date
+      
+      fireEvent.click(submitButton);
+
+      // Check all errors are displayed
+      expect(screen.getByText('Title must be at least 3 characters')).toBeInTheDocument();
+      expect(screen.getByText('Content must be at least 10 characters')).toBeInTheDocument();
+      expect(screen.getByText('Scheduled date is required when scheduling is enabled')).toBeInTheDocument();
+
+      // Verify form was not submitted
+      expect(announcementService.createAnnouncement).not.toHaveBeenCalled();
+    });
+
+    it('should show real-time character count for title and content', async () => {
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const titleInput = screen.getByTestId('announcement-title-input');
+      const contentInput = screen.getByTestId('announcement-content-input');
+
+      fireEvent.change(titleInput, { target: { value: 'Test Title' } });
+      fireEvent.change(contentInput, { target: { value: 'Test content for the announcement' } });
+
+      expect(screen.getByText('10/255 characters')).toBeInTheDocument(); // Title counter
+      expect(screen.getByText('34/5000 characters')).toBeInTheDocument(); // Content counter
+    });
+
+    it('should validate HTML content sanitization', async () => {
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const contentInput = screen.getByTestId('announcement-content-input');
+      
+      // Test script injection attempt
+      fireEvent.change(contentInput, { 
+        target: { value: '<script>alert("xss")</script>Valid content here' } 
+      });
+      fireEvent.blur(contentInput);
+
+      expect(screen.getByText('Content contains invalid HTML tags')).toBeInTheDocument();
+    });
+
+    it('should handle form reset after successful submission', async () => {
+      announcementService.createAnnouncement = jest.fn().mockResolvedValue({
+        id: 1,
+        title: 'New Announcement',
+        content: 'New content',
+        priority: 'normal'
+      });
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const titleInput = screen.getByTestId('announcement-title-input');
+      const contentInput = screen.getByTestId('announcement-content-input');
+      const submitButton = screen.getByTestId('submit-announcement');
+
+      fireEvent.change(titleInput, { target: { value: 'New Announcement' } });
+      fireEvent.change(contentInput, { target: { value: 'This is the announcement content' } });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(titleInput.value).toBe('');
+        expect(contentInput.value).toBe('');
+      });
+    });
+  });
+
+  // File Upload Test Coverage
+  describe('File Upload Functionality', () => {
+    const adminState = {
+      auth: {
+        user: {
+          id: 1,
+          email: 'admin@company.com',
+          role: 'admin'
+        },
+        isAuthenticated: true
+      }
+    };
+
+    const user = userEvent.setup();
+
+    it('should handle single file upload successfully', async () => {
+      announcementService.uploadAttachment = jest.fn().mockResolvedValue({
+        id: 1,
+        filename: 'document.pdf',
+        originalName: 'Document.pdf',
+        size: 1024000,
+        url: '/uploads/document.pdf'
+      });
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const fileInput = screen.getByTestId('file-upload-input');
+      const file = new File(['file content'], 'document.pdf', { type: 'application/pdf' });
+
+      await user.upload(fileInput, file);
+
+      await waitFor(() => {
+        expect(announcementService.uploadAttachment).toHaveBeenCalledWith(file);
+      });
+
+      expect(screen.getByText('document.pdf')).toBeInTheDocument();
+      expect(screen.getByText('1.0 MB')).toBeInTheDocument();
+    });
+
+    it('should handle multiple file uploads', async () => {
+      announcementService.uploadAttachment = jest.fn()
+        .mockResolvedValueOnce({
+          id: 1,
+          filename: 'document1.pdf',
+          originalName: 'Document1.pdf',
+          size: 1024000,
+          url: '/uploads/document1.pdf'
+        })
+        .mockResolvedValueOnce({
+          id: 2,
+          filename: 'document2.pdf',
+          originalName: 'Document2.pdf',
+          size: 2048000,
+          url: '/uploads/document2.pdf'
+        });
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const fileInput = screen.getByTestId('file-upload-input');
+      const files = [
+        new File(['content1'], 'document1.pdf', { type: 'application/pdf' }),
+        new File(['content2'], 'document2.pdf', { type: 'application/pdf' })
+      ];
+
+      await user.upload(fileInput, files);
+
+      await waitFor(() => {
+        expect(announcementService.uploadAttachment).toHaveBeenCalledTimes(2);
+      });
+
+      expect(screen.getByText('document1.pdf')).toBeInTheDocument();
+      expect(screen.getByText('document2.pdf')).toBeInTheDocument();
+    });
+
+    it('should validate file size limits', async () => {
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const fileInput = screen.getByTestId('file-upload-input');
+      
+      // Create a file larger than allowed (e.g., 10MB limit)
+      const largeFile = new File(
+        [new ArrayBuffer(11 * 1024 * 1024)], 
+        'large-document.pdf', 
+        { type: 'application/pdf' }
+      );
+
+      await user.upload(fileInput, largeFile);
+
+      expect(screen.getByText('File size exceeds 10MB limit')).toBeInTheDocument();
+    });
+
+    it('should validate file types', async () => {
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const fileInput = screen.getByTestId('file-upload-input');
+      
+      // Create an executable file (not allowed)
+      const invalidFile = new File(['content'], 'virus.exe', { type: 'application/x-executable' });
+
+      await user.upload(fileInput, invalidFile);
+
+      expect(screen.getByText('File type not allowed. Allowed types: PDF, DOC, DOCX, JPG, PNG')).toBeInTheDocument();
+    });
+
+    it('should handle file upload errors', async () => {
+      announcementService.uploadAttachment = jest.fn().mockRejectedValue(
+        new Error('Upload failed')
+      );
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const fileInput = screen.getByTestId('file-upload-input');
+      const file = new File(['content'], 'document.pdf', { type: 'application/pdf' });
+
+      await user.upload(fileInput, file);
+
+      await waitFor(() => {
+        expect(screen.getByText('Failed to upload file: document.pdf')).toBeInTheDocument();
+      });
+    });
+
+    it('should show upload progress for large files', async () => {
+      // Mock XMLHttpRequest for progress tracking
+      const mockXHR = {
+        upload: {
+          addEventListener: jest.fn()
+        },
+        open: jest.fn(),
+        send: jest.fn(),
+        setRequestHeader: jest.fn()
+      };
+
+      global.XMLHttpRequest = jest.fn(() => mockXHR);
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const fileInput = screen.getByTestId('file-upload-input');
+      const file = new File([new ArrayBuffer(5 * 1024 * 1024)], 'large.pdf', { type: 'application/pdf' });
+
+      await user.upload(fileInput, file);
+
+      // Simulate progress event
+      const progressCallback = mockXHR.upload.addEventListener.mock.calls.find(
+        call => call[0] === 'progress'
+      )[1];
+
+      progressCallback({ loaded: 2.5 * 1024 * 1024, total: 5 * 1024 * 1024 });
+
+      expect(screen.getByTestId('upload-progress-large.pdf')).toBeInTheDocument();
+      expect(screen.getByText('50%')).toBeInTheDocument();
+    });
+
+    it('should allow removing uploaded files before submission', async () => {
+      announcementService.uploadAttachment = jest.fn().mockResolvedValue({
+        id: 1,
+        filename: 'document.pdf',
+        originalName: 'Document.pdf',
+        size: 1024000,
+        url: '/uploads/document.pdf'
+      });
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const fileInput = screen.getByTestId('file-upload-input');
+      const file = new File(['content'], 'document.pdf', { type: 'application/pdf' });
+
+      await user.upload(fileInput, file);
+
+      await waitFor(() => {
+        expect(screen.getByText('document.pdf')).toBeInTheDocument();
+      });
+
+      const removeButton = screen.getByTestId('remove-file-1');
+      fireEvent.click(removeButton);
+
+      expect(screen.queryByText('document.pdf')).not.toBeInTheDocument();
+    });
+
+    it('should handle drag and drop file upload', async () => {
+      announcementService.uploadAttachment = jest.fn().mockResolvedValue({
+        id: 1,
+        filename: 'dropped.pdf',
+        originalName: 'Dropped.pdf',
+        size: 1024000,
+        url: '/uploads/dropped.pdf'
+      });
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const dropZone = screen.getByTestId('file-drop-zone');
+      const file = new File(['content'], 'dropped.pdf', { type: 'application/pdf' });
+
+      // Simulate drag and drop
+      fireEvent.dragEnter(dropZone);
+      fireEvent.dragOver(dropZone);
+      fireEvent.drop(dropZone, {
+        dataTransfer: {
+          files: [file]
+        }
+      });
+
+      await waitFor(() => {
+        expect(announcementService.uploadAttachment).toHaveBeenCalledWith(file);
+      });
+
+      expect(screen.getByText('dropped.pdf')).toBeInTheDocument();
+    });
+
+    it('should validate maximum number of attachments', async () => {
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const fileInput = screen.getByTestId('file-upload-input');
+      
+      // Create more files than allowed (assuming 5 is the limit)
+      const files = Array.from({ length: 6 }, (_, i) => 
+        new File(['content'], `document${i}.pdf`, { type: 'application/pdf' })
+      );
+
+      await user.upload(fileInput, files);
+
+      expect(screen.getByText('Maximum 5 files allowed per announcement')).toBeInTheDocument();
+    });
+
+    it('should show file preview for images', async () => {
+      announcementService.uploadAttachment = jest.fn().mockResolvedValue({
+        id: 1,
+        filename: 'image.jpg',
+        originalName: 'Image.jpg',
+        size: 512000,
+        url: '/uploads/image.jpg',
+        type: 'image/jpeg'
+      });
+
+      renderWithProviders(<AnnouncementsList />, adminState);
+
+      const createButton = screen.getByTestId('create-announcement-button');
+      fireEvent.click(createButton);
+
+      const fileInput = screen.getByTestId('file-upload-input');
+      const imageFile = new File(['image content'], 'image.jpg', { type: 'image/jpeg' });
+
+      await user.upload(fileInput, imageFile);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('image-preview-1')).toBeInTheDocument();
+      });
+
+      const previewImage = screen.getByAltText('Preview of image.jpg');
+      expect(previewImage.src).toBe('http://localhost/uploads/image.jpg');
+    });
+
+    it('should handle file attachment in edit mode', async () => {
+      const adminStateWithAnnouncement = {
+        ...adminState,
+        announcements: {
+          items: [{
+            id: 1,
+            title: 'Existing Announcement',
+            content: 'Existing content',
+            priority: 'normal',
+            publishedAt: '2024-01-15T10:00:00Z',
+            author: { name: 'Admin' },
+            attachments: [{
+              id: 1,
+              filename: 'existing.pdf',
+              originalName: 'Existing.pdf',
+              size: 1024000,
+              url: '/uploads/existing.pdf'
+            }]
+          }],
+          loading: false
+        }
+      };
+
+      announcementService.uploadAttachment = jest.fn().mockResolvedValue({
+        id: 2,
+        filename: 'new.pdf',
+        originalName: 'New.pdf',
+        size: 512000,
+        url: '/uploads/new.pdf'
+      });
+
+      renderWithProviders(<AnnouncementsList />, adminStateWithAnnouncement);
+
+      const editButton = screen.getByTestId('edit-announcement-1');
+      fireEvent.click(editButton);
+
+      // Existing attachment should be shown
+      expect(screen.getByText('existing.pdf')).toBeInTheDocument();
+
+      // Add new attachment
+      const fileInput = screen.getByTestId('edit-file-upload-input-1');
+      const newFile = new File(['content'], 'new.pdf', { type: 'application/pdf' });
+
+      await user.upload(fileInput, newFile);
+
+      await waitFor(() => {
+        expect(screen.getByText('new.pdf')).toBeInTheDocument();
+      });
+
+      // Both files should be present
+      expect(screen.getByText('existing.pdf')).toBeInTheDocument();
+      expect(screen.getByText('new.pdf')).toBeInTheDocument();
+    });
+
+    it('should handle attachment deletion from existing announcements', async () => {
+      const adminStateWithAnnouncement = {
+        ...adminState,
+        announcements: {
+          items: [{
+            id: 1,
+            title: 'Announcement with Attachment',
+            content: 'Content with attachment',
+            priority: 'normal',
+            publishedAt: '2024-01-15T10:00:00Z',
+            author: { name: 'Admin' },
+            attachments: [{
+              id: 1,
+              filename: 'to-delete.pdf',
+              originalName: 'ToDelete.pdf',
+              size: 1024000,
+              url: '/uploads/to-delete.pdf'
+            }]
+          }],
+          loading: false
+        }
+      };
+
+      announcementService.deleteAttachment = jest.fn().mockResolvedValue({ success: true });
+
+      renderWithProviders(<AnnouncementsList />, adminStateWithAnnouncement);
+
+      const editButton = screen.getByTestId('edit-announcement-1');
+      fireEvent.click(editButton);
+
+      const deleteAttachmentButton = screen.getByTestId('delete-attachment-1');
+      fireEvent.click(deleteAttachmentButton);
+
+      // Confirm deletion
+      const confirmDeleteButton = screen.getByTestId('confirm-delete-attachment');
+      fireEvent.click(confirmDeleteButton);
+
+      await waitFor(() => {
+        expect(announcementService.deleteAttachment).toHaveBeenCalledWith(1);
+      });
+
+      expect(screen.queryByText('to-delete.pdf')).not.toBeInTheDocument();
     });
   });
 });

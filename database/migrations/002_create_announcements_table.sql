@@ -71,19 +71,26 @@ CREATE TRIGGER update_announcements_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_announcements_updated_at();
 
--- Create function to automatically archive old announcements with parameterized inputs
-CREATE OR REPLACE FUNCTION archive_old_announcements(archive_interval_months INTEGER DEFAULT 6)
+-- Create function to automatically archive old announcements using system settings
+CREATE OR REPLACE FUNCTION archive_old_announcements()
 RETURNS INTEGER AS $$
 DECLARE
     archived_count INTEGER;
     cutoff_date TIMESTAMP WITH TIME ZONE;
+    archive_interval_months INTEGER;
 BEGIN
-    -- Validate input parameters
+    -- Get archive interval from system settings, fallback to 6 months default
+    SELECT COALESCE(
+        (SELECT value::INTEGER FROM system_settings WHERE key = 'announcement_archive_interval_months'),
+        6
+    ) INTO archive_interval_months;
+    
+    -- Validate archive interval
     IF archive_interval_months IS NULL OR archive_interval_months <= 0 OR archive_interval_months > 60 THEN
-        RAISE EXCEPTION 'Invalid archive interval: % months. Must be between 1 and 60.', archive_interval_months;
+        RAISE EXCEPTION 'Invalid archive interval from system settings: % months. Must be between 1 and 60.', archive_interval_months;
     END IF;
     
-    -- Calculate cutoff date using parameterized interval
+    -- Calculate cutoff date using system-configured interval
     cutoff_date := CURRENT_TIMESTAMP - (archive_interval_months || ' months')::INTERVAL;
     
     -- Safety check: ensure cutoff date is reasonable (not in the future or too far in the past)
@@ -118,7 +125,7 @@ BEGIN
     INSERT INTO system_logs (action, details, created_at) 
     VALUES (
         'auto_archive_announcements', 
-        'Archived ' || archived_count || ' announcements older than ' || cutoff_date::date,
+        'Archived ' || archived_count || ' announcements older than ' || cutoff_date::date || ' (using ' || archive_interval_months || ' months interval from system settings)',
         CURRENT_TIMESTAMP
     );
     
@@ -136,45 +143,23 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql;
 
--- Create automated job scheduler for archiving old announcements
--- This uses PostgreSQL's pg_cron extension for scheduling
--- Note: pg_cron extension must be installed and configured
+-- Insert default system setting for announcement archiving interval
+INSERT INTO system_settings (key, value, description, created_at) 
+VALUES (
+    'announcement_archive_interval_months', 
+    '6', 
+    'Number of months after publication before announcements are automatically archived',
+    CURRENT_TIMESTAMP
+) ON CONFLICT (key) DO NOTHING;
 
--- Schedule the archive job to run daily at 2 AM
--- This requires pg_cron extension: CREATE EXTENSION IF NOT EXISTS pg_cron;
-DO $$
-BEGIN
-    -- Check if pg_cron is available
-    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-        -- Schedule daily archiving job at 2:00 AM
-        PERFORM cron.schedule('archive-old-announcements', '0 2 * * *', 'SELECT archive_old_announcements();');
-        
-        -- Log the scheduler setup
-        INSERT INTO system_logs (action, details, created_at) 
-        VALUES (
-            'setup_archive_scheduler', 
-            'Automated archiving job scheduled for daily execution at 2:00 AM',
-            CURRENT_TIMESTAMP
-        );
-    ELSE
-        -- Log warning if pg_cron is not available
-        INSERT INTO system_logs (action, details, created_at) 
-        VALUES (
-            'setup_archive_scheduler_warning', 
-            'pg_cron extension not available. Manual scheduling required for announcement archiving.',
-            CURRENT_TIMESTAMP
-        );
-    END IF;
-EXCEPTION
-    WHEN OTHERS THEN
-        -- Fallback: create a note for manual setup if automated scheduling fails
-        INSERT INTO system_logs (action, details, created_at) 
-        VALUES (
-            'setup_archive_scheduler_fallback', 
-            'Automated scheduler setup failed. Please configure cron job manually: 0 2 * * * psql -d database -c "SELECT archive_old_announcements();"',
-            CURRENT_TIMESTAMP
-        );
-END $$;
+-- Log scheduler setup instructions (extension checks moved to separate validation)
+-- Note: pg_cron extension validation should be performed via separate validation script
+INSERT INTO system_logs (action, details, created_at) 
+VALUES (
+    'scheduler_setup_instructions', 
+    'To enable automated archiving: 1) Run extension validation script 2) If pg_cron available, execute: SELECT cron.schedule(''archive-old-announcements'', ''0 2 * * *'', ''SELECT archive_old_announcements();''); 3) Otherwise setup system cron job',
+    CURRENT_TIMESTAMP
+);
 
 -- Create view for announcement statistics
 CREATE VIEW announcement_stats AS
@@ -198,4 +183,4 @@ COMMENT ON TABLE announcements IS 'Stores company-wide announcements with schedu
 COMMENT ON TABLE announcement_attachments IS 'Stores file attachments associated with announcements';
 COMMENT ON TABLE announcement_reads IS 'Tracks which users have read which announcements';
 COMMENT ON VIEW announcement_stats IS 'Provides read statistics for published announcements';
-COMMENT ON FUNCTION archive_old_announcements(INTEGER) IS 'Archives announcements older than specified months (default 6) with input validation and parameterized queries';
+COMMENT ON FUNCTION archive_old_announcements() IS 'Archives announcements based on configurable interval from system_settings table (announcement_archive_interval_months)';

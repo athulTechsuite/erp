@@ -1,0 +1,134 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { jest } from '@jest/globals';
+import Component from '../Component';
+
+describe('TC-004: Frontend component tests', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // TC-004: Happy path validation
+  it('TC-004: should render component successfully with valid props', async () => {
+    const mockProps = {
+      title: 'Test Component',
+      data: { id: 1, name: 'Test Data' },
+      onAction: jest.fn()
+    };
+
+    render(<Component {...mockProps} />);
+
+    expect(screen.getByText('Test Component')).toBeInTheDocument();
+    expect(screen.getByText('Test Data')).toBeInTheDocument();
+    
+    const actionButton = screen.getByRole('button', { name: /action/i });
+    fireEvent.click(actionButton);
+    
+    await waitFor(() => {
+      expect(mockProps.onAction).toHaveBeenCalledWith({ id: 1, name: 'Test Data' });
+    });
+  });
+
+  it('TC-004: should handle user interactions correctly in happy path', async () => {
+    const mockOnAction = jest.fn().mockResolvedValue({ success: true });
+    const props = {
+      title: 'Interactive Component',
+      data: { id: 2, name: 'Interactive Data' },
+      onAction: mockOnAction
+    };
+
+    render(<Component {...props} />);
+
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'test input' } });
+    
+    const submitButton = screen.getByRole('button', { name: /submit/i });
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(mockOnAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          inputValue: 'test input',
+          data: { id: 2, name: 'Interactive Data' }
+        })
+      );
+    });
+  });
+
+  // TC-004: Error path validation
+  it('TC-004: should handle missing required props gracefully', () => {
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    
+    render(<Component />);
+    
+    expect(screen.getByText(/error/i)).toBeInTheDocument();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Required prop missing')
+    );
+    
+    consoleSpy.mockRestore();
+  });
+
+  it('TC-004: should handle API errors and display error state', async () => {
+    const mockOnAction = jest.fn().mockRejectedValue(new Error('API Error'));
+    const props = {
+      title: 'Error Test Component',
+      data: { id: 3, name: 'Error Data' },
+      onAction: mockOnAction
+    };
+
+    render(<Component {...props} />);
+
+    const actionButton = screen.getByRole('button', { name: /action/i });
+    fireEvent.click(actionButton);
+
+    await waitFor(() => {
+      expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
+      expect(screen.getByText(/api error/i)).toBeInTheDocument();
+    });
+  });
+
+  it('TC-004: should handle invalid data formats and show validation errors', async () => {
+    const props = {
+      title: 'Validation Test',
+      data: { id: 'invalid', name: '' },
+      onAction: jest.fn()
+    };
+
+    render(<Component {...props} />);
+
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: '' } });
+    
+    const submitButton = screen.getByRole('button', { name: /submit/i });
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getByText(/validation error/i)).toBeInTheDocument();
+      expect(screen.getByText(/name is required/i)).toBeInTheDocument();
+    });
+  });
+
+  it('TC-004: should handle network timeout errors', async () => {
+    const mockOnAction = jest.fn().mockImplementation(() => 
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Network timeout')), 100)
+      )
+    );
+
+    const props = {
+      title: 'Timeout Test',
+      data: { id: 4, name: 'Timeout Data' },
+      onAction: mockOnAction
+    };
+
+    render(<Component {...props} />);
+
+    const actionButton = screen.getByRole('button', { name: /action/i });
+    fireEvent.click(actionButton);
+
+    await waitFor(() => {
+      expect(screen.getByText(/network timeout/i)).toBeInTheDocument();
+      expect(screen.getByText(/please try again/i)).toBeInTheDocument();
+    }, { timeout: 2000 });
+  });
+});

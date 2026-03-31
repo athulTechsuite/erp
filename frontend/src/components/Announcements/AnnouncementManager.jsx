@@ -24,7 +24,7 @@ import {
   Close as CloseIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
-import { announcementService } from '../../services/announcementService';
+import * as announcementService from '../../services/announcementService';
 
 const AnnouncementManager = () => {
   const { user } = useAuth();
@@ -72,8 +72,8 @@ const AnnouncementManager = () => {
     
     if (!formData.content.trim()) {
       errors.content = 'Content is required';
-    } else if (formData.content.length > 2000) {
-      errors.content = 'Content must be 2000 characters or less';
+    } else if (formData.content.length > 5000) {
+      errors.content = 'Content must be 5000 characters or less';
     }
     
     setFormErrors(errors);
@@ -307,7 +307,7 @@ const AnnouncementManager = () => {
             value={formData.content}
             onChange={handleInputChange('content')}
             error={!!formErrors.content}
-            helperText={formErrors.content || `${formData.content.length}/2000 characters`}
+            helperText={formErrors.content || `${formData.content.length}/5000 characters`}
             margin="normal"
             multiline
             rows={6}

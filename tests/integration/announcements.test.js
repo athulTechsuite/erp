@@ -254,6 +254,259 @@ describe('Company Announcements System - Integration Tests', () => {
     });
   });
 
+  // TC-005: Permission/Authorization Tests - Comprehensive coverage for all user roles and endpoints
+  describe('TC-005: Permission/Authorization Tests - Complete security validation', () => {
+    beforeEach(async () => {
+      testAnnouncement = await Announcement.create({
+        title: 'Test Announcement for Authorization',
+        content: 'Content for permission testing',
+        author: adminUser._id,
+        status: 'active'
+      });
+    });
+
+    describe('TC-005 Happy Path: Authorized admin operations', () => {
+      it('TC-005.1: Admin should successfully create announcements with proper authorization', async () => {
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            title: 'Admin Created Announcement',
+            content: 'This announcement was created by admin with proper authorization'
+          });
+
+        expect(response.status).toBe(201);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.title).toBe('Admin Created Announcement');
+      });
+
+      it('TC-005.2: Admin should successfully read all announcements with proper authorization', async () => {
+        const response = await request(app)
+          .get('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(response.status).toBe(200);
+        expect(Array.isArray(response.body)).toBe(true);
+        expect(response.body.length).toBeGreaterThanOrEqual(1);
+      });
+
+      it('TC-005.3: Admin should successfully update announcements with proper authorization', async () => {
+        const response = await request(app)
+          .put(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            title: 'Updated by Admin',
+            content: 'Content updated with admin authorization'
+          });
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.title).toBe('Updated by Admin');
+      });
+
+      it('TC-005.4: Admin should successfully delete announcements with proper authorization', async () => {
+        const response = await request(app)
+          .delete(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+      });
+
+      it('TC-005.5: All authenticated users should successfully read announcements', async () => {
+        // Test employee access
+        const employeeResponse = await request(app)
+          .get('/api/announcements')
+          .set('Authorization', `Bearer ${userToken}`);
+
+        expect(employeeResponse.status).toBe(200);
+        expect(Array.isArray(employeeResponse.body)).toBe(true);
+
+        // Test manager access
+        const managerResponse = await request(app)
+          .get('/api/announcements')
+          .set('Authorization', `Bearer ${managerToken}`);
+
+        expect(managerResponse.status).toBe(200);
+        expect(Array.isArray(managerResponse.body)).toBe(true);
+      });
+    });
+
+    describe('TC-005 Error Path: Unauthorized access attempts', () => {
+      it('TC-005.6: Should reject unauthenticated access to announcements list', async () => {
+        const response = await request(app)
+          .get('/api/announcements');
+
+        expect(response.status).toBe(401);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toMatch(/unauthorized|authentication|token/i);
+      });
+
+      it('TC-005.7: Should reject unauthenticated announcement creation', async () => {
+        const response = await request(app)
+          .post('/api/announcements')
+          .send({
+            title: 'Unauthorized Creation',
+            content: 'This should be rejected'
+          });
+
+        expect(response.status).toBe(401);
+        expect(response.body.success).toBe(false);
+      });
+
+      it('TC-005.8: Should reject employee attempts to create announcements', async () => {
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${userToken}`)
+          .send({
+            title: 'Employee Unauthorized',
+            content: 'Employee should not create announcements'
+          });
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toMatch(/admin|forbidden|privilege/i);
+      });
+
+      it('TC-005.9: Should reject manager attempts to create announcements', async () => {
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${managerToken}`)
+          .send({
+            title: 'Manager Unauthorized',
+            content: 'Manager should not create announcements'
+          });
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toMatch(/admin|forbidden|privilege/i);
+      });
+
+      it('TC-005.10: Should reject employee attempts to update announcements', async () => {
+        const response = await request(app)
+          .put(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${userToken}`)
+          .send({
+            title: 'Employee Update Attempt',
+            content: 'This update should be rejected'
+          });
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+      });
+
+      it('TC-005.11: Should reject manager attempts to update announcements', async () => {
+        const response = await request(app)
+          .put(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${managerToken}`)
+          .send({
+            title: 'Manager Update Attempt',
+            content: 'This update should be rejected'
+          });
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+      });
+
+      it('TC-005.12: Should reject employee attempts to delete announcements', async () => {
+        const response = await request(app)
+          .delete(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${userToken}`);
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+      });
+
+      it('TC-005.13: Should reject manager attempts to delete announcements', async () => {
+        const response = await request(app)
+          .delete(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${managerToken}`);
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+      });
+
+      it('TC-005.14: Should reject requests with invalid JWT tokens', async () => {
+        const invalidToken = 'invalid.jwt.token';
+        
+        const response = await request(app)
+          .get('/api/announcements')
+          .set('Authorization', `Bearer ${invalidToken}`);
+
+        expect(response.status).toBe(401);
+        expect(response.body.success).toBe(false);
+      });
+
+      it('TC-005.15: Should reject requests with expired JWT tokens', async () => {
+        const expiredToken = jwt.sign(
+          { _id: adminUser._id, role: 'admin', exp: Math.floor(Date.now() / 1000) - 3600 },
+          process.env.JWT_SECRET || 'testsecret'
+        );
+        
+        const response = await request(app)
+          .get('/api/announcements')
+          .set('Authorization', `Bearer ${expiredToken}`);
+
+        expect(response.status).toBe(401);
+        expect(response.body.success).toBe(false);
+      });
+
+      it('TC-005.16: Should reject requests with malformed Authorization header', async () => {
+        const response = await request(app)
+          .get('/api/announcements')
+          .set('Authorization', 'InvalidFormat');
+
+        expect(response.status).toBe(401);
+        expect(response.body.success).toBe(false);
+      });
+
+      it('TC-005.17: Should prevent privilege escalation attempts', async () => {
+        // Try to manipulate token payload (this should fail due to signature verification)
+        const manipulatedToken = jwt.sign(
+          { _id: normalUser._id, role: 'admin' }, // Employee trying to claim admin role
+          'wrongsecret'
+        );
+        
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${manipulatedToken}`)
+          .send({
+            title: 'Privilege Escalation Attempt',
+            content: 'This should be blocked'
+          });
+
+        expect(response.status).toBe(401);
+        expect(response.body.success).toBe(false);
+      });
+
+      it('TC-005.18: Should validate role consistency in operations', async () => {
+        // Create a user with undefined/null role
+        const noRoleUser = await User.create({
+          firstName: 'NoRole',
+          lastName: 'User',
+          email: 'norole@test.com',
+          password: 'password123',
+          role: undefined
+        });
+
+        const noRoleToken = jwt.sign({ _id: noRoleUser._id }, process.env.JWT_SECRET || 'testsecret');
+        
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${noRoleToken}`)
+          .send({
+            title: 'No Role Test',
+            content: 'Should be rejected'
+          });
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+        
+        await User.findByIdAndDelete(noRoleUser._id);
+      });
+    });
+  });
+
   describe('PRD Test Case 5: Admin can edit existing announcements', () => {
     beforeEach(async () => {
       testAnnouncement = await Announcement.create({

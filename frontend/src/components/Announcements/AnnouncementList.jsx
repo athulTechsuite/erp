@@ -5,13 +5,14 @@ import { Edit2, Trash2, Plus } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import AnnouncementForm from './AnnouncementForm';
 import { toast } from 'react-hot-toast';
+import { announcementService } from '../../services/announcementService';
 
 const AnnouncementList = () => {
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState(null);
-  const { user, getAuthHeaders } = useAuth();
+  const { user } = useAuth();
 
   const isAdmin = user?.role === 'admin';
 
@@ -21,13 +22,8 @@ const AnnouncementList = () => {
 
   const fetchAnnouncements = async () => {
     try {
-      const response = await fetch('/api/announcements');
-      if (response.ok) {
-        const data = await response.json();
-        setAnnouncements(data);
-      } else {
-        console.error('Failed to fetch announcements');
-      }
+      const data = await announcementService.getAll();
+      setAnnouncements(data);
     } catch (error) {
       console.error('Error fetching announcements:', error);
     } finally {
@@ -51,20 +47,9 @@ const AnnouncementList = () => {
     }
 
     try {
-      const response = await fetch(`/api/announcements/${id}`, {
-        method: 'DELETE',
-        headers: {
-          ...getAuthHeaders(),
-        },
-      });
-
-      if (response.ok) {
-        setAnnouncements(announcements.filter(a => a.id !== id));
-        toast.success('Announcement deleted successfully');
-      } else {
-        const error = await response.json();
-        toast.error(error.message || 'Failed to delete announcement');
-      }
+      await announcementService.delete(id);
+      setAnnouncements(announcements.filter(a => a.id !== id));
+      toast.success('Announcement deleted successfully');
     } catch (error) {
       console.error('Error deleting announcement:', error);
       toast.error('Failed to delete announcement');
@@ -73,40 +58,22 @@ const AnnouncementList = () => {
 
   const handleFormSubmit = async (formData) => {
     try {
-      const url = editingAnnouncement 
-        ? `/api/announcements/${editingAnnouncement.id}`
-        : '/api/announcements';
+      let savedAnnouncement;
       
-      const method = editingAnnouncement ? 'PUT' : 'POST';
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders(),
-        },
-        body: JSON.stringify(formData),
-      });
-
-      if (response.ok) {
-        const savedAnnouncement = await response.json();
-        
-        if (editingAnnouncement) {
-          setAnnouncements(announcements.map(a => 
-            a.id === editingAnnouncement.id ? savedAnnouncement : a
-          ));
-          toast.success('Announcement updated successfully');
-        } else {
-          setAnnouncements([savedAnnouncement, ...announcements]);
-          toast.success('Announcement created successfully');
-        }
-        
-        setShowForm(false);
-        setEditingAnnouncement(null);
+      if (editingAnnouncement) {
+        savedAnnouncement = await announcementService.update(editingAnnouncement.id, formData);
+        setAnnouncements(announcements.map(a => 
+          a.id === editingAnnouncement.id ? savedAnnouncement : a
+        ));
+        toast.success('Announcement updated successfully');
       } else {
-        const error = await response.json();
-        toast.error(error.message || 'Failed to save announcement');
+        savedAnnouncement = await announcementService.create(formData);
+        setAnnouncements([savedAnnouncement, ...announcements]);
+        toast.success('Announcement created successfully');
       }
+      
+      setShowForm(false);
+      setEditingAnnouncement(null);
     } catch (error) {
       console.error('Error saving announcement:', error);
       toast.error('Failed to save announcement');

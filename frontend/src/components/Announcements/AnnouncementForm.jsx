@@ -5,7 +5,7 @@ import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { useAuth } from '../../contexts/AuthContext';
-import { announcementAPI } from '../../services/announcementService';
+import announcementService from '../../services/announcementService';
 
 const AnnouncementForm = ({ announcement = null, onSuccess, onCancel }) => {
   const { user } = useAuth();
@@ -90,10 +90,10 @@ const AnnouncementForm = ({ announcement = null, onSuccess, onCancel }) => {
       };
 
       if (isEditing) {
-        await announcementAPI.update(announcement.id, submissionData);
+        await announcementService.update(announcement.id, submissionData);
         setMessage('Announcement updated successfully!');
       } else {
-        await announcementAPI.create(submissionData);
+        await announcementService.create(submissionData);
         setMessage('Announcement created successfully!');
       }
 

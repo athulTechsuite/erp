@@ -12,10 +12,13 @@ import {
   AlertCircle,
   CheckCircle,
   XCircle,
-  PendingIcon
+  PendingIcon,
+  Megaphone,
+  Info
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { dashboardService } from '@/services/dashboardService';
+import { announcementsService } from '@/services/announcementsService';
 
 const Overview = () => {
   const { user } = useAuth();
@@ -35,8 +38,12 @@ const Overview = () => {
     error: null
   });
 
+  const [announcements, setAnnouncements] = useState([]);
+  const [announcementsLoading, setAnnouncementsLoading] = useState(true);
+
   useEffect(() => {
     fetchDashboardData();
+    fetchAnnouncements();
   }, []);
 
   const fetchDashboardData = async () => {
@@ -55,6 +62,18 @@ const Overview = () => {
         loading: false,
         error: 'Failed to load dashboard data'
       }));
+    }
+  };
+
+  const fetchAnnouncements = async () => {
+    try {
+      setAnnouncementsLoading(true);
+      const data = await announcementsService.getAnnouncements();
+      setAnnouncements(data);
+    } catch (error) {
+      console.error('Failed to fetch announcements:', error);
+    } finally {
+      setAnnouncementsLoading(false);
     }
   };
 
@@ -156,6 +175,45 @@ const Overview = () => {
           Refresh Data
         </Button>
       </div>
+
+      {/* Company Announcements */}
+      {!announcementsLoading && announcements.length > 0 && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardHeader>
+            <CardTitle className="flex items-center text-blue-800">
+              <Megaphone className="h-5 w-5 mr-2" />
+              Company Announcements
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {announcements.map((announcement) => (
+                <div key={announcement.id} className="bg-white rounded-lg p-4 border border-blue-200">
+                  <div className="flex items-start justify-between mb-2">
+                    <h4 className="text-lg font-semibold text-gray-900">
+                      {announcement.title}
+                    </h4>
+                    <div className="flex items-center text-xs text-gray-500 ml-4">
+                      <Info className="h-3 w-3 mr-1" />
+                      {new Date(announcement.createdAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <div className="text-gray-700 whitespace-pre-wrap">
+                    {announcement.content}
+                  </div>
+                  {announcement.author && (
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <p className="text-xs text-gray-500">
+                        Posted by {announcement.author.firstName} {announcement.author.lastName}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Key Metrics */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">

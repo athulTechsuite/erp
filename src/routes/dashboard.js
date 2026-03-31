@@ -4,6 +4,7 @@ const { authenticateToken, requireRole } = require('../middleware/auth');
 const Employee = require('../models/Employee');
 const Leave = require('../models/Leave');
 const Asset = require('../models/Asset');
+const Announcement = require('../models/Announcement');
 
 // Dashboard overview - accessible to all authenticated users
 router.get('/', authenticateToken, async (req, res) => {
@@ -12,6 +13,16 @@ router.get('/', authenticateToken, async (req, res) => {
     const userRole = req.user.role;
     
     let dashboardData = {};
+    
+    // Get announcements for all users
+    let announcements = [];
+    try {
+      announcements = await Announcement.find({ isActive: true })
+        .sort({ createdAt: -1 });
+    } catch (announcementError) {
+      console.error('Error loading announcements:', announcementError);
+      // Continue without announcements - graceful degradation
+    }
     
     if (userRole === 'admin' || userRole === 'manager') {
       // Admin/Manager dashboard - company overview
@@ -43,6 +54,7 @@ router.get('/', authenticateToken, async (req, res) => {
           assetsNeedingMaintenance
         },
         recentLeaveRequests,
+        announcements,
         userInfo: {
           name: `${req.user.firstName} ${req.user.lastName}`,
           role: userRole,
@@ -74,6 +86,7 @@ router.get('/', authenticateToken, async (req, res) => {
           totalRequests: myLeaves.length
         },
         myRecentLeaves: myLeaves,
+        announcements,
         userInfo: {
           name: `${req.user.firstName} ${req.user.lastName}`,
           role: userRole,
@@ -93,6 +106,165 @@ router.get('/', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error loading dashboard data',
+      error: error.message
+    });
+  }
+});
+
+// Get announcements - accessible to all authenticated users
+router.get('/announcements', authenticateToken, async (req, res) => {
+  try {
+    const announcements = await Announcement.find({ isActive: true })
+      .populate('createdBy', 'firstName lastName')
+      .sort({ createdAt: -1 });
+    
+    res.json({
+      success: true,
+      data: announcements
+    });
+  } catch (error) {
+    console.error('Error loading announcements:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error loading announcements',
+      error: error.message
+    });
+  }
+});
+
+// Get all announcements for admin management - admin only
+router.get('/announcements/manage', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const announcements = await Announcement.find()
+      .populate('createdBy', 'firstName lastName')
+      .populate('updatedBy', 'firstName lastName')
+      .sort({ createdAt: -1 });
+    
+    res.json({
+      success: true,
+      data: announcements
+    });
+  } catch (error) {
+    console.error('Error loading announcements for management:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error loading announcements',
+      error: error.message
+    });
+  }
+});
+
+// Create announcement - admin only
+router.post('/announcements', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { title, message } = req.body;
+    
+    if (!title || !message) {
+      return res.status(400).json({
+        success: false,
+        message: 'Title and message are required'
+      });
+    }
+    
+    const announcement = new Announcement({
+      title: title.trim(),
+      message: message.trim(),
+      createdBy: req.user.id,
+      isActive: true
+    });
+    
+    await announcement.save();
+    
+    const populatedAnnouncement = await Announcement.findById(announcement._id)
+      .populate('createdBy', 'firstName lastName');
+    
+    res.status(201).json({
+      success: true,
+      message: 'Announcement created successfully',
+      data: populatedAnnouncement
+    });
+  } catch (error) {
+    console.error('Error creating announcement:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating announcement',
+      error: error.message
+    });
+  }
+});
+
+// Update announcement - admin only
+router.put('/announcements/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, message, isActive } = req.body;
+    
+    if (!title || !message) {
+      return res.status(400).json({
+        success: false,
+        message: 'Title and message are required'
+      });
+    }
+    
+    const announcement = await Announcement.findById(id);
+    if (!announcement) {
+      return res.status(404).json({
+        success: false,
+        message: 'Announcement not found'
+      });
+    }
+    
+    announcement.title = title.trim();
+    announcement.message = message.trim();
+    announcement.isActive = isActive !== undefined ? isActive : announcement.isActive;
+    announcement.updatedBy = req.user.id;
+    announcement.updatedAt = new Date();
+    
+    await announcement.save();
+    
+    const populatedAnnouncement = await Announcement.findById(announcement._id)
+      .populate('createdBy', 'firstName lastName')
+      .populate('updatedBy', 'firstName lastName');
+    
+    res.json({
+      success: true,
+      message: 'Announcement updated successfully',
+      data: populatedAnnouncement
+    });
+  } catch (error) {
+    console.error('Error updating announcement:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating announcement',
+      error: error.message
+    });
+  }
+});
+
+// Delete announcement - admin only
+router.delete('/announcements/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const announcement = await Announcement.findById(id);
+    if (!announcement) {
+      return res.status(404).json({
+        success: false,
+        message: 'Announcement not found'
+      });
+    }
+    
+    await Announcement.findByIdAndDelete(id);
+    
+    res.json({
+      success: true,
+      message: 'Announcement deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting announcement:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting announcement',
       error: error.message
     });
   }
@@ -226,6 +398,7 @@ router.get('/quick-actions', authenticateToken, async (req, res) => {
       actions = [
         { id: 'add-employee', label: 'Add New Employee', icon: 'user-plus', url: '/employees/new' },
         { id: 'review-leaves', label: 'Review Leave Requests', icon: 'clock', url: '/leaves/pending' },
+        { id: 'manage-announcements', label: 'Manage Announcements', icon: 'megaphone', url: '/announcements' },
         { id: 'view-reports', label: 'Generate Reports', icon: 'chart-bar', url: '/reports' },
         { id: 'manage-assets', label: 'Manage Assets', icon: 'box', url: '/assets' },
         { id: 'system-settings', label: 'System Settings', icon: 'cog', url: '/settings' }

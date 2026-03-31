@@ -61,7 +61,7 @@ This system provides a unified platform for managing employee data, leave reques
 
 ### Frontend
 - **Framework:** React.js with JavaScript
-- **State Management:** React Context API with concurrent mode support and race condition prevention
+- **State Management:** React Context API with useMemo/useCallback optimization and race condition prevention through proper dependency management
 - **UI Components:** Custom components with modern CSS
 - **Styling:** CSS3 with Flexbox/Grid
 - **Forms:** Controlled components with validation
@@ -225,10 +225,12 @@ npm run test:coverage
 - **assets** - Inventory and asset tracking
 
 ### Enum Values
-- **leave_status**: PENDING, APPROVED, REJECTED, CANCELLED
-- **leave_types**: ANNUAL, SICK, EMERGENCY, MATERNITY, PATERNITY, BEREAVEMENT
-- **user_roles**: ADMIN, MANAGER, EMPLOYEE, HR_ADMIN
-- **asset_status**: ACTIVE, INACTIVE, MAINTENANCE, DISPOSED
+- **leave_status**: PENDING, APPROVED, REJECTED, CANCELLED, WITHDRAWN
+- **leave_types**: ANNUAL, SICK, EMERGENCY, MATERNITY, PATERNITY, BEREAVEMENT, UNPAID, COMPENSATORY, STUDY
+- **user_roles**: ADMIN, MANAGER, EMPLOYEE, HR_ADMIN, FINANCE_ADMIN, READONLY
+- **asset_status**: ACTIVE, INACTIVE, MAINTENANCE, DISPOSED, RESERVED, PENDING_APPROVAL
+- **request_priority**: LOW, NORMAL, HIGH, URGENT, CRITICAL
+- **employment_status**: ACTIVE, INACTIVE, TERMINATED, ON_LEAVE, PROBATION, SUSPENDED
 
 ## 🔒 Security Features
 
@@ -247,12 +249,14 @@ npm run test:coverage
 - **Rate Limiting**: API endpoints protected against brute force attacks
 
 ### Concurrency & Race Condition Prevention
-- **Database Transactions**: ACID-compliant transactions for data consistency
-- **Row-level Locking**: Prevents concurrent modification conflicts
-- **Optimistic Locking**: Version-based conflict detection for critical updates
-- **Connection Pooling**: Thread-safe database connection management
-- **State Synchronization**: React concurrent mode with proper state isolation
-- **Atomic Operations**: Critical business operations wrapped in atomic transactions
+- **Database Transactions**: ACID-compliant transactions for data consistency with proper isolation levels
+- **Row-level Locking**: SELECT FOR UPDATE queries prevent concurrent modification conflicts
+- **Optimistic Locking**: Version-based conflict detection with retry mechanisms for critical updates
+- **Connection Pooling**: Thread-safe database connection management with proper cleanup
+- **State Synchronization**: React concurrent mode with proper dependency arrays and useCallback/useMemo optimization
+- **Atomic Operations**: Critical business operations wrapped in atomic transactions with rollback support
+- **Queue Management**: Sequential processing of concurrent requests using task queues
+- **Mutex Implementation**: Critical sections protected with application-level locking mechanisms
 
 ### Comprehensive Security Measures
 - **Audit Logging**: Complete audit trail for all sensitive operations

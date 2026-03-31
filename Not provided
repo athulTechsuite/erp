@@ -46,6 +46,86 @@ test.describe('TC-001: Admin can create announcements', () => {
   });
 });
 
+// TC-002: Non-admin users cannot create announcements
+test.describe('TC-002: Non-admin users cannot create announcements', () => {
+  test('happy path - non-admin user properly restricted from creating announcements', async ({ page }) => {
+    // Login as non-admin user
+    await page.goto('/login');
+    await page.fill('#username', 'regularuser');
+    await page.fill('#password', 'userpassword');
+    await page.click('#login-btn');
+    
+    // Verify successful login as regular user
+    await expect(page.locator('.welcome-message')).toBeVisible();
+    await expect(page.locator('.welcome-message')).toContainText('Welcome, regularuser');
+    
+    // Try to access announcement creation page directly
+    await page.goto('/admin/announcements');
+    
+    // Verify access denied
+    await expect(page.locator('.access-denied')).toBeVisible();
+    await expect(page.locator('.access-denied')).toContainText('Access denied: Admin privileges required');
+    
+    // Verify redirect to appropriate page
+    await expect(page).toHaveURL(/.*\/(login|dashboard|unauthorized)/);
+    
+    // Verify create announcement button not visible in regular dashboard
+    await page.goto('/dashboard');
+    await expect(page.locator('#create-announcement-btn')).not.toBeVisible();
+  });
+
+  test('error path - non-admin user receives proper error when attempting to create announcement via API', async ({ page }) => {
+    // Login as non-admin user
+    await page.goto('/login');
+    await page.fill('#username', 'regularuser');
+    await page.fill('#password', 'userpassword');
+    await page.click('#login-btn');
+    
+    // Attempt to make direct API call to create announcement
+    const response = await page.request.post('/api/announcements', {
+      data: {
+        title: 'Unauthorized Announcement',
+        content: 'This should not be created',
+        priority: 'medium'
+      }
+    });
+    
+    // Verify API returns proper authorization error
+    expect(response.status()).toBe(403);
+    const responseData = await response.json();
+    expect(responseData.error).toContain('Insufficient privileges');
+    expect(responseData.message).toContain('Admin access required to create announcements');
+    
+    // Verify announcement was not created by checking announcements list
+    await page.goto('/dashboard');
+    await expect(page.locator('.announcement-item')).not.toContainText('Unauthorized Announcement');
+  });
+
+  test('error path - unauthenticated user blocked from announcement creation', async ({ page }) => {
+    // Try to access announcement creation without logging in
+    await page.goto('/admin/announcements');
+    
+    // Verify redirect to login page
+    await expect(page).toHaveURL(/.*\/login/);
+    await expect(page.locator('.auth-required-message')).toBeVisible();
+    await expect(page.locator('.auth-required-message')).toContainText('Authentication required');
+    
+    // Attempt direct API call without authentication
+    const response = await page.request.post('/api/announcements', {
+      data: {
+        title: 'Unauthenticated Announcement',
+        content: 'This should fail',
+        priority: 'high'
+      }
+    });
+    
+    // Verify API returns authentication error
+    expect(response.status()).toBe(401);
+    const responseData = await response.json();
+    expect(responseData.error).toContain('Authentication required');
+  });
+});
+
 // TC-003: Announcements display on dashboard
 test.describe('TC-003: Announcements display on dashboard', () => {
   test('happy path - announcements display correctly on dashboard', async ({ page }) => {

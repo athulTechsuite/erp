@@ -45,8 +45,19 @@ const AnnouncementCard = ({ announcement, onDelete }) => {
     });
   };
 
+  const validateAnnouncementId = (id) => {
+    // Check if id exists and is a valid MongoDB ObjectId format (24 character hex string)
+    if (!id || typeof id !== 'string') {
+      return false;
+    }
+    
+    // MongoDB ObjectId format validation
+    const objectIdRegex = /^[0-9a-fA-F]{24}$/;
+    return objectIdRegex.test(id);
+  };
+
   const handleDelete = async () => {
-    if (!announcement?._id) {
+    if (!validateAnnouncementId(announcement?._id)) {
       toast({
         title: "Error",
         description: "Invalid announcement ID",
@@ -81,16 +92,51 @@ const AnnouncementCard = ({ announcement, onDelete }) => {
     setImageError(true);
   };
 
-  const getImageUrl = (imagePath) => {
-    if (!imagePath) return null;
+  const sanitizeImagePath = (imagePath) => {
+    if (!imagePath || typeof imagePath !== 'string') {
+      return null;
+    }
+
+    // Remove any potential script injections or harmful characters
+    const sanitized = imagePath.replace(/[<>'"]/g, '');
     
-    // If it's already a full URL, return as is
-    if (imagePath.startsWith('http')) {
-      return imagePath;
+    // Validate path contains only allowed characters (alphanumeric, dash, underscore, dot, slash)
+    const allowedPathRegex = /^[a-zA-Z0-9\-_./]+$/;
+    if (!allowedPathRegex.test(sanitized)) {
+      return null;
+    }
+
+    // Prevent directory traversal attacks
+    if (sanitized.includes('..') || sanitized.includes('\\')) {
+      return null;
+    }
+
+    return sanitized;
+  };
+
+  const getImageUrl = (imagePath) => {
+    const sanitizedPath = sanitizeImagePath(imagePath);
+    if (!sanitizedPath) return null;
+    
+    // If it's already a full URL, validate it's from allowed domains
+    if (sanitizedPath.startsWith('http')) {
+      try {
+        const url = new URL(sanitizedPath);
+        // Only allow same origin or explicitly trusted domains
+        const allowedDomains = [window.location.hostname, 'localhost'];
+        if (!allowedDomains.includes(url.hostname)) {
+          console.warn('Image URL from untrusted domain blocked:', url.hostname);
+          return null;
+        }
+        return sanitizedPath;
+      } catch (error) {
+        console.warn('Invalid image URL:', sanitizedPath);
+        return null;
+      }
     }
     
     // Construct the full URL for uploaded images using centralized API config
-    return `${API_CONFIG.BASE_URL}${imagePath.startsWith('/') ? '' : '/'}${imagePath}`;
+    return `${API_CONFIG.BASE_URL}${sanitizedPath.startsWith('/') ? '' : '/'}${sanitizedPath}`;
   };
 
   if (!announcement) {

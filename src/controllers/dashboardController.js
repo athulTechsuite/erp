@@ -1,6 +1,7 @@
 const Employee = require('../models/Employee');
 const LeaveRequest = require('../models/LeaveRequest');
 const InventoryItem = require('../models/InventoryItem');
+const Announcement = require('../models/Announcement');
 
 class DashboardController {
   // Get main dashboard data for admin/manager view
@@ -62,6 +63,15 @@ class DashboardController {
         inventoryStats = { totalItems: 0, lowStockItems: 0 };
       }
 
+      // Get recent company announcements
+      const recentAnnouncements = await Announcement.find({
+        companyId,
+        isActive: true
+      })
+      .populate('createdBy', 'firstName lastName')
+      .sort({ createdAt: -1 })
+      .limit(5);
+
       // Calculate leave utilization rate
       const allEmployees = await Employee.find({ 
         companyId, 
@@ -90,6 +100,7 @@ class DashboardController {
         recentLeaveRequests,
         lowLeaveBalanceEmployees,
         inventory: inventoryStats,
+        announcements: recentAnnouncements,
         lastUpdated: new Date()
       };
 
@@ -111,7 +122,7 @@ class DashboardController {
   // Get employee dashboard data
   async getEmployeeDashboard(req, res) {
     try {
-      const { userId } = req.user;
+      const { userId, companyId } = req.user;
 
       // Get employee data
       const employee = await Employee.findOne({ userId })
@@ -138,6 +149,15 @@ class DashboardController {
         startDate: { $gte: new Date() }
       })
       .sort({ startDate: 1 })
+      .limit(5);
+
+      // Get recent company announcements
+      const recentAnnouncements = await Announcement.find({
+        companyId,
+        isActive: true
+      })
+      .populate('createdBy', 'firstName lastName')
+      .sort({ createdAt: -1 })
       .limit(5);
 
       // Calculate leave statistics
@@ -167,6 +187,7 @@ class DashboardController {
         },
         recentRequests: myLeaveRequests,
         upcomingLeaves,
+        announcements: recentAnnouncements,
         lastUpdated: new Date()
       };
 
@@ -265,10 +286,17 @@ class DashboardController {
         status: 'active'
       });
 
+      // Active announcements count
+      const activeAnnouncements = await Announcement.countDocuments({
+        companyId,
+        isActive: true
+      });
+
       const quickStats = {
         employeesOnLeaveToday,
         newRequestsThisMonth,
         activeEmployees,
+        activeAnnouncements,
         timestamp: new Date()
       };
 
@@ -282,6 +310,34 @@ class DashboardController {
       res.status(500).json({
         success: false,
         message: 'Failed to fetch quick stats',
+        error: error.message
+      });
+    }
+  }
+
+  // Get company announcements for dashboard widget
+  async getAnnouncementsWidget(req, res) {
+    try {
+      const { companyId } = req.user;
+
+      const announcements = await Announcement.find({
+        companyId,
+        isActive: true
+      })
+      .populate('createdBy', 'firstName lastName')
+      .sort({ createdAt: -1 })
+      .limit(10);
+
+      res.json({
+        success: true,
+        data: announcements
+      });
+
+    } catch (error) {
+      console.error('Announcements widget error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch announcements',
         error: error.message
       });
     }

@@ -23,7 +23,7 @@ This system provides a unified platform for managing employee data, leave reques
 - [x] Manager approval/rejection system
 - [x] Automatic leave balance calculation
 - [x] Leave history tracking
-- [x] Multiple leave types support
+- [x] Multiple leave types support (Annual, Sick, Emergency, Maternity, Paternity, Bereavement)
 
 ### Dashboard & Analytics
 - [x] Company overview dashboard
@@ -53,21 +53,22 @@ This system provides a unified platform for managing employee data, leave reques
 
 ### Backend
 - **Framework:** Node.js with Express.js
-- **Database:** PostgreSQL
+- **Database:** PostgreSQL with connection pooling and prepared statements
 - **Authentication:** JWT with bcrypt
 - **API:** RESTful architecture
 - **Validation:** Joi schema validation
+- **ORM:** Knex.js with SQL injection protection
 
 ### Frontend
 - **Framework:** React.js with JavaScript
-- **State Management:** React Context API
+- **State Management:** React Context API with concurrent mode support
 - **UI Components:** Custom components with modern CSS
 - **Styling:** CSS3 with Flexbox/Grid
 - **Forms:** Controlled components with validation
 
 ### DevOps & Tools
 - **Containerization:** Docker
-- **Process Management:** PM2
+- **Process Management:** PM2 with cluster mode
 - **Database Migration:** Knex.js
 - **Testing:** Jest & React Testing Library
 - **Code Quality:** ESLint, Prettier
@@ -218,20 +219,26 @@ npm run test:coverage
 ### Key Tables
 - **users** - Authentication and basic user data
 - **employees** - Employee profiles and HR data
-- **leave_requests** - Leave applications and status
+- **leave_requests** - Leave applications and status (PENDING, APPROVED, REJECTED, CANCELLED)
 - **leave_balances** - Employee leave entitlements
 - **departments** - Organizational structure
 - **assets** - Inventory and asset tracking
+- **leave_types** - Leave type definitions (ANNUAL, SICK, EMERGENCY, MATERNITY, PATERNITY, BEREAVEMENT)
+- **user_roles** - Role definitions (ADMIN, MANAGER, EMPLOYEE, HR_ADMIN)
+- **asset_status** - Asset status tracking (ACTIVE, INACTIVE, MAINTENANCE, DISPOSED)
 
 ## 🔒 Security Features
 
-- JWT-based authentication
-- Role-based access control
-- Input validation and sanitization
-- SQL injection prevention
-- XSS protection
-- Rate limiting
-- Secure password hashing
+- JWT-based authentication with secure token rotation
+- Role-based access control with granular permissions
+- Input validation and sanitization against XSS
+- SQL injection prevention using parameterized queries
+- Password hashing with bcrypt (minimum 12 rounds)
+- Rate limiting to prevent brute force attacks
+- Database connection encryption (SSL/TLS)
+- Concurrent request handling with proper locking mechanisms
+- Transaction isolation to prevent race conditions
+- Audit logging for sensitive operations
 
 ## 🚀 Deployment
 
@@ -255,12 +262,14 @@ npm run start:prod
 
 ## 📈 Performance Optimization
 
-- Database indexing strategy
-- API response caching
-- Image optimization
-- Code splitting
-- Lazy loading
-- Bundle optimization
+- Database indexing strategy with composite indexes
+- API response caching with Redis
+- Connection pooling for database operations
+- Image optimization and lazy loading
+- Code splitting and bundle optimization
+- Database query optimization with EXPLAIN ANALYZE
+- Concurrent processing with worker threads
+- Database transaction management for data consistency
 
 ## 🔮 Future Enhancements
 
@@ -270,6 +279,8 @@ npm run start:prod
 - [ ] Advanced workflow automation
 - [ ] Multi-company support
 - [ ] Advanced financial modules
+- [ ] Real-time notifications with WebSockets
+- [ ] Advanced audit trails and compliance reporting
 
 ## 🤝 Contributing
 
@@ -296,6 +307,8 @@ For support and questions:
 - [User Guide](docs/user-guide.md)
 - [Admin Guide](docs/admin-guide.md)
 - [Development Guide](docs/development.md)
+- [Security Guide](docs/security.md)
+- [Database Schema](docs/database-schema.md)
 
 ---
 

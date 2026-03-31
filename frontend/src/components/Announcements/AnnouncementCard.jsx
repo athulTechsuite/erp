@@ -17,6 +17,7 @@ import {
 import { toast } from '@/components/ui/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { announcementService } from '@/services/announcementService';
+import { API_CONFIG } from '@/config/api';
 
 const AnnouncementCard = ({ announcement, onDelete }) => {
   const { user } = useAuth();
@@ -79,9 +80,8 @@ const AnnouncementCard = ({ announcement, onDelete }) => {
       return imagePath;
     }
     
-    // Construct the full URL for uploaded images
-    const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-    return `${baseUrl}${imagePath.startsWith('/') ? '' : '/'}${imagePath}`;
+    // Construct the full URL for uploaded images using centralized API config
+    return `${API_CONFIG.BASE_URL}${imagePath.startsWith('/') ? '' : '/'}${imagePath}`;
   };
 
   if (!announcement) {

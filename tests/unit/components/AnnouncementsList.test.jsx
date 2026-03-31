@@ -411,6 +411,185 @@ describe('AnnouncementsList Component', () => {
     });
   });
 
+  // TC-002: Non-admin users cannot access management features
+  describe('TC-002: Non-admin users cannot access management features', () => {
+    describe('Happy path - Non-admin users can view announcements but cannot manage them', () => {
+      test.each([
+        { role: 'manager', name: 'Manager User' },
+        { role: 'employee', name: 'Employee User' }
+      ])('TC-002 - $role users should see announcements but not management controls', async ({ role, name }) => {
+        mockUseAuth.mockReturnValue({
+          user: { role, name },
+          token: `${role}-token`
+        });
+
+        fetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            success: true,
+            announcements: mockAnnouncements
+          })
+        });
+
+        await act(async () => {
+          render(<AnnouncementsList />);
+        });
+
+        await waitFor(() => {
+          // Should see announcements (read access)
+          expect(screen.getByText('Company Meeting')).toBeInTheDocument();
+          expect(screen.getByText('Holiday Notice')).toBeInTheDocument();
+          
+          // Should NOT see management features
+          expect(screen.queryByText('Create Announcement')).not.toBeInTheDocument();
+          expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
+        });
+      });
+
+      test('TC-002 - Non-admin users should maintain read access to announcement content', async () => {
+        mockUseAuth.mockReturnValue({
+          user: { role: 'employee', name: 'Employee User' },
+          token: 'employee-token'
+        });
+
+        fetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            success: true,
+            announcements: mockAnnouncements
+          })
+        });
+
+        await act(async () => {
+          render(<AnnouncementsList />);
+        });
+
+        await waitFor(() => {
+          // Should see full announcement content
+          expect(screen.getByText('Company Meeting')).toBeInTheDocument();
+          expect(screen.getByText('All staff meeting at 10 AM tomorrow')).toBeInTheDocument();
+          expect(screen.getByText('Holiday Notice')).toBeInTheDocument();
+          expect(screen.getByText('Office closed on Friday')).toBeInTheDocument();
+          expect(screen.getByTestId('announcement-image')).toBeInTheDocument();
+        });
+      });
+    });
+
+    describe('Error path - Non-admin users cannot bypass role restrictions', () => {
+      test('TC-002 - Employee users cannot access create functionality even with direct props', async () => {
+        mockUseAuth.mockReturnValue({
+          user: { role: 'employee', name: 'Employee User' },
+          token: 'employee-token'
+        });
+
+        fetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            success: true,
+            announcements: mockAnnouncements
+          })
+        });
+
+        // Even if showCreateButton prop is explicitly set to true, role should override
+        await act(async () => {
+          render(<AnnouncementsList showCreateButton={true} />);
+        });
+
+        await waitFor(() => {
+          expect(screen.queryByText('Create Announcement')).not.toBeInTheDocument();
+        });
+      });
+
+      test('TC-002 - Manager users cannot access delete functionality through UI manipulation', async () => {
+        mockUseAuth.mockReturnValue({
+          user: { role: 'manager', name: 'Manager User' },
+          token: 'manager-token'
+        });
+
+        fetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            success: true,
+            announcements: mockAnnouncements
+          })
+        });
+
+        await act(async () => {
+          render(<AnnouncementsList />);
+        });
+
+        await waitFor(() => {
+          // Should see announcements
+          expect(screen.getByText('Company Meeting')).toBeInTheDocument();
+          
+          // Should not have any delete buttons to manipulate
+          expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
+          expect(screen.queryByTestId('confirm-delete')).not.toBeInTheDocument();
+        });
+      });
+
+      test('TC-002 - Non-admin users maintain restrictions during re-renders and state changes', async () => {
+        mockUseAuth.mockReturnValue({
+          user: { role: 'employee', name: 'Employee User' },
+          token: 'employee-token'
+        });
+
+        fetch.mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            success: true,
+            announcements: mockAnnouncements
+          })
+        });
+
+        const { rerender } = await act(async () => {
+          return render(<AnnouncementsList />);
+        });
+
+        await waitFor(() => {
+          expect(screen.getByText('Company Meeting')).toBeInTheDocument();
+          expect(screen.queryByText('Create Announcement')).not.toBeInTheDocument();
+        });
+
+        // Re-render should maintain role restrictions
+        rerender(<AnnouncementsList />);
+
+        await waitFor(() => {
+          expect(screen.getByText('Company Meeting')).toBeInTheDocument();
+          expect(screen.queryByText('Create Announcement')).not.toBeInTheDocument();
+          expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
+        });
+      });
+
+      test('TC-002 - System prevents unauthorized access attempts gracefully', async () => {
+        const { message } = require('antd');
+        
+        mockUseAuth.mockReturnValue({
+          user: { role: 'employee', name: 'Employee User' },
+          token: 'employee-token'
+        });
+
+        // Simulate unauthorized access attempt via fetch response
+        fetch.mockResolvedValueOnce({
+          ok: false,
+          status: 403,
+          json: async () => ({
+            error: 'Forbidden: Insufficient permissions'
+          })
+        });
+
+        await act(async () => {
+          render(<AnnouncementsList />);
+        });
+
+        await waitFor(() => {
+          // Should handle unauthorized access gracefully with error message
+          expect(message.error).toHaveBeenCalled();
+        });
+      });
+    });
+  });
+
   describe('AC6: Announcements with text and image render properly', () => {
     test('should render announcement with image', async () => {
       fetch.mockResolvedValueOnce({

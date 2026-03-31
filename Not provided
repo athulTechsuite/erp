@@ -1,0 +1,240 @@
+const { test, expect } = require('@playwright/test');
+
+// TC-001: Admin can create announcements
+test.describe('TC-001: Admin can create announcements', () => {
+  test('happy path - admin successfully creates announcement', async ({ page }) => {
+    // Login as admin
+    await page.goto('/admin/login');
+    await page.fill('#username', 'admin');
+    await page.fill('#password', 'password');
+    await page.click('#login-btn');
+    
+    // Navigate to announcements
+    await page.goto('/admin/announcements');
+    await page.click('#create-announcement-btn');
+    
+    // Fill announcement form
+    await page.fill('#title', 'Test Announcement');
+    await page.fill('#content', 'This is a test announcement content');
+    await page.selectOption('#priority', 'high');
+    
+    // Submit announcement
+    await page.click('#submit-announcement');
+    
+    // Verify success
+    await expect(page.locator('.success-message')).toBeVisible();
+    await expect(page.locator('.announcement-title')).toContainText('Test Announcement');
+  });
+
+  test('error path - admin fails to create announcement with missing required fields', async ({ page }) => {
+    // Login as admin
+    await page.goto('/admin/login');
+    await page.fill('#username', 'admin');
+    await page.fill('#password', 'password');
+    await page.click('#login-btn');
+    
+    // Navigate to announcements
+    await page.goto('/admin/announcements');
+    await page.click('#create-announcement-btn');
+    
+    // Submit without filling required fields
+    await page.click('#submit-announcement');
+    
+    // Verify error handling
+    await expect(page.locator('.error-message')).toBeVisible();
+    await expect(page.locator('.field-error')).toContainText('Title is required');
+  });
+});
+
+// TC-003: Announcements display on dashboard
+test.describe('TC-003: Announcements display on dashboard', () => {
+  test('happy path - announcements display correctly on dashboard', async ({ page }) => {
+    // Create test announcement first
+    await page.goto('/admin/announcements');
+    await page.fill('#admin-username', 'admin');
+    await page.fill('#admin-password', 'password');
+    await page.click('#admin-login');
+    
+    await page.click('#create-announcement-btn');
+    await page.fill('#title', 'Dashboard Test Announcement');
+    await page.fill('#content', 'Test content for dashboard');
+    await page.click('#submit-announcement');
+    
+    // Navigate to dashboard
+    await page.goto('/dashboard');
+    
+    // Verify announcement displays
+    await expect(page.locator('.announcements-section')).toBeVisible();
+    await expect(page.locator('.announcement-item')).toContainText('Dashboard Test Announcement');
+    await expect(page.locator('.announcement-content')).toContainText('Test content for dashboard');
+  });
+
+  test('error path - no announcements display when none exist', async ({ page }) => {
+    // Clear all announcements first
+    await page.goto('/admin/announcements');
+    await page.fill('#admin-username', 'admin');
+    await page.fill('#admin-password', 'password');
+    await page.click('#admin-login');
+    
+    // Delete existing announcements
+    await page.click('#delete-all-btn');
+    await page.click('#confirm-delete');
+    
+    // Navigate to dashboard
+    await page.goto('/dashboard');
+    
+    // Verify no announcements message
+    await expect(page.locator('.no-announcements')).toBeVisible();
+    await expect(page.locator('.no-announcements')).toContainText('No announcements available');
+  });
+});
+
+// TC-004: Image upload and display functionality
+test.describe('TC-004: Image upload and display functionality', () => {
+  test('happy path - image uploads and displays successfully', async ({ page }) => {
+    // Login as admin
+    await page.goto('/admin/login');
+    await page.fill('#username', 'admin');
+    await page.fill('#password', 'password');
+    await page.click('#login-btn');
+    
+    // Create announcement with image
+    await page.goto('/admin/announcements');
+    await page.click('#create-announcement-btn');
+    await page.fill('#title', 'Announcement with Image');
+    await page.fill('#content', 'Test content with image');
+    
+    // Upload image
+    const fileInput = await page.locator('#image-upload');
+    await fileInput.setInputFiles('./test-files/test-image.jpg');
+    
+    await page.click('#submit-announcement');
+    
+    // Verify image displays
+    await expect(page.locator('.announcement-image')).toBeVisible();
+    await expect(page.locator('.announcement-image img')).toHaveAttribute('src', /test-image/);
+  });
+
+  test('error path - invalid image format rejected', async ({ page }) => {
+    // Login as admin
+    await page.goto('/admin/login');
+    await page.fill('#username', 'admin');
+    await page.fill('#password', 'password');
+    await page.click('#login-btn');
+    
+    // Try to upload invalid file
+    await page.goto('/admin/announcements');
+    await page.click('#create-announcement-btn');
+    await page.fill('#title', 'Test Announcement');
+    await page.fill('#content', 'Test content');
+    
+    // Upload invalid file
+    const fileInput = await page.locator('#image-upload');
+    await fileInput.setInputFiles('./test-files/invalid-file.txt');
+    
+    await page.click('#submit-announcement');
+    
+    // Verify error message
+    await expect(page.locator('.file-error')).toBeVisible();
+    await expect(page.locator('.file-error')).toContainText('Invalid file format');
+  });
+});
+
+// TC-005: Announcement deletion with confirmation
+test.describe('TC-005: Announcement deletion with confirmation', () => {
+  test('happy path - announcement deleted after confirmation', async ({ page }) => {
+    // Create announcement first
+    await page.goto('/admin/login');
+    await page.fill('#username', 'admin');
+    await page.fill('#password', 'password');
+    await page.click('#login-btn');
+    
+    await page.goto('/admin/announcements');
+    await page.click('#create-announcement-btn');
+    await page.fill('#title', 'Announcement to Delete');
+    await page.fill('#content', 'This will be deleted');
+    await page.click('#submit-announcement');
+    
+    // Delete announcement
+    await page.click('.delete-announcement-btn');
+    
+    // Verify confirmation dialog
+    await expect(page.locator('.confirmation-dialog')).toBeVisible();
+    await expect(page.locator('.confirmation-message')).toContainText('Are you sure you want to delete');
+    
+    // Confirm deletion
+    await page.click('#confirm-delete');
+    
+    // Verify deletion success
+    await expect(page.locator('.success-message')).toContainText('Announcement deleted successfully');
+    await expect(page.locator('.announcement-item')).not.toContainText('Announcement to Delete');
+  });
+
+  test('error path - deletion cancelled when user clicks cancel', async ({ page }) => {
+    // Create announcement first
+    await page.goto('/admin/login');
+    await page.fill('#username', 'admin');
+    await page.fill('#password', 'password');
+    await page.click('#login-btn');
+    
+    await page.goto('/admin/announcements');
+    await page.click('#create-announcement-btn');
+    await page.fill('#title', 'Announcement to Keep');
+    await page.fill('#content', 'This will not be deleted');
+    await page.click('#submit-announcement');
+    
+    // Try to delete announcement
+    await page.click('.delete-announcement-btn');
+    
+    // Cancel deletion
+    await page.click('#cancel-delete');
+    
+    // Verify announcement still exists
+    await expect(page.locator('.confirmation-dialog')).not.toBeVisible();
+    await expect(page.locator('.announcement-item')).toContainText('Announcement to Keep');
+  });
+});
+
+// TC-006: Error handling for failed operations
+test.describe('TC-006: Error handling for failed operations', () => {
+  test('happy path - proper error messages displayed for network failures', async ({ page }) => {
+    // Mock network failure
+    await page.route('**/api/announcements', route => route.abort());
+    
+    // Try to load announcements
+    await page.goto('/admin/announcements');
+    await page.fill('#username', 'admin');
+    await page.fill('#password', 'password');
+    await page.click('#login-btn');
+    
+    // Verify error handling
+    await expect(page.locator('.network-error')).toBeVisible();
+    await expect(page.locator('.network-error')).toContainText('Unable to load announcements');
+    await expect(page.locator('.retry-btn')).toBeVisible();
+  });
+
+  test('error path - server error handling with proper user feedback', async ({ page }) => {
+    // Mock server error
+    await page.route('**/api/announcements', route => route.fulfill({
+      status: 500,
+      body: JSON.stringify({ error: 'Internal server error' })
+    }));
+    
+    // Try to create announcement
+    await page.goto('/admin/login');
+    await page.fill('#username', 'admin');
+    await page.fill('#password', 'password');
+    await page.click('#login-btn');
+    
+    await page.goto('/admin/announcements');
+    await page.click('#create-announcement-btn');
+    await page.fill('#title', 'Test Announcement');
+    await page.fill('#content', 'Test content');
+    await page.click('#submit-announcement');
+    
+    // Verify server error handling
+    await expect(page.locator('.server-error')).toBeVisible();
+    await expect(page.locator('.server-error')).toContainText('Server error occurred');
+    await expect(page.locator('.error-details')).toContainText('Please try again later');
+  });
+});

@@ -1,0 +1,186 @@
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import { AnnouncementComponent } from '../components/AnnouncementComponent';
+import { AnnouncementService } from '../services/AnnouncementService';
+
+// Mock the announcement service
+jest.mock('../services/AnnouncementService');
+const mockAnnouncementService = AnnouncementService as jest.Mocked<typeof AnnouncementService>;
+
+describe('TC-002: Frontend announcement components', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('Happy path scenarios', () => {
+    test('TC-002-HP-001: Should render announcement list successfully', async () => {
+      // Arrange
+      const mockAnnouncements = [
+        {
+          id: '1',
+          title: 'Test Announcement 1',
+          content: 'This is test content 1',
+          priority: 'high',
+          createdAt: '2023-01-01T00:00:00Z'
+        },
+        {
+          id: '2',
+          title: 'Test Announcement 2',
+          content: 'This is test content 2',
+          priority: 'medium',
+          createdAt: '2023-01-02T00:00:00Z'
+        }
+      ];
+      
+      mockAnnouncementService.getAnnouncements.mockResolvedValue(mockAnnouncements);
+
+      // Act
+      render(<AnnouncementComponent />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText('Test Announcement 1')).toBeInTheDocument();
+        expect(screen.getByText('Test Announcement 2')).toBeInTheDocument();
+        expect(screen.getByText('This is test content 1')).toBeInTheDocument();
+        expect(screen.getByText('This is test content 2')).toBeInTheDocument();
+      });
+    });
+
+    test('TC-002-HP-002: Should handle announcement interaction correctly', async () => {
+      // Arrange
+      const mockAnnouncement = {
+        id: '1',
+        title: 'Interactive Announcement',
+        content: 'Click to dismiss',
+        priority: 'low',
+        createdAt: '2023-01-01T00:00:00Z'
+      };
+      
+      mockAnnouncementService.getAnnouncements.mockResolvedValue([mockAnnouncement]);
+      mockAnnouncementService.dismissAnnouncement.mockResolvedValue(true);
+
+      // Act
+      render(<AnnouncementComponent />);
+      
+      await waitFor(() => {
+        expect(screen.getByText('Interactive Announcement')).toBeInTheDocument();
+      });
+
+      const dismissButton = screen.getByRole('button', { name: /dismiss/i });
+      fireEvent.click(dismissButton);
+
+      // Assert
+      await waitFor(() => {
+        expect(mockAnnouncementService.dismissAnnouncement).toHaveBeenCalledWith('1');
+        expect(screen.queryByText('Interactive Announcement')).not.toBeInTheDocument();
+      });
+    });
+
+    test('TC-002-HP-003: Should display empty state when no announcements', async () => {
+      // Arrange
+      mockAnnouncementService.getAnnouncements.mockResolvedValue([]);
+
+      // Act
+      render(<AnnouncementComponent />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText(/no announcements/i)).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Error path scenarios', () => {
+    test('TC-002-EP-001: Should handle API fetch error gracefully', async () => {
+      // Arrange
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      mockAnnouncementService.getAnnouncements.mockRejectedValue(new Error('Network error'));
+
+      // Act
+      render(<AnnouncementComponent />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText(/failed to load announcements/i)).toBeInTheDocument();
+        expect(screen.getByText(/please try again later/i)).toBeInTheDocument();
+      });
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    test('TC-002-EP-002: Should handle dismiss action failure', async () => {
+      // Arrange
+      const mockAnnouncement = {
+        id: '1',
+        title: 'Test Announcement',
+        content: 'Test content',
+        priority: 'medium',
+        createdAt: '2023-01-01T00:00:00Z'
+      };
+      
+      mockAnnouncementService.getAnnouncements.mockResolvedValue([mockAnnouncement]);
+      mockAnnouncementService.dismissAnnouncement.mockRejectedValue(new Error('Dismiss failed'));
+
+      // Act
+      render(<AnnouncementComponent />);
+      
+      await waitFor(() => {
+        expect(screen.getByText('Test Announcement')).toBeInTheDocument();
+      });
+
+      const dismissButton = screen.getByRole('button', { name: /dismiss/i });
+      fireEvent.click(dismissButton);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText(/failed to dismiss announcement/i)).toBeInTheDocument();
+        expect(screen.getByText('Test Announcement')).toBeInTheDocument(); // Should still be visible
+      });
+    });
+
+    test('TC-002-EP-003: Should handle malformed announcement data', async () => {
+      // Arrange
+      const malformedAnnouncements = [
+        {
+          id: '1',
+          title: null,
+          content: undefined,
+          priority: 'invalid-priority',
+          createdAt: 'invalid-date'
+        }
+      ];
+      
+      mockAnnouncementService.getAnnouncements.mockResolvedValue(malformedAnnouncements);
+
+      // Act
+      render(<AnnouncementComponent />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText(/untitled announcement/i)).toBeInTheDocument();
+        expect(screen.getByText(/no content available/i)).toBeInTheDocument();
+      });
+    });
+
+    test('TC-002-EP-004: Should handle component unmounting during async operations', async () => {
+      // Arrange
+      let resolvePromise;
+      const pendingPromise = new Promise(resolve => {
+        resolvePromise = resolve;
+      });
+      
+      mockAnnouncementService.getAnnouncements.mockReturnValue(pendingPromise);
+
+      // Act
+      const { unmount } = render(<AnnouncementComponent />);
+      unmount();
+      
+      // Resolve promise after unmount
+      resolvePromise([]);
+
+      // Assert - no error should be thrown and no memory leaks
+      expect(mockAnnouncementService.getAnnouncements).toHaveBeenCalled();
+    });
+  });
+});

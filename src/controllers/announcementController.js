@@ -1,5 +1,27 @@
 const Announcement = require('../models/Announcement');
 const { validationResult } = require('express-validator');
+const { body, param } = require('express-validator');
+const xss = require('xss');
+
+// Input validation and sanitization middleware
+const validateAnnouncement = [
+  body('title')
+    .trim()
+    .isLength({ min: 1, max: 200 })
+    .withMessage('Title must be between 1 and 200 characters')
+    .customSanitizer(value => xss(value)),
+  body('content')
+    .trim()
+    .isLength({ min: 1, max: 5000 })
+    .withMessage('Content must be between 1 and 5000 characters')
+    .customSanitizer(value => xss(value))
+];
+
+const validateAnnouncementId = [
+  param('id')
+    .isMongoId()
+    .withMessage('Invalid announcement ID format')
+];
 
 // Get all active announcements (public access)
 const getAnnouncements = async (req, res) => {
@@ -161,6 +183,16 @@ const updateAnnouncement = async (req, res) => {
 // Delete announcement (admin only)
 const deleteAnnouncement = async (req, res) => {
   try {
+    // Check validation errors
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
     // Check if user is admin
     if (req.user.role !== 'admin') {
       return res.status(403).json({
@@ -198,6 +230,16 @@ const deleteAnnouncement = async (req, res) => {
 // Get single announcement by ID
 const getAnnouncementById = async (req, res) => {
   try {
+    // Check validation errors
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
     const { id } = req.params;
 
     const announcement = await Announcement.findById(id)
@@ -257,5 +299,7 @@ module.exports = {
   updateAnnouncement,
   deleteAnnouncement,
   getAnnouncementById,
-  getAllAnnouncements
+  getAllAnnouncements,
+  validateAnnouncement,
+  validateAnnouncementId
 };

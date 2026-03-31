@@ -6,6 +6,20 @@ import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { useAuth } from '../../contexts/AuthContext';
 import announcementService from '../../services/announcementService';
+import { ANNOUNCEMENT_PRIORITIES } from '../../constants/announcements';
+
+// Sanitize user input to prevent XSS attacks
+const sanitizeInput = (input) => {
+  if (typeof input !== 'string') return input;
+  
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/\//g, '&#x2F;');
+};
 
 const AnnouncementForm = ({ announcement = null, onSuccess, onCancel }) => {
   const { user } = useAuth();
@@ -81,8 +95,8 @@ const AnnouncementForm = ({ announcement = null, onSuccess, onCancel }) => {
 
     try {
       const submissionData = {
-        title: formData.title.trim(),
-        content: formData.content.trim(),
+        title: sanitizeInput(formData.title.trim()),
+        content: sanitizeInput(formData.content.trim()),
         priority: formData.priority,
         // Add timestamp to ensure chronological ordering
         createdAt: isEditing ? announcement.createdAt : new Date().toISOString(),
@@ -212,10 +226,11 @@ const AnnouncementForm = ({ announcement = null, onSuccess, onCancel }) => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               disabled={loading}
             >
-              <option value="low">Low</option>
-              <option value="normal">Normal</option>
-              <option value="high">High</option>
-              <option value="urgent">Urgent</option>
+              {ANNOUNCEMENT_PRIORITIES.map(priority => (
+                <option key={priority.value} value={priority.value}>
+                  {priority.label}
+                </option>
+              ))}
             </select>
             <p className="text-xs text-gray-500">
               Priority affects display order - urgent and high priority announcements appear first

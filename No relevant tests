@@ -1,0 +1,107 @@
+describe('TC-004: Form validation and error handling', () => {
+  // Happy path tests
+  describe('Happy path scenarios', () => {
+    test('should successfully validate and submit form with valid data', () => {
+      const validFormData = {
+        email: 'test@example.com',
+        password: 'ValidPassword123!',
+        confirmPassword: 'ValidPassword123!',
+        firstName: 'John',
+        lastName: 'Doe'
+      };
+
+      const result = validateForm(validFormData);
+      
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toEqual({});
+    });
+
+    test('should clear previous error messages when valid input is provided', () => {
+      const formData = {
+        email: 'valid@example.com',
+        password: 'StrongPass123!',
+        confirmPassword: 'StrongPass123!'
+      };
+
+      const result = validateForm(formData);
+      
+      expect(result.isValid).toBe(true);
+      expect(Object.keys(result.errors)).toHaveLength(0);
+    });
+  });
+
+  // Error path tests
+  describe('Error path scenarios', () => {
+    test('should return validation errors for invalid email format', () => {
+      const invalidFormData = {
+        email: 'invalid-email',
+        password: 'ValidPassword123!',
+        confirmPassword: 'ValidPassword123!'
+      };
+
+      const result = validateForm(invalidFormData);
+      
+      expect(result.isValid).toBe(false);
+      expect(result.errors.email).toBeDefined();
+      expect(result.errors.email).toContain('Please enter a valid email address');
+    });
+
+    test('should return validation errors for weak password', () => {
+      const weakPasswordData = {
+        email: 'test@example.com',
+        password: '123',
+        confirmPassword: '123'
+      };
+
+      const result = validateForm(weakPasswordData);
+      
+      expect(result.isValid).toBe(false);
+      expect(result.errors.password).toBeDefined();
+      expect(result.errors.password).toContain('Password must be at least 8 characters');
+    });
+
+    test('should return validation errors for password mismatch', () => {
+      const mismatchPasswordData = {
+        email: 'test@example.com',
+        password: 'ValidPassword123!',
+        confirmPassword: 'DifferentPassword123!'
+      };
+
+      const result = validateForm(mismatchPasswordData);
+      
+      expect(result.isValid).toBe(false);
+      expect(result.errors.confirmPassword).toBeDefined();
+      expect(result.errors.confirmPassword).toContain('Passwords do not match');
+    });
+
+    test('should return validation errors for required fields', () => {
+      const emptyFormData = {
+        email: '',
+        password: '',
+        confirmPassword: ''
+      };
+
+      const result = validateForm(emptyFormData);
+      
+      expect(result.isValid).toBe(false);
+      expect(result.errors.email).toContain('Email is required');
+      expect(result.errors.password).toContain('Password is required');
+    });
+
+    test('should handle multiple validation errors simultaneously', () => {
+      const multipleErrorsData = {
+        email: 'invalid-email',
+        password: '123',
+        confirmPassword: '456'
+      };
+
+      const result = validateForm(multipleErrorsData);
+      
+      expect(result.isValid).toBe(false);
+      expect(Object.keys(result.errors)).toHaveLength(3);
+      expect(result.errors.email).toBeDefined();
+      expect(result.errors.password).toBeDefined();
+      expect(result.errors.confirmPassword).toBeDefined();
+    });
+  });
+});

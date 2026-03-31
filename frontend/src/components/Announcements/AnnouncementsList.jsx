@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Button, Modal, message, Spin, Empty, Typography, Image, Popconfirm } from 'antd';
-import { PlusOutlined, DeleteOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
+import { PlusIcon, TrashIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { Button } from '../ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../ui/alert-dialog';
+import { Spinner } from '../ui/spinner';
+import { toast } from '../ui/use-toast';
 
 import { useAuth } from '../../hooks/useAuth';
 import AnnouncementForm from './AnnouncementForm';
 import './AnnouncementsList.css';
 
-const { Title, Paragraph } = Typography;
-const { confirm } = Modal;
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+const ANNOUNCEMENTS_ENDPOINT = `${API_BASE_URL}/api/announcements`;
 
 const AnnouncementsList = ({ showCreateButton = true, maxHeight = null }) => {
   const [announcements, setAnnouncements] = useState([]);
@@ -25,7 +30,7 @@ const AnnouncementsList = ({ showCreateButton = true, maxHeight = null }) => {
   const fetchAnnouncements = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/announcements', {
+      const response = await fetch(ANNOUNCEMENTS_ENDPOINT, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -40,7 +45,11 @@ const AnnouncementsList = ({ showCreateButton = true, maxHeight = null }) => {
       setAnnouncements(data.announcements || []);
     } catch (error) {
       console.error('Error fetching announcements:', error);
-      message.error('Failed to load announcements');
+      toast({
+        title: "Error",
+        description: "Failed to load announcements",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -55,7 +64,7 @@ const AnnouncementsList = ({ showCreateButton = true, maxHeight = null }) => {
         formData.append('image', announcementData.image);
       }
 
-      const response = await fetch('/api/announcements', {
+      const response = await fetch(ANNOUNCEMENTS_ENDPOINT, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -68,19 +77,26 @@ const AnnouncementsList = ({ showCreateButton = true, maxHeight = null }) => {
         throw new Error(errorData.message || 'Failed to create announcement');
       }
 
-      message.success('Announcement created successfully');
+      toast({
+        title: "Success",
+        description: "Announcement created successfully",
+      });
       setCreateModalVisible(false);
       fetchAnnouncements();
     } catch (error) {
       console.error('Error creating announcement:', error);
-      message.error(error.message || 'Failed to create announcement');
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create announcement",
+        variant: "destructive",
+      });
     }
   };
 
   const handleDeleteAnnouncement = async (announcementId) => {
     try {
       setDeleteLoading(announcementId);
-      const response = await fetch(`/api/announcements/${announcementId}`, {
+      const response = await fetch(`${ANNOUNCEMENTS_ENDPOINT}/${announcementId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -93,28 +109,21 @@ const AnnouncementsList = ({ showCreateButton = true, maxHeight = null }) => {
         throw new Error(errorData.message || 'Failed to delete announcement');
       }
 
-      message.success('Announcement deleted successfully');
+      toast({
+        title: "Success",
+        description: "Announcement deleted successfully",
+      });
       fetchAnnouncements();
     } catch (error) {
       console.error('Error deleting announcement:', error);
-      message.error(error.message || 'Failed to delete announcement');
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete announcement",
+        variant: "destructive",
+      });
     } finally {
       setDeleteLoading(null);
     }
-  };
-
-  const showDeleteConfirm = (announcement) => {
-    confirm({
-      title: 'Delete Announcement',
-      icon: <ExclamationCircleOutlined />,
-      content: `Are you sure you want to delete "${announcement.title}"? This action cannot be undone.`,
-      okText: 'Yes, Delete',
-      okType: 'danger',
-      cancelText: 'Cancel',
-      onOk() {
-        handleDeleteAnnouncement(announcement.id);
-      },
-    });
   };
 
   const formatDate = (dateString) => {
@@ -129,8 +138,8 @@ const AnnouncementsList = ({ showCreateButton = true, maxHeight = null }) => {
 
   if (loading) {
     return (
-      <div className="announcements-loading">
-        <Spin size="large" />
+      <div className="announcements-loading flex justify-center items-center p-8">
+        <Spinner size="lg" />
       </div>
     );
   }
@@ -138,15 +147,24 @@ const AnnouncementsList = ({ showCreateButton = true, maxHeight = null }) => {
   return (
     <div className="announcements-list">
       {showCreateButton && isAdmin && (
-        <div className="announcements-header">
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setCreateModalVisible(true)}
-            className="create-announcement-btn"
-          >
-            Create Announcement
-          </Button>
+        <div className="announcements-header mb-6">
+          <Dialog open={createModalVisible} onOpenChange={setCreateModalVisible}>
+            <DialogTrigger asChild>
+              <Button className="create-announcement-btn">
+                <PlusIcon className="h-4 w-4 mr-2" />
+                Create Announcement
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Create New Announcement</DialogTitle>
+              </DialogHeader>
+              <AnnouncementForm
+                onSubmit={handleCreateAnnouncement}
+                onCancel={() => setCreateModalVisible(false)}
+              />
+            </DialogContent>
+          </Dialog>
         </div>
       )}
 
@@ -155,85 +173,90 @@ const AnnouncementsList = ({ showCreateButton = true, maxHeight = null }) => {
         style={maxHeight ? { maxHeight, overflowY: 'auto' } : {}}
       >
         {announcements.length === 0 ? (
-          <Empty
-            description="No announcements available"
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-          />
+          <div className="text-center py-12">
+            <div className="text-gray-500 text-lg">No announcements available</div>
+          </div>
         ) : (
-          <div className="announcements-grid">
+          <div className="announcements-grid grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {announcements.map((announcement) => (
-              <Card
-                key={announcement.id}
-                className="announcement-card"
-                actions={isAdmin ? [
-                  <Popconfirm
-                    title="Delete Announcement"
-                    description="Are you sure you want to delete this announcement?"
-                    onConfirm={() => handleDeleteAnnouncement(announcement.id)}
-                    okText="Yes"
-                    cancelText="No"
-                    okType="danger"
-                  >
-                    <Button
-                      type="text"
-                      danger
-                      icon={<DeleteOutlined />}
-                      loading={deleteLoading === announcement.id}
-                      className="delete-btn"
-                    >
-                      Delete
-                    </Button>
-                  </Popconfirm>
-                ] : undefined}
-              >
-                <div className="announcement-content">
-                  <Title level={4} className="announcement-title">
+              <Card key={announcement.id} className="announcement-card">
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+                  <CardTitle className="announcement-title text-lg font-semibold">
                     {announcement.title}
-                  </Title>
-                  
-                  {announcement.image_url && (
-                    <div className="announcement-image">
-                      <Image
-                        src={announcement.image_url}
-                        alt="Announcement"
-                        style={{ maxWidth: '100%', maxHeight: '200px' }}
-                        fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMIAAADDCAYAAADQvc6UAAABRWlDQ1BJQ0MgUHJvZmlsZQAAKJFjYGASSSwoyGFhYGDIzSspCnJ3UoiIjFJgf8LAwSDCIMogwMCcmFxc4BgQ4ANUwgCjUcG3awyMIPqyLsis7PPOq3QdDFcvjV3jOD1boQVTPQrgSkktTgbSf4A4LbmgqISBgTEFyFYuLykAsTuAbJEioKOA7DkgdjqEvQHEToKwj4DVhAQ5A9k3gGyB5IxEoBmML4BsnSQk8XQkNtReEOBxcfXxUQg1Mjc0dyHgXNJBSWpFCYh2zi+oLMpMzyhRcASGUqqCZ16yno6CkYGRAQMDKMwhqj/fAIcloxgHQqxAjIHBEugw5sUIsSQpBobtQPdLciLEVJYzMPBHMDBsayhILEqEO4DxG0txmrERhM29nYGBddr//5/DGRjYNRkY/l7////39v///y4Dmn+LgeHANwDrkl1AuO+pmgAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAwqADAAQAAAABAAAAwwAAAAD9b/HnAAAHlklEQVR4Ae3dP3Ik1RnG4W+FmuFE4SDBSsQIhLBjOAFvgBvgBMQN2A1wA9wAJ2AJ3kkg2zHC2IlJoCRIhEUiRzpFz7xiu3p6urv+dL9635+0M9Pvdn2dVvWj97961a/pNX+/9a+XeCdASBGEhCIgBAnOCXkgCAlCQpDgnBAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQECc4JeSAICUJCkOCckAeCkCAkBAnOCXkgCAlCQpDgnJAHgpAgJAQJzgl5IAgJQkKQ4JyQB4KQICQ0Fz8BHpFdZlz4ZI8AAAAASUVORK5CYII="
-                      />
-                    </div>
+                  </CardTitle>
+                  {isAdmin && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          disabled={deleteLoading === announcement.id}
+                        >
+                          {deleteLoading === announcement.id ? (
+                            <Spinner size="sm" />
+                          ) : (
+                            <TrashIcon className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle className="flex items-center gap-2">
+                            <ExclamationTriangleIcon className="h-5 w-5 text-red-600" />
+                            Delete Announcement
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete "{announcement.title}"? This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDeleteAnnouncement(announcement.id)}
+                            className="bg-red-600 hover:bg-red-700"
+                          >
+                            Yes, Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   )}
+                </CardHeader>
+                <CardContent>
+                  <div className="announcement-content">
+                    {announcement.image_url && (
+                      <div className="announcement-image mb-4">
+                        <img
+                          src={announcement.image_url}
+                          alt="Announcement"
+                          className="w-full max-h-48 object-cover rounded-md"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    )}
 
-                  <Paragraph className="announcement-text">
-                    {announcement.content}
-                  </Paragraph>
+                    <p className="announcement-text text-gray-700 mb-4 leading-relaxed">
+                      {announcement.content}
+                    </p>
 
-                  <div className="announcement-meta">
-                    <span className="announcement-date">
-                      {formatDate(announcement.created_at)}
-                    </span>
-                    <span className="announcement-author">
-                      By: {announcement.created_by_name}
-                    </span>
+                    <div className="announcement-meta text-sm text-gray-500 space-y-1">
+                      <div className="announcement-date">
+                        {formatDate(announcement.created_at)}
+                      </div>
+                      <div className="announcement-author">
+                        By: {announcement.created_by_name}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                </CardContent>
               </Card>
             ))}
           </div>
         )}
       </div>
-
-      <Modal
-        title="Create New Announcement"
-        open={createModalVisible}
-        onCancel={() => setCreateModalVisible(false)}
-        footer={null}
-        width={600}
-        destroyOnClose
-      >
-        <AnnouncementForm
-          onSubmit={handleCreateAnnouncement}
-          onCancel={() => setCreateModalVisible(false)}
-        />
-      </Modal>
     </div>
   );
 };

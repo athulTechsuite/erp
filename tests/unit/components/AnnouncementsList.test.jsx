@@ -77,7 +77,8 @@ jest.mock('../../../frontend/src/components/Announcements/AnnouncementForm', () 
   };
 });
 
-describe('AnnouncementsList Component', () => {
+// TC-002: Unit tests for AnnouncementsList component
+describe('TC-002: AnnouncementsList Component Unit Tests', () => {
   const mockUseAuth = useAuth;
   
   const mockAnnouncements = [
@@ -111,8 +112,9 @@ describe('AnnouncementsList Component', () => {
     jest.clearAllMocks();
   });
 
-  describe('AC1: Admin can see Create Announcement button and list existing announcements', () => {
-    test('should display Create Announcement button for admin users', async () => {
+  // TC-002: Happy Path Tests
+  describe('TC-002 Happy Path: Component renders and functions correctly', () => {
+    test('TC-002-HP-01: Admin can see Create Announcement button and list existing announcements', async () => {
       mockUseAuth.mockReturnValue({
         user: { role: 'admin', name: 'Admin User' },
         token: 'admin-token'
@@ -132,50 +134,47 @@ describe('AnnouncementsList Component', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Create Announcement')).toBeInTheDocument();
-      });
-    });
-
-    test('should display list of existing announcements', async () => {
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: true,
-          announcements: mockAnnouncements
-        })
-      });
-
-      await act(async () => {
-        render(<AnnouncementsList />);
-      });
-
-      await waitFor(() => {
         expect(screen.getByText('Company Meeting')).toBeInTheDocument();
         expect(screen.getByText('Holiday Notice')).toBeInTheDocument();
         expect(screen.getByText('All staff meeting at 10 AM tomorrow')).toBeInTheDocument();
       });
     });
 
-    test('should show empty state when no announcements exist', async () => {
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: true,
-          announcements: []
-        })
-      });
+    test('TC-002-HP-02: All authenticated users can view announcements', async () => {
+      const userRoles = [
+        { role: 'admin', name: 'Admin User' },
+        { role: 'manager', name: 'Manager User' },
+        { role: 'employee', name: 'Employee User' }
+      ];
 
-      await act(async () => {
-        render(<AnnouncementsList />);
-      });
+      for (const user of userRoles) {
+        mockUseAuth.mockReturnValue({
+          user,
+          token: `${user.role}-token`
+        });
 
-      await waitFor(() => {
-        expect(screen.getByTestId('empty')).toBeInTheDocument();
-      });
+        fetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            success: true,
+            announcements: mockAnnouncements
+          })
+        });
+
+        const { unmount } = await act(async () => {
+          return render(<AnnouncementsList />);
+        });
+
+        await waitFor(() => {
+          expect(screen.getByText('Company Meeting')).toBeInTheDocument();
+          expect(screen.getByText('Holiday Notice')).toBeInTheDocument();
+        });
+
+        unmount();
+      }
     });
-  });
 
-  describe('AC2: Admin can create announcements', () => {
-    test('should open create form when Create button is clicked', async () => {
+    test('TC-002-HP-03: Admin can create announcements', async () => {
       mockUseAuth.mockReturnValue({
         user: { role: 'admin', name: 'Admin User' },
         token: 'admin-token'
@@ -199,31 +198,6 @@ describe('AnnouncementsList Component', () => {
 
       fireEvent.click(screen.getByText('Create Announcement'));
 
-      await waitFor(() => {
-        expect(screen.getByTestId('announcement-form')).toBeInTheDocument();
-      });
-    });
-
-    test('should close create form when close button is clicked', async () => {
-      mockUseAuth.mockReturnValue({
-        user: { role: 'admin', name: 'Admin User' },
-        token: 'admin-token'
-      });
-
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: true,
-          announcements: []
-        })
-      });
-
-      await act(async () => {
-        render(<AnnouncementsList />);
-      });
-
-      fireEvent.click(screen.getByText('Create Announcement'));
-      
       await waitFor(() => {
         expect(screen.getByTestId('announcement-form')).toBeInTheDocument();
       });
@@ -234,40 +208,8 @@ describe('AnnouncementsList Component', () => {
         expect(screen.queryByTestId('announcement-form')).not.toBeInTheDocument();
       });
     });
-  });
 
-  describe('AC3: All authenticated users can view announcements', () => {
-    test.each([
-      { role: 'admin', name: 'Admin User' },
-      { role: 'manager', name: 'Manager User' },
-      { role: 'employee', name: 'Employee User' }
-    ])('should display announcements for $role users', async ({ role, name }) => {
-      mockUseAuth.mockReturnValue({
-        user: { role, name },
-        token: 'test-token'
-      });
-
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: true,
-          announcements: mockAnnouncements
-        })
-      });
-
-      await act(async () => {
-        render(<AnnouncementsList />);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('Company Meeting')).toBeInTheDocument();
-        expect(screen.getByText('Holiday Notice')).toBeInTheDocument();
-      });
-    });
-  });
-
-  describe('AC4: Admin can delete announcements', () => {
-    test('should show delete button for admin users', async () => {
+    test('TC-002-HP-04: Admin can delete announcements', async () => {
       mockUseAuth.mockReturnValue({
         user: { role: 'admin', name: 'Admin User' },
         token: 'admin-token'
@@ -281,32 +223,6 @@ describe('AnnouncementsList Component', () => {
         })
       });
 
-      await act(async () => {
-        render(<AnnouncementsList />);
-      });
-
-      await waitFor(() => {
-        const deleteButtons = screen.getAllByTestId('delete-button');
-        expect(deleteButtons).toHaveLength(2); // One for each announcement
-      });
-    });
-
-    test('should delete announcement when delete is confirmed', async () => {
-      mockUseAuth.mockReturnValue({
-        user: { role: 'admin', name: 'Admin User' },
-        token: 'admin-token'
-      });
-
-      // Initial fetch
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: true,
-          announcements: mockAnnouncements
-        })
-      });
-
-      // Delete request
       fetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -320,7 +236,8 @@ describe('AnnouncementsList Component', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText('Company Meeting')).toBeInTheDocument();
+        const deleteButtons = screen.getAllByTestId('delete-button');
+        expect(deleteButtons).toHaveLength(2);
       });
 
       const deleteButtons = screen.getAllByTestId('delete-button');
@@ -338,265 +255,13 @@ describe('AnnouncementsList Component', () => {
         );
       });
     });
-  });
 
-  describe('AC5: Non-admin users cannot access management features', () => {
-    test('should not show Create button for manager users', async () => {
-      mockUseAuth.mockReturnValue({
-        user: { role: 'manager', name: 'Manager User' },
-        token: 'manager-token'
-      });
-
+    test('TC-002-HP-05: Announcements with text and images render properly', async () => {
       fetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           success: true,
           announcements: mockAnnouncements
-        })
-      });
-
-      await act(async () => {
-        render(<AnnouncementsList />);
-      });
-
-      await waitFor(() => {
-        expect(screen.queryByText('Create Announcement')).not.toBeInTheDocument();
-      });
-    });
-
-    test('should not show Create button for employee users', async () => {
-      mockUseAuth.mockReturnValue({
-        user: { role: 'employee', name: 'Employee User' },
-        token: 'employee-token'
-      });
-
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: true,
-          announcements: mockAnnouncements
-        })
-      });
-
-      await act(async () => {
-        render(<AnnouncementsList />);
-      });
-
-      await waitFor(() => {
-        expect(screen.queryByText('Create Announcement')).not.toBeInTheDocument();
-      });
-    });
-
-    test('should not show delete buttons for non-admin users', async () => {
-      mockUseAuth.mockReturnValue({
-        user: { role: 'employee', name: 'Employee User' },
-        token: 'employee-token'
-      });
-
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: true,
-          announcements: mockAnnouncements
-        })
-      });
-
-      await act(async () => {
-        render(<AnnouncementsList />);
-      });
-
-      await waitFor(() => {
-        expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
-      });
-    });
-  });
-
-  // TC-002: Non-admin users cannot access management features
-  describe('TC-002: Non-admin users cannot access management features', () => {
-    describe('Happy path - Non-admin users can view announcements but cannot manage them', () => {
-      test.each([
-        { role: 'manager', name: 'Manager User' },
-        { role: 'employee', name: 'Employee User' }
-      ])('TC-002 - $role users should see announcements but not management controls', async ({ role, name }) => {
-        mockUseAuth.mockReturnValue({
-          user: { role, name },
-          token: `${role}-token`
-        });
-
-        fetch.mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({
-            success: true,
-            announcements: mockAnnouncements
-          })
-        });
-
-        await act(async () => {
-          render(<AnnouncementsList />);
-        });
-
-        await waitFor(() => {
-          // Should see announcements (read access)
-          expect(screen.getByText('Company Meeting')).toBeInTheDocument();
-          expect(screen.getByText('Holiday Notice')).toBeInTheDocument();
-          
-          // Should NOT see management features
-          expect(screen.queryByText('Create Announcement')).not.toBeInTheDocument();
-          expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
-        });
-      });
-
-      test('TC-002 - Non-admin users should maintain read access to announcement content', async () => {
-        mockUseAuth.mockReturnValue({
-          user: { role: 'employee', name: 'Employee User' },
-          token: 'employee-token'
-        });
-
-        fetch.mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({
-            success: true,
-            announcements: mockAnnouncements
-          })
-        });
-
-        await act(async () => {
-          render(<AnnouncementsList />);
-        });
-
-        await waitFor(() => {
-          // Should see full announcement content
-          expect(screen.getByText('Company Meeting')).toBeInTheDocument();
-          expect(screen.getByText('All staff meeting at 10 AM tomorrow')).toBeInTheDocument();
-          expect(screen.getByText('Holiday Notice')).toBeInTheDocument();
-          expect(screen.getByText('Office closed on Friday')).toBeInTheDocument();
-          expect(screen.getByTestId('announcement-image')).toBeInTheDocument();
-        });
-      });
-    });
-
-    describe('Error path - Non-admin users cannot bypass role restrictions', () => {
-      test('TC-002 - Employee users cannot access create functionality even with direct props', async () => {
-        mockUseAuth.mockReturnValue({
-          user: { role: 'employee', name: 'Employee User' },
-          token: 'employee-token'
-        });
-
-        fetch.mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({
-            success: true,
-            announcements: mockAnnouncements
-          })
-        });
-
-        // Even if showCreateButton prop is explicitly set to true, role should override
-        await act(async () => {
-          render(<AnnouncementsList showCreateButton={true} />);
-        });
-
-        await waitFor(() => {
-          expect(screen.queryByText('Create Announcement')).not.toBeInTheDocument();
-        });
-      });
-
-      test('TC-002 - Manager users cannot access delete functionality through UI manipulation', async () => {
-        mockUseAuth.mockReturnValue({
-          user: { role: 'manager', name: 'Manager User' },
-          token: 'manager-token'
-        });
-
-        fetch.mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({
-            success: true,
-            announcements: mockAnnouncements
-          })
-        });
-
-        await act(async () => {
-          render(<AnnouncementsList />);
-        });
-
-        await waitFor(() => {
-          // Should see announcements
-          expect(screen.getByText('Company Meeting')).toBeInTheDocument();
-          
-          // Should not have any delete buttons to manipulate
-          expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
-          expect(screen.queryByTestId('confirm-delete')).not.toBeInTheDocument();
-        });
-      });
-
-      test('TC-002 - Non-admin users maintain restrictions during re-renders and state changes', async () => {
-        mockUseAuth.mockReturnValue({
-          user: { role: 'employee', name: 'Employee User' },
-          token: 'employee-token'
-        });
-
-        fetch.mockResolvedValue({
-          ok: true,
-          json: async () => ({
-            success: true,
-            announcements: mockAnnouncements
-          })
-        });
-
-        const { rerender } = await act(async () => {
-          return render(<AnnouncementsList />);
-        });
-
-        await waitFor(() => {
-          expect(screen.getByText('Company Meeting')).toBeInTheDocument();
-          expect(screen.queryByText('Create Announcement')).not.toBeInTheDocument();
-        });
-
-        // Re-render should maintain role restrictions
-        rerender(<AnnouncementsList />);
-
-        await waitFor(() => {
-          expect(screen.getByText('Company Meeting')).toBeInTheDocument();
-          expect(screen.queryByText('Create Announcement')).not.toBeInTheDocument();
-          expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
-        });
-      });
-
-      test('TC-002 - System prevents unauthorized access attempts gracefully', async () => {
-        const { message } = require('antd');
-        
-        mockUseAuth.mockReturnValue({
-          user: { role: 'employee', name: 'Employee User' },
-          token: 'employee-token'
-        });
-
-        // Simulate unauthorized access attempt via fetch response
-        fetch.mockResolvedValueOnce({
-          ok: false,
-          status: 403,
-          json: async () => ({
-            error: 'Forbidden: Insufficient permissions'
-          })
-        });
-
-        await act(async () => {
-          render(<AnnouncementsList />);
-        });
-
-        await waitFor(() => {
-          // Should handle unauthorized access gracefully with error message
-          expect(message.error).toHaveBeenCalled();
-        });
-      });
-    });
-  });
-
-  describe('AC6: Announcements with text and image render properly', () => {
-    test('should render announcement with image', async () => {
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: true,
-          announcements: [mockAnnouncements[1]] // Holiday notice with image
         })
       });
 
@@ -611,15 +276,16 @@ describe('AnnouncementsList Component', () => {
           'src', 
           'https://example.com/holiday.jpg'
         );
+        expect(screen.getByText('Company Meeting')).toBeInTheDocument();
       });
     });
 
-    test('should render announcement without image', async () => {
+    test('TC-002-HP-06: Empty state renders when no announcements exist', async () => {
       fetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           success: true,
-          announcements: [mockAnnouncements[0]] // Company meeting without image
+          announcements: []
         })
       });
 
@@ -628,14 +294,75 @@ describe('AnnouncementsList Component', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText('Company Meeting')).toBeInTheDocument();
-        expect(screen.queryByTestId('announcement-image')).not.toBeInTheDocument();
+        expect(screen.getByTestId('empty')).toBeInTheDocument();
+      });
+    });
+
+    test('TC-002-HP-07: Loading state displays during API calls', async () => {
+      let resolvePromise;
+      const promise = new Promise((resolve) => {
+        resolvePromise = resolve;
+      });
+
+      fetch.mockReturnValueOnce(promise);
+
+      await act(async () => {
+        render(<AnnouncementsList />);
+      });
+
+      expect(screen.getByTestId('spin')).toHaveAttribute('data-spinning', 'true');
+
+      resolvePromise({
+        ok: true,
+        json: async () => ({
+          success: true,
+          announcements: []
+        })
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('spin')).toHaveAttribute('data-spinning', 'false');
       });
     });
   });
 
-  describe('AC7: Error handling and system stability', () => {
-    test('should display error message when fetch fails', async () => {
+  // TC-002: Error Path Tests
+  describe('TC-002 Error Path: Component handles errors and edge cases', () => {
+    test('TC-002-EP-01: Non-admin users cannot access management features', async () => {
+      const nonAdminRoles = [
+        { role: 'manager', name: 'Manager User' },
+        { role: 'employee', name: 'Employee User' }
+      ];
+
+      for (const user of nonAdminRoles) {
+        mockUseAuth.mockReturnValue({
+          user,
+          token: `${user.role}-token`
+        });
+
+        fetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            success: true,
+            announcements: mockAnnouncements
+          })
+        });
+
+        const { unmount } = await act(async () => {
+          return render(<AnnouncementsList />);
+        });
+
+        await waitFor(() => {
+          expect(screen.getByText('Company Meeting')).toBeInTheDocument();
+          expect(screen.queryByText('Create Announcement')).not.toBeInTheDocument();
+          expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
+        });
+
+        unmount();
+      }
+    });
+
+    test('TC-002-EP-02: Network errors are handled gracefully', async () => {
       const { message } = require('antd');
       
       fetch.mockRejectedValueOnce(new Error('Network error'));
@@ -649,7 +376,7 @@ describe('AnnouncementsList Component', () => {
       });
     });
 
-    test('should display error message when API returns error', async () => {
+    test('TC-002-EP-03: API error responses are handled properly', async () => {
       const { message } = require('antd');
       
       fetch.mockResolvedValueOnce({
@@ -669,7 +396,7 @@ describe('AnnouncementsList Component', () => {
       });
     });
 
-    test('should handle delete errors gracefully', async () => {
+    test('TC-002-EP-04: Delete operation errors are handled gracefully', async () => {
       const { message } = require('antd');
       
       mockUseAuth.mockReturnValue({
@@ -677,7 +404,6 @@ describe('AnnouncementsList Component', () => {
         token: 'admin-token'
       });
 
-      // Initial fetch success
       fetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -686,7 +412,6 @@ describe('AnnouncementsList Component', () => {
         })
       });
 
-      // Delete request fails
       fetch.mockResolvedValueOnce({
         ok: false,
         status: 500,
@@ -711,39 +436,35 @@ describe('AnnouncementsList Component', () => {
       });
     });
 
-    test('should show loading state during fetch', async () => {
-      let resolvePromise;
-      const promise = new Promise((resolve) => {
-        resolvePromise = resolve;
+    test('TC-002-EP-05: Unauthorized access attempts are prevented', async () => {
+      const { message } = require('antd');
+      
+      mockUseAuth.mockReturnValue({
+        user: { role: 'employee', name: 'Employee User' },
+        token: 'employee-token'
       });
 
-      fetch.mockReturnValueOnce(promise);
+      fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => ({
+          error: 'Forbidden: Insufficient permissions'
+        })
+      });
 
       await act(async () => {
         render(<AnnouncementsList />);
       });
 
-      // Check loading state
-      expect(screen.getByTestId('spin')).toHaveAttribute('data-spinning', 'true');
-
-      // Resolve promise
-      resolvePromise({
-        ok: true,
-        json: async () => ({
-          success: true,
-          announcements: []
-        })
-      });
-
       await waitFor(() => {
-        expect(screen.getByTestId('spin')).toHaveAttribute('data-spinning', 'false');
+        expect(message.error).toHaveBeenCalled();
       });
     });
 
-    test('should maintain UI stability during operations', async () => {
+    test('TC-002-EP-06: Role restrictions persist through re-renders', async () => {
       mockUseAuth.mockReturnValue({
-        user: { role: 'admin', name: 'Admin User' },
-        token: 'admin-token'
+        user: { role: 'employee', name: 'Employee User' },
+        token: 'employee-token'
       });
 
       fetch.mockResolvedValue({
@@ -754,21 +475,79 @@ describe('AnnouncementsList Component', () => {
         })
       });
 
-      const { rerender } = render(<AnnouncementsList />);
+      const { rerender } = await act(async () => {
+        return render(<AnnouncementsList />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Company Meeting')).toBeInTheDocument();
+        expect(screen.queryByText('Create Announcement')).not.toBeInTheDocument();
+      });
+
+      rerender(<AnnouncementsList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Company Meeting')).toBeInTheDocument();
+        expect(screen.queryByText('Create Announcement')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
+      });
+    });
+
+    test('TC-002-EP-07: Props cannot override security restrictions', async () => {
+      mockUseAuth.mockReturnValue({
+        user: { role: 'employee', name: 'Employee User' },
+        token: 'employee-token'
+      });
+
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          announcements: mockAnnouncements
+        })
+      });
+
+      await act(async () => {
+        render(<AnnouncementsList showCreateButton={true} />);
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByText('Create Announcement')).not.toBeInTheDocument();
+      });
+    });
+
+    test('TC-002-EP-08: Component maintains stability during error conditions', async () => {
+      const { message } = require('antd');
+      
+      fetch.mockRejectedValueOnce(new Error('Network error'));
+
+      const { rerender } = await act(async () => {
+        return render(<AnnouncementsList />);
+      });
+
+      await waitFor(() => {
+        expect(message.error).toHaveBeenCalled();
+      });
+
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          announcements: mockAnnouncements
+        })
+      });
+
+      rerender(<AnnouncementsList />);
 
       await waitFor(() => {
         expect(screen.getByText('Company Meeting')).toBeInTheDocument();
       });
-
-      // Re-render should not cause errors
-      rerender(<AnnouncementsList />);
-
-      expect(screen.getByText('Company Meeting')).toBeInTheDocument();
     });
   });
 
-  describe('Component Props', () => {
-    test('should respect showCreateButton prop', async () => {
+  // Additional component feature tests
+  describe('TC-002 Component Features: Props and configuration', () => {
+    test('TC-002-CF-01: Component respects showCreateButton prop', async () => {
       mockUseAuth.mockReturnValue({
         user: { role: 'admin', name: 'Admin User' },
         token: 'admin-token'
@@ -791,7 +570,7 @@ describe('AnnouncementsList Component', () => {
       });
     });
 
-    test('should apply maxHeight prop when provided', async () => {
+    test('TC-002-CF-02: Component applies maxHeight prop correctly', async () => {
       fetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -808,7 +587,6 @@ describe('AnnouncementsList Component', () => {
         expect(screen.getByText('Company Meeting')).toBeInTheDocument();
       });
 
-      // Check if maxHeight style is applied (this would depend on the actual implementation)
       const listContainer = container.querySelector('.announcements-list');
       if (listContainer) {
         expect(listContainer).toHaveStyle('max-height: 400px');

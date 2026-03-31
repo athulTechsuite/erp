@@ -71,6 +71,230 @@ describe('Company Announcements System - Integration Tests', () => {
     await Announcement.deleteMany({});
   });
 
+  // TC-001: Integration tests for announcement CRUD operations
+  describe('TC-001: Announcement CRUD Operations Integration Tests', () => {
+    describe('CREATE operations - Happy Path', () => {
+      test('should successfully create announcement with valid data', async () => {
+        const announcementData = {
+          title: 'Company Meeting',
+          content: 'All staff meeting scheduled for tomorrow at 10 AM'
+        };
+
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send(announcementData);
+
+        expect(response.status).toBe(201);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data).toHaveProperty('title', announcementData.title);
+        expect(response.body.data).toHaveProperty('content', announcementData.content);
+        expect(response.body.data).toHaveProperty('createdBy');
+
+        // Verify in database
+        const savedAnnouncement = await Announcement.findById(response.body.data._id);
+        expect(savedAnnouncement).toBeTruthy();
+        expect(savedAnnouncement.title).toBe(announcementData.title);
+      });
+
+      test('should successfully create announcement with image attachment', async () => {
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .field('title', 'Holiday Notice')
+          .field('content', 'Office will be closed next Friday')
+          .attach('image', testImagePath);
+
+        expect(response.status).toBe(201);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data).toHaveProperty('title', 'Holiday Notice');
+        expect(response.body.data).toHaveProperty('imageUrl');
+        expect(response.body.data.imageUrl).toContain('announcement-');
+      });
+    });
+
+    describe('CREATE operations - Error Path', () => {
+      test('should fail to create announcement with missing required fields', async () => {
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ title: 'Only Title' }); // Missing content
+
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body).toHaveProperty('message');
+      });
+
+      test('should fail to create announcement with unauthorized user', async () => {
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${employeeToken}`)
+          .send({
+            title: 'Unauthorized Attempt',
+            content: 'This should fail'
+          });
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+      });
+
+      test('should fail to create announcement with invalid image format', async () => {
+        const textFilePath = path.join(__dirname, '../fixtures/test.txt');
+        fs.writeFileSync(textFilePath, 'This is not an image');
+
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .field('title', 'Test')
+          .field('content', 'Test content')
+          .attach('image', textFilePath);
+
+        expect(response.status).toBe(400);
+        expect(response.body).toHaveProperty('error');
+        
+        fs.unlinkSync(textFilePath);
+      });
+    });
+
+    describe('READ operations - Happy Path', () => {
+      beforeEach(async () => {
+        await Announcement.create([
+          {
+            title: 'Test Announcement 1',
+            content: 'Content 1',
+            createdBy: adminUser._id
+          },
+          {
+            title: 'Test Announcement 2',
+            content: 'Content 2',
+            createdBy: adminUser._id
+          }
+        ]);
+      });
+
+      test('should successfully retrieve all announcements for admin', async () => {
+        const response = await request(app)
+          .get('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data).toHaveLength(2);
+        expect(response.body.data[0]).toHaveProperty('title');
+        expect(response.body.data[0]).toHaveProperty('content');
+      });
+
+      test('should successfully retrieve announcements for employee', async () => {
+        const response = await request(app)
+          .get('/api/announcements')
+          .set('Authorization', `Bearer ${employeeToken}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.data).toHaveLength(2);
+      });
+
+      test('should return empty array when no announcements exist', async () => {
+        await Announcement.deleteMany({});
+
+        const response = await request(app)
+          .get('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.data).toHaveLength(0);
+      });
+    });
+
+    describe('READ operations - Error Path', () => {
+      test('should fail to retrieve announcements without authentication', async () => {
+        const response = await request(app)
+          .get('/api/announcements');
+
+        expect(response.status).toBe(401);
+        expect(response.body).toHaveProperty('error');
+      });
+
+      test('should fail to retrieve announcements with invalid token', async () => {
+        const response = await request(app)
+          .get('/api/announcements')
+          .set('Authorization', 'Bearer invalid-token');
+
+        expect(response.status).toBe(401);
+        expect(response.body).toHaveProperty('error');
+      });
+    });
+
+    describe('DELETE operations - Happy Path', () => {
+      let testAnnouncement;
+
+      beforeEach(async () => {
+        testAnnouncement = await Announcement.create({
+          title: 'Test Announcement',
+          content: 'This will be deleted',
+          createdBy: adminUser._id
+        });
+      });
+
+      test('should successfully delete announcement as admin', async () => {
+        const response = await request(app)
+          .delete(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body).toHaveProperty('message');
+
+        // Verify deletion in database
+        const deletedAnnouncement = await Announcement.findById(testAnnouncement._id);
+        expect(deletedAnnouncement).toBeNull();
+      });
+    });
+
+    describe('DELETE operations - Error Path', () => {
+      let testAnnouncement;
+
+      beforeEach(async () => {
+        testAnnouncement = await Announcement.create({
+          title: 'Protected Announcement',
+          content: 'Cannot be deleted by non-admin',
+          createdBy: adminUser._id
+        });
+      });
+
+      test('should fail to delete announcement with non-admin user', async () => {
+        const response = await request(app)
+          .delete(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${employeeToken}`);
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+
+        // Verify announcement still exists
+        const stillExists = await Announcement.findById(testAnnouncement._id);
+        expect(stillExists).toBeTruthy();
+      });
+
+      test('should fail to delete non-existent announcement', async () => {
+        const fakeId = new mongoose.Types.ObjectId();
+        const response = await request(app)
+          .delete(`/api/announcements/${fakeId}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(response.status).toBe(404);
+        expect(response.body.success).toBe(false);
+      });
+
+      test('should fail to delete announcement with invalid ID format', async () => {
+        const response = await request(app)
+          .delete('/api/announcements/invalid-id')
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+      });
+    });
+  });
+
   describe('AC1: Admin can see Create Announcement button and list existing announcements', () => {
     test('should display Create Announcement button for admin users', async () => {
       const response = await request(app)

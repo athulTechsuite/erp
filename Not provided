@@ -89,8 +89,171 @@ test.describe('TC-003: Announcements display on dashboard', () => {
   });
 });
 
-// TC-004: Image upload and display functionality
-test.describe('TC-004: Image upload and display functionality', () => {
+// TC-004: Authentication and authorization tests
+test.describe('TC-004: Authentication and authorization tests', () => {
+  test('happy path - admin user successfully authenticates and accesses admin features', async ({ page }) => {
+    // Navigate to admin login page
+    await page.goto('/admin/login');
+    
+    // Fill valid admin credentials
+    await page.fill('#username', 'admin');
+    await page.fill('#password', 'adminpassword123');
+    await page.click('#login-btn');
+    
+    // Verify successful authentication
+    await expect(page.locator('.welcome-message')).toBeVisible();
+    await expect(page.locator('.welcome-message')).toContainText('Welcome, admin');
+    
+    // Verify access to admin features
+    await expect(page.locator('#admin-dashboard')).toBeVisible();
+    await expect(page.locator('#create-announcement-btn')).toBeVisible();
+    await expect(page.locator('#manage-users-btn')).toBeVisible();
+    
+    // Test authorization for admin-only actions
+    await page.click('#create-announcement-btn');
+    await expect(page.locator('#announcement-form')).toBeVisible();
+  });
+
+  test('error path - authentication fails with invalid credentials', async ({ page }) => {
+    // Navigate to admin login page
+    await page.goto('/admin/login');
+    
+    // Fill invalid credentials
+    await page.fill('#username', 'admin');
+    await page.fill('#password', 'wrongpassword');
+    await page.click('#login-btn');
+    
+    // Verify authentication failure
+    await expect(page.locator('.auth-error')).toBeVisible();
+    await expect(page.locator('.auth-error')).toContainText('Invalid username or password');
+    
+    // Verify no access to admin features
+    await expect(page.locator('#admin-dashboard')).not.toBeVisible();
+    await expect(page.locator('#create-announcement-btn')).not.toBeVisible();
+  });
+
+  test('error path - unauthorized user blocked from admin features', async ({ page }) => {
+    // Try to access admin page without authentication
+    await page.goto('/admin/announcements');
+    
+    // Verify redirect to login page
+    await expect(page).toHaveURL(/.*\/login/);
+    await expect(page.locator('.auth-required-message')).toBeVisible();
+    await expect(page.locator('.auth-required-message')).toContainText('Authentication required');
+    
+    // Login as regular user
+    await page.fill('#username', 'regularuser');
+    await page.fill('#password', 'userpassword');
+    await page.click('#login-btn');
+    
+    // Try to access admin features
+    await page.goto('/admin/announcements');
+    
+    // Verify authorization failure
+    await expect(page.locator('.authorization-error')).toBeVisible();
+    await expect(page.locator('.authorization-error')).toContainText('Access denied: Admin privileges required');
+  });
+});
+
+// TC-005: File upload functionality tests
+test.describe('TC-005: File upload functionality tests', () => {
+  test('happy path - file uploads successfully with valid format and size', async ({ page }) => {
+    // Login as admin
+    await page.goto('/admin/login');
+    await page.fill('#username', 'admin');
+    await page.fill('#password', 'password');
+    await page.click('#login-btn');
+    
+    // Navigate to file upload section
+    await page.goto('/admin/announcements');
+    await page.click('#create-announcement-btn');
+    
+    // Fill basic announcement details
+    await page.fill('#title', 'Announcement with File');
+    await page.fill('#content', 'Test content with file attachment');
+    
+    // Upload valid file
+    const fileInput = await page.locator('#file-upload');
+    await fileInput.setInputFiles('./test-files/valid-document.pdf');
+    
+    // Verify file upload preview
+    await expect(page.locator('.file-preview')).toBeVisible();
+    await expect(page.locator('.file-name')).toContainText('valid-document.pdf');
+    await expect(page.locator('.file-size')).toBeVisible();
+    
+    // Submit announcement with file
+    await page.click('#submit-announcement');
+    
+    // Verify successful upload
+    await expect(page.locator('.upload-success')).toBeVisible();
+    await expect(page.locator('.upload-success')).toContainText('File uploaded successfully');
+    await expect(page.locator('.attached-file')).toContainText('valid-document.pdf');
+  });
+
+  test('error path - file upload fails with invalid format', async ({ page }) => {
+    // Login as admin
+    await page.goto('/admin/login');
+    await page.fill('#username', 'admin');
+    await page.fill('#password', 'password');
+    await page.click('#login-btn');
+    
+    // Navigate to file upload section
+    await page.goto('/admin/announcements');
+    await page.click('#create-announcement-btn');
+    
+    // Fill basic announcement details
+    await page.fill('#title', 'Test Announcement');
+    await page.fill('#content', 'Test content');
+    
+    // Try to upload invalid file format
+    const fileInput = await page.locator('#file-upload');
+    await fileInput.setInputFiles('./test-files/malicious-file.exe');
+    
+    // Verify immediate format validation
+    await expect(page.locator('.file-format-error')).toBeVisible();
+    await expect(page.locator('.file-format-error')).toContainText('Invalid file format. Only PDF, DOC, DOCX, and images are allowed');
+    
+    // Verify submit is disabled/blocked
+    await page.click('#submit-announcement');
+    await expect(page.locator('.validation-error')).toBeVisible();
+    await expect(page.locator('.validation-error')).toContainText('Please fix file upload errors before submitting');
+  });
+
+  test('error path - file upload fails when size exceeds limit', async ({ page }) => {
+    // Login as admin
+    await page.goto('/admin/login');
+    await page.fill('#username', 'admin');
+    await page.fill('#password', 'password');
+    await page.click('#login-btn');
+    
+    // Navigate to file upload section
+    await page.goto('/admin/announcements');
+    await page.click('#create-announcement-btn');
+    
+    // Fill basic announcement details
+    await page.fill('#title', 'Test Announcement');
+    await page.fill('#content', 'Test content');
+    
+    // Try to upload oversized file
+    const fileInput = await page.locator('#file-upload');
+    await fileInput.setInputFiles('./test-files/large-file.pdf');
+    
+    // Verify size validation error
+    await expect(page.locator('.file-size-error')).toBeVisible();
+    await expect(page.locator('.file-size-error')).toContainText('File size exceeds maximum limit of 10MB');
+    
+    // Verify upload progress fails
+    await expect(page.locator('.upload-failed')).toBeVisible();
+    await expect(page.locator('.upload-failed')).toContainText('Upload failed: File too large');
+    
+    // Verify form submission blocked
+    await page.click('#submit-announcement');
+    await expect(page.locator('.form-error')).toContainText('Cannot submit with failed file uploads');
+  });
+});
+
+// TC-006: Image upload and display functionality
+test.describe('TC-006: Image upload and display functionality', () => {
   test('happy path - image uploads and displays successfully', async ({ page }) => {
     // Login as admin
     await page.goto('/admin/login');
@@ -140,8 +303,8 @@ test.describe('TC-004: Image upload and display functionality', () => {
   });
 });
 
-// TC-005: Announcement deletion with confirmation
-test.describe('TC-005: Announcement deletion with confirmation', () => {
+// TC-007: Announcement deletion with confirmation
+test.describe('TC-007: Announcement deletion with confirmation', () => {
   test('happy path - announcement deleted after confirmation', async ({ page }) => {
     // Create announcement first
     await page.goto('/admin/login');
@@ -195,8 +358,8 @@ test.describe('TC-005: Announcement deletion with confirmation', () => {
   });
 });
 
-// TC-006: Error handling for failed operations
-test.describe('TC-006: Error handling for failed operations', () => {
+// TC-008: Error handling for failed operations
+test.describe('TC-008: Error handling for failed operations', () => {
   test('happy path - proper error messages displayed for network failures', async ({ page }) => {
     // Mock network failure
     await page.route('**/api/announcements', route => route.abort());

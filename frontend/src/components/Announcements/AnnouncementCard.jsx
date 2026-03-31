@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import PropTypes from 'prop-types';
+import DOMPurify from 'dompurify';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +35,13 @@ const AnnouncementCard = ({ announcement, onDelete }) => {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
+    });
+  };
+
+  const sanitizeContent = (content) => {
+    return DOMPurify.sanitize(content, {
+      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'ol', 'ul', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+      ALLOWED_ATTR: []
     });
   };
 
@@ -146,9 +155,10 @@ const AnnouncementCard = ({ announcement, onDelete }) => {
       <CardContent className="pt-0">
         <div className="space-y-4">
           {announcement.content && (
-            <div className="text-gray-700 whitespace-pre-wrap leading-relaxed">
-              {announcement.content}
-            </div>
+            <div 
+              className="text-gray-700 whitespace-pre-wrap leading-relaxed"
+              dangerouslySetInnerHTML={{ __html: sanitizeContent(announcement.content) }}
+            />
           )}
           
           {announcement.image && !imageError && (
@@ -182,6 +192,26 @@ const AnnouncementCard = ({ announcement, onDelete }) => {
       </CardContent>
     </Card>
   );
+};
+
+AnnouncementCard.propTypes = {
+  announcement: PropTypes.shape({
+    _id: PropTypes.string.isRequired,
+    title: PropTypes.string.isRequired,
+    content: PropTypes.string,
+    image: PropTypes.string,
+    createdAt: PropTypes.string.isRequired,
+    createdBy: PropTypes.shape({
+      name: PropTypes.string,
+      email: PropTypes.string
+    })
+  }),
+  onDelete: PropTypes.func
+};
+
+AnnouncementCard.defaultProps = {
+  announcement: null,
+  onDelete: null
 };
 
 export default AnnouncementCard;

@@ -53,15 +53,15 @@ This system provides a unified platform for managing employee data, leave reques
 
 ### Backend
 - **Framework:** Node.js with Express.js
-- **Database:** PostgreSQL with connection pooling and prepared statements
-- **Authentication:** JWT with bcrypt
-- **API:** RESTful architecture
-- **Validation:** Joi schema validation
-- **ORM:** Knex.js with SQL injection protection
+- **Database:** PostgreSQL with connection pooling and prepared statements for SQL injection prevention
+- **Authentication:** JWT with bcrypt (minimum 12 rounds)
+- **API:** RESTful architecture with rate limiting
+- **Validation:** Joi schema validation with input sanitization
+- **ORM:** Knex.js with parameterized queries and transaction support
 
 ### Frontend
 - **Framework:** React.js with JavaScript
-- **State Management:** React Context API with concurrent mode support
+- **State Management:** React Context API with concurrent mode support and race condition prevention
 - **UI Components:** Custom components with modern CSS
 - **Styling:** CSS3 with Flexbox/Grid
 - **Forms:** Controlled components with validation
@@ -219,26 +219,47 @@ npm run test:coverage
 ### Key Tables
 - **users** - Authentication and basic user data
 - **employees** - Employee profiles and HR data
-- **leave_requests** - Leave applications and status (PENDING, APPROVED, REJECTED, CANCELLED)
+- **leave_requests** - Leave applications and status
 - **leave_balances** - Employee leave entitlements
 - **departments** - Organizational structure
 - **assets** - Inventory and asset tracking
-- **leave_types** - Leave type definitions (ANNUAL, SICK, EMERGENCY, MATERNITY, PATERNITY, BEREAVEMENT)
-- **user_roles** - Role definitions (ADMIN, MANAGER, EMPLOYEE, HR_ADMIN)
-- **asset_status** - Asset status tracking (ACTIVE, INACTIVE, MAINTENANCE, DISPOSED)
+
+### Enum Values
+- **leave_status**: PENDING, APPROVED, REJECTED, CANCELLED
+- **leave_types**: ANNUAL, SICK, EMERGENCY, MATERNITY, PATERNITY, BEREAVEMENT
+- **user_roles**: ADMIN, MANAGER, EMPLOYEE, HR_ADMIN
+- **asset_status**: ACTIVE, INACTIVE, MAINTENANCE, DISPOSED
 
 ## 🔒 Security Features
 
-- JWT-based authentication with secure token rotation
-- Role-based access control with granular permissions
-- Input validation and sanitization against XSS
-- SQL injection prevention using parameterized queries
-- Password hashing with bcrypt (minimum 12 rounds)
-- Rate limiting to prevent brute force attacks
-- Database connection encryption (SSL/TLS)
-- Concurrent request handling with proper locking mechanisms
-- Transaction isolation to prevent race conditions
-- Audit logging for sensitive operations
+### Data Protection & SQL Safety
+- **SQL Injection Prevention**: All database queries use parameterized statements with Knex.js
+- **Input Sanitization**: Comprehensive validation with Joi schemas to prevent XSS attacks
+- **Database Encryption**: SSL/TLS encryption for all database connections
+- **Prepared Statements**: All user inputs processed through prepared statements
+- **Query Validation**: Strict validation of all database operations
+
+### Authentication & Authorization
+- **JWT Security**: Secure token-based authentication with automatic rotation
+- **Password Security**: bcrypt hashing with minimum 12 rounds and salt
+- **Role-based Access**: Granular permission system with enum-validated roles
+- **Session Management**: Secure session handling with timeout and refresh mechanisms
+- **Rate Limiting**: API endpoints protected against brute force attacks
+
+### Concurrency & Race Condition Prevention
+- **Database Transactions**: ACID-compliant transactions for data consistency
+- **Row-level Locking**: Prevents concurrent modification conflicts
+- **Optimistic Locking**: Version-based conflict detection for critical updates
+- **Connection Pooling**: Thread-safe database connection management
+- **State Synchronization**: React concurrent mode with proper state isolation
+- **Atomic Operations**: Critical business operations wrapped in atomic transactions
+
+### Comprehensive Security Measures
+- **Audit Logging**: Complete audit trail for all sensitive operations
+- **Error Handling**: Secure error responses without information disclosure
+- **CORS Configuration**: Strict cross-origin resource sharing policies
+- **Headers Security**: Security headers including HSTS, CSP, and X-Frame-Options
+- **Environment Security**: Secure configuration management and secret handling
 
 ## 🚀 Deployment
 

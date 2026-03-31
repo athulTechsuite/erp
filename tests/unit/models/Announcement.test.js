@@ -2,7 +2,11 @@ const mongoose = require('mongoose');
 const Announcement = require('../../../src/models/Announcement');
 const User = require('../../../src/models/User');
 
-describe('Announcement Model Unit Tests', () => {
+/**
+ * TC-003: Unit tests for Announcement model
+ * Tests both happy path and error path scenarios for the Announcement model
+ */
+describe('TC-003: Announcement Model Unit Tests', () => {
   let testUser;
 
   beforeAll(async () => {
@@ -27,7 +31,8 @@ describe('Announcement Model Unit Tests', () => {
     await Announcement.deleteMany({});
   });
 
-  describe('Schema Validation', () => {
+  // TC-003 Happy Path Tests
+  describe('Schema Validation - Happy Path', () => {
     test('should create valid announcement with required fields', async () => {
       const announcementData = {
         title: 'Test Announcement',
@@ -47,6 +52,72 @@ describe('Announcement Model Unit Tests', () => {
       expect(announcement.targetAudience).toEqual(['all']); // default value
     });
 
+    test('should validate imageUrl format - happy path', async () => {
+      const validImageUrls = [
+        'https://example.com/image.jpg',
+        'http://example.com/photo.jpeg',
+        'https://cdn.example.com/pic.png',
+        'https://example.com/animated.gif',
+        'https://example.com/modern.webp'
+      ];
+
+      for (const url of validImageUrls) {
+        const announcement = new Announcement({
+          title: 'Test with Image',
+          content: 'Content with image',
+          imageUrl: url,
+          createdBy: testUser._id
+        });
+
+        await expect(announcement.save()).resolves.toBeDefined();
+        await announcement.deleteOne();
+      }
+    });
+
+    test('should accept valid priority values - happy path', async () => {
+      const validPriorities = ['low', 'medium', 'high', 'urgent'];
+
+      for (const priority of validPriorities) {
+        const announcement = new Announcement({
+          title: 'Test Priority',
+          content: 'Testing priority field',
+          priority: priority,
+          createdBy: testUser._id
+        });
+
+        await announcement.save();
+        expect(announcement.priority).toBe(priority);
+        await announcement.deleteOne();
+      }
+    });
+
+    test('should accept valid targetAudience values - happy path', async () => {
+      const validAudiences = [
+        ['all'],
+        ['admin'],
+        ['manager'],
+        ['employee'],
+        ['admin', 'manager'],
+        ['all', 'admin', 'manager', 'employee']
+      ];
+
+      for (const audience of validAudiences) {
+        const announcement = new Announcement({
+          title: 'Test Audience',
+          content: 'Testing audience field',
+          targetAudience: audience,
+          createdBy: testUser._id
+        });
+
+        await announcement.save();
+        expect(announcement.targetAudience).toEqual(audience);
+        await announcement.deleteOne();
+      }
+    });
+  });
+
+  // TC-003 Error Path Tests
+  describe('Schema Validation - Error Path', () => {
     test('should fail validation when title is missing', async () => {
       const announcement = new Announcement({
         content: 'Content without title',
@@ -96,29 +167,7 @@ describe('Announcement Model Unit Tests', () => {
       await expect(announcement.save()).rejects.toThrow();
     });
 
-    test('should validate imageUrl format', async () => {
-      const validImageUrls = [
-        'https://example.com/image.jpg',
-        'http://example.com/photo.jpeg',
-        'https://cdn.example.com/pic.png',
-        'https://example.com/animated.gif',
-        'https://example.com/modern.webp'
-      ];
-
-      for (const url of validImageUrls) {
-        const announcement = new Announcement({
-          title: 'Test with Image',
-          content: 'Content with image',
-          imageUrl: url,
-          createdBy: testUser._id
-        });
-
-        await expect(announcement.save()).resolves.toBeDefined();
-        await announcement.deleteOne();
-      }
-    });
-
-    test('should reject invalid imageUrl formats', async () => {
+    test('should reject invalid imageUrl formats - error path', async () => {
       const invalidImageUrls = [
         'not-a-url',
         'https://example.com/file.pdf',
@@ -139,24 +188,7 @@ describe('Announcement Model Unit Tests', () => {
       }
     });
 
-    test('should accept valid priority values', async () => {
-      const validPriorities = ['low', 'medium', 'high', 'urgent'];
-
-      for (const priority of validPriorities) {
-        const announcement = new Announcement({
-          title: 'Test Priority',
-          content: 'Testing priority field',
-          priority: priority,
-          createdBy: testUser._id
-        });
-
-        await announcement.save();
-        expect(announcement.priority).toBe(priority);
-        await announcement.deleteOne();
-      }
-    });
-
-    test('should reject invalid priority values', async () => {
+    test('should reject invalid priority values - error path', async () => {
       const announcement = new Announcement({
         title: 'Test Invalid Priority',
         content: 'Testing invalid priority',
@@ -165,30 +197,6 @@ describe('Announcement Model Unit Tests', () => {
       });
 
       await expect(announcement.save()).rejects.toThrow();
-    });
-
-    test('should accept valid targetAudience values', async () => {
-      const validAudiences = [
-        ['all'],
-        ['admin'],
-        ['manager'],
-        ['employee'],
-        ['admin', 'manager'],
-        ['all', 'admin', 'manager', 'employee']
-      ];
-
-      for (const audience of validAudiences) {
-        const announcement = new Announcement({
-          title: 'Test Audience',
-          content: 'Testing audience field',
-          targetAudience: audience,
-          createdBy: testUser._id
-        });
-
-        await announcement.save();
-        expect(announcement.targetAudience).toEqual(audience);
-        await announcement.deleteOne();
-      }
     });
   });
 

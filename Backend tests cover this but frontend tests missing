@@ -1,0 +1,170 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { AdminPanel } from '../components/AdminPanel';
+import { useAuth } from '../hooks/useAuth';
+import { mockApiCall } from '../utils/testUtils';
+
+// Mock the auth hook
+vi.mock('../hooks/useAuth');
+
+describe('TC-005: Admin permission validation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('Happy path - Valid admin access', () => {
+    it('should allow admin users to access admin panel', async () => {
+      // Arrange
+      const mockUser = {
+        id: 1,
+        email: 'admin@example.com',
+        role: 'admin',
+        permissions: ['admin_read', 'admin_write']
+      };
+      
+      vi.mocked(useAuth).mockReturnValue({
+        user: mockUser,
+        isAuthenticated: true,
+        loading: false
+      });
+
+      // Act
+      render(<AdminPanel />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Manage Users' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'System Settings' })).toBeInTheDocument();
+      });
+    });
+
+    it('should allow admin to perform privileged actions', async () => {
+      // Arrange
+      const mockUser = {
+        id: 1,
+        email: 'admin@example.com',
+        role: 'admin',
+        permissions: ['admin_read', 'admin_write']
+      };
+      
+      vi.mocked(useAuth).mockReturnValue({
+        user: mockUser,
+        isAuthenticated: true,
+        loading: false
+      });
+
+      mockApiCall('/api/admin/users', { success: true });
+
+      // Act
+      render(<AdminPanel />);
+      const manageUsersButton = screen.getByRole('button', { name: 'Manage Users' });
+      fireEvent.click(manageUsersButton);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText('User Management')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Error path - Invalid admin access', () => {
+    it('should deny access to non-admin users', async () => {
+      // Arrange
+      const mockUser = {
+        id: 2,
+        email: 'user@example.com',
+        role: 'user',
+        permissions: ['read']
+      };
+      
+      vi.mocked(useAuth).mockReturnValue({
+        user: mockUser,
+        isAuthenticated: true,
+        loading: false
+      });
+
+      // Act
+      render(<AdminPanel />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText('Access Denied')).toBeInTheDocument();
+        expect(screen.getByText('You do not have admin privileges')).toBeInTheDocument();
+        expect(screen.queryByText('Admin Dashboard')).not.toBeInTheDocument();
+      });
+    });
+
+    it('should deny access to unauthenticated users', async () => {
+      // Arrange
+      vi.mocked(useAuth).mockReturnValue({
+        user: null,
+        isAuthenticated: false,
+        loading: false
+      });
+
+      // Act
+      render(<AdminPanel />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText('Please login to continue')).toBeInTheDocument();
+        expect(screen.queryByText('Admin Dashboard')).not.toBeInTheDocument();
+      });
+    });
+
+    it('should handle admin permission revocation gracefully', async () => {
+      // Arrange
+      const mockUser = {
+        id: 1,
+        email: 'former-admin@example.com',
+        role: 'user', // Role changed from admin to user
+        permissions: ['read'] // Admin permissions removed
+      };
+      
+      vi.mocked(useAuth).mockReturnValue({
+        user: mockUser,
+        isAuthenticated: true,
+        loading: false
+      });
+
+      // Act
+      render(<AdminPanel />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText('Access Denied')).toBeInTheDocument();
+        expect(screen.getByText('Your admin privileges have been revoked')).toBeInTheDocument();
+      });
+    });
+
+    it('should block admin actions when permissions are insufficient', async () => {
+      // Arrange
+      const mockUser = {
+        id: 1,
+        email: 'readonly-admin@example.com',
+        role: 'admin',
+        permissions: ['admin_read'] // Missing admin_write permission
+      };
+      
+      vi.mocked(useAuth).mockReturnValue({
+        user: mockUser,
+        isAuthenticated: true,
+        loading: false
+      });
+
+      mockApiCall('/api/admin/users', { error: 'Insufficient permissions' }, 403);
+
+      // Act
+      render(<AdminPanel />);
+      const manageUsersButton = screen.getByRole('button', { name: 'Manage Users' });
+      fireEvent.click(manageUsersButton);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText('Insufficient Permissions')).toBeInTheDocument();
+        expect(screen.getByText('You need write permissions to perform this action')).toBeInTheDocument();
+      });
+    });
+  });
+});

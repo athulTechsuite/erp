@@ -11,7 +11,7 @@ const AnnouncementList = () => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState(null);
-  const { user } = useAuth();
+  const { user, getAuthHeaders } = useAuth();
 
   const isAdmin = user?.role === 'admin';
 
@@ -54,7 +54,7 @@ const AnnouncementList = () => {
       const response = await fetch(`/api/announcements/${id}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          ...getAuthHeaders(),
         },
       });
 
@@ -83,7 +83,7 @@ const AnnouncementList = () => {
         method,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          ...getAuthHeaders(),
         },
         body: JSON.stringify(formData),
       });

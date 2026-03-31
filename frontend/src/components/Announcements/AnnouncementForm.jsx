@@ -5,13 +5,14 @@ import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { useAuth } from '../../contexts/AuthContext';
-import { announcementAPI } from '../../api/announcements';
+import { announcementAPI } from '../../services/announcementService';
 
 const AnnouncementForm = ({ announcement = null, onSuccess, onCancel }) => {
   const { user } = useAuth();
   const [formData, setFormData] = useState({
     title: '',
-    content: ''
+    content: '',
+    priority: 'normal'
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
@@ -23,7 +24,8 @@ const AnnouncementForm = ({ announcement = null, onSuccess, onCancel }) => {
     if (announcement) {
       setFormData({
         title: announcement.title || '',
-        content: announcement.content || ''
+        content: announcement.content || '',
+        priority: announcement.priority || 'normal'
       });
     }
   }, [announcement]);
@@ -80,7 +82,11 @@ const AnnouncementForm = ({ announcement = null, onSuccess, onCancel }) => {
     try {
       const submissionData = {
         title: formData.title.trim(),
-        content: formData.content.trim()
+        content: formData.content.trim(),
+        priority: formData.priority,
+        // Add timestamp to ensure chronological ordering
+        createdAt: isEditing ? announcement.createdAt : new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
 
       if (isEditing) {
@@ -93,7 +99,7 @@ const AnnouncementForm = ({ announcement = null, onSuccess, onCancel }) => {
 
       // Reset form if creating new announcement
       if (!isEditing) {
-        setFormData({ title: '', content: '' });
+        setFormData({ title: '', content: '', priority: 'normal' });
       }
 
       // Call success callback after a brief delay to show message
@@ -112,7 +118,7 @@ const AnnouncementForm = ({ announcement = null, onSuccess, onCancel }) => {
   };
 
   const handleCancel = () => {
-    setFormData({ title: '', content: '' });
+    setFormData({ title: '', content: '', priority: 'normal' });
     setErrors({});
     setMessage('');
     if (onCancel) {
@@ -191,6 +197,28 @@ const AnnouncementForm = ({ announcement = null, onSuccess, onCancel }) => {
             )}
             <p className="text-xs text-gray-500">
               {formData.content.length}/5000 characters
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="priority" className="block text-sm font-medium text-gray-700">
+              Priority
+            </label>
+            <select
+              id="priority"
+              name="priority"
+              value={formData.priority}
+              onChange={handleInputChange}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              disabled={loading}
+            >
+              <option value="low">Low</option>
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>
+            <p className="text-xs text-gray-500">
+              Priority affects display order - urgent and high priority announcements appear first
             </p>
           </div>
 

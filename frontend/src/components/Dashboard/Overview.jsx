@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { 
   Users, 
   Calendar, 
@@ -12,10 +16,15 @@ import {
   AlertCircle,
   CheckCircle,
   XCircle,
-  PendingIcon
+  PendingIcon,
+  Megaphone,
+  Plus,
+  Edit2,
+  Trash2
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { dashboardService } from '@/services/dashboardService';
+import { announcementService } from '@/services/announcementService';
 
 const Overview = () => {
   const { user } = useAuth();
@@ -35,8 +44,19 @@ const Overview = () => {
     error: null
   });
 
+  const [announcements, setAnnouncements] = useState([]);
+  const [announcementLoading, setAnnouncementLoading] = useState(true);
+  const [isAnnouncementDialogOpen, setIsAnnouncementDialogOpen] = useState(false);
+  const [editingAnnouncement, setEditingAnnouncement] = useState(null);
+  const [announcementForm, setAnnouncementForm] = useState({
+    title: '',
+    content: ''
+  });
+  const [announcementErrors, setAnnouncementErrors] = useState({});
+
   useEffect(() => {
     fetchDashboardData();
+    fetchAnnouncements();
   }, []);
 
   const fetchDashboardData = async () => {
@@ -56,6 +76,80 @@ const Overview = () => {
         error: 'Failed to load dashboard data'
       }));
     }
+  };
+
+  const fetchAnnouncements = async () => {
+    try {
+      setAnnouncementLoading(true);
+      const data = await announcementService.getAnnouncements();
+      setAnnouncements(data);
+    } catch (error) {
+      console.error('Failed to load announcements:', error);
+    } finally {
+      setAnnouncementLoading(false);
+    }
+  };
+
+  const handleAnnouncementSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Validation
+    const errors = {};
+    if (!announcementForm.title.trim()) {
+      errors.title = 'Title is required';
+    }
+    if (!announcementForm.content.trim()) {
+      errors.content = 'Content is required';
+    }
+    
+    if (Object.keys(errors).length > 0) {
+      setAnnouncementErrors(errors);
+      return;
+    }
+
+    try {
+      if (editingAnnouncement) {
+        await announcementService.updateAnnouncement(editingAnnouncement.id, announcementForm);
+      } else {
+        await announcementService.createAnnouncement(announcementForm);
+      }
+      
+      await fetchAnnouncements();
+      setIsAnnouncementDialogOpen(false);
+      setEditingAnnouncement(null);
+      setAnnouncementForm({ title: '', content: '' });
+      setAnnouncementErrors({});
+    } catch (error) {
+      console.error('Failed to save announcement:', error);
+    }
+  };
+
+  const handleEditAnnouncement = (announcement) => {
+    setEditingAnnouncement(announcement);
+    setAnnouncementForm({
+      title: announcement.title,
+      content: announcement.content
+    });
+    setAnnouncementErrors({});
+    setIsAnnouncementDialogOpen(true);
+  };
+
+  const handleDeleteAnnouncement = async (id) => {
+    if (window.confirm('Are you sure you want to delete this announcement?')) {
+      try {
+        await announcementService.deleteAnnouncement(id);
+        await fetchAnnouncements();
+      } catch (error) {
+        console.error('Failed to delete announcement:', error);
+      }
+    }
+  };
+
+  const handleAddNewAnnouncement = () => {
+    setEditingAnnouncement(null);
+    setAnnouncementForm({ title: '', content: '' });
+    setAnnouncementErrors({});
+    setIsAnnouncementDialogOpen(true);
   };
 
   const getStatusIcon = (status) => {
@@ -156,6 +250,145 @@ const Overview = () => {
           Refresh Data
         </Button>
       </div>
+
+      {/* Company Announcements */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Megaphone className="h-5 w-5" />
+            <CardTitle>Company Announcements</CardTitle>
+          </div>
+          {user?.role === 'admin' && (
+            <Dialog open={isAnnouncementDialogOpen} onOpenChange={setIsAnnouncementDialogOpen}>
+              <DialogTrigger asChild>
+                <Button onClick={handleAddNewAnnouncement} size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Announcement
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[525px]">
+                <DialogHeader>
+                  <DialogTitle>
+                    {editingAnnouncement ? 'Edit Announcement' : 'Create New Announcement'}
+                  </DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleAnnouncementSubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="title">Title</Label>
+                    <Input
+                      id="title"
+                      value={announcementForm.title}
+                      onChange={(e) => setAnnouncementForm(prev => ({ ...prev, title: e.target.value }))}
+                      className={announcementErrors.title ? 'border-red-500' : ''}
+                    />
+                    {announcementErrors.title && (
+                      <p className="text-sm text-red-500">{announcementErrors.title}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="content">Content</Label>
+                    <Textarea
+                      id="content"
+                      value={announcementForm.content}
+                      onChange={(e) => setAnnouncementForm(prev => ({ ...prev, content: e.target.value }))}
+                      className={announcementErrors.content ? 'border-red-500' : ''}
+                      rows={5}
+                    />
+                    {announcementErrors.content && (
+                      <p className="text-sm text-red-500">{announcementErrors.content}</p>
+                    )}
+                  </div>
+                  <div className="flex justify-end space-x-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setIsAnnouncementDialogOpen(false);
+                        setEditingAnnouncement(null);
+                        setAnnouncementForm({ title: '', content: '' });
+                        setAnnouncementErrors({});
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit">
+                      {editingAnnouncement ? 'Update' : 'Create'}
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {announcementLoading ? (
+              <div className="space-y-3">
+                {[...Array(2)].map((_, i) => (
+                  <div key={i} className="animate-pulse p-4 border rounded-lg">
+                    <div className="h-4 bg-gray-300 rounded w-1/3 mb-2"></div>
+                    <div className="space-y-2">
+                      <div className="h-3 bg-gray-300 rounded"></div>
+                      <div className="h-3 bg-gray-300 rounded w-4/5"></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : announcements.length === 0 ? (
+              <div className="text-center py-8">
+                <Megaphone className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-muted-foreground">No announcements at this time</p>
+                {user?.role === 'admin' && (
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Click "Add Announcement" to create the first company announcement
+                  </p>
+                )}
+              </div>
+            ) : (
+              announcements.map((announcement) => (
+                <div key={announcement.id} className="p-4 border rounded-lg bg-blue-50 border-blue-200">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <h3 className="font-semibold text-blue-900">{announcement.title}</h3>
+                        <Badge variant="secondary" className="text-xs">
+                          {new Date(announcement.createdAt).toLocaleDateString()}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-blue-800 whitespace-pre-wrap">
+                        {announcement.content}
+                      </p>
+                      <p className="text-xs text-blue-600 mt-2">
+                        By {announcement.author?.firstName} {announcement.author?.lastName}
+                      </p>
+                    </div>
+                    {user?.role === 'admin' && (
+                      <div className="flex items-center space-x-1 ml-4">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleEditAnnouncement(announcement)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteAnnouncement(announcement.id)}
+                          className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Key Metrics */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">

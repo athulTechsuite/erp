@@ -25,6 +25,13 @@ This system provides a unified platform for managing employee data, leave reques
 - [x] Leave history tracking
 - [x] Multiple leave types support
 
+### Company Announcements System
+- [x] Create and manage company-wide announcements
+- [x] Role-based announcement visibility
+- [x] Priority levels for announcements
+- [x] Read status tracking
+- [x] Announcement expiration dates
+
 ### Dashboard & Analytics
 - [x] Company overview dashboard
 - [x] Key performance metrics
@@ -83,7 +90,7 @@ This system provides a unified platform for managing employee data, leave reques
 
 ### 1. Clone the Repository
 ```bash
-git clone <repository-url>
+git clone https://github.com/your-organization/core-erp-system.git
 cd core-erp-system
 ```
 
@@ -177,6 +184,13 @@ core-erp-system/
 - `PUT /api/leaves/:id/reject` - Reject leave
 - `GET /api/leaves/balance/:employeeId` - Get leave balance
 
+### Announcements
+- `GET /api/announcements` - List announcements
+- `POST /api/announcements` - Create new announcement
+- `PUT /api/announcements/:id` - Update announcement
+- `DELETE /api/announcements/:id` - Delete announcement
+- `POST /api/announcements/:id/read` - Mark announcement as read
+
 ### Reports
 - `GET /api/reports/hr` - HR metrics
 - `GET /api/reports/leaves` - Leave reports
@@ -189,6 +203,7 @@ core-erp-system/
 - **Employee Directory:** Searchable employee list
 - **Leave Request Form:** Multi-step leave submission
 - **Approval Queue:** Manager approval interface
+- **Announcements Panel:** Company announcements display
 - **Reports Dashboard:** Analytics and export tools
 
 ### Responsive Design
@@ -222,6 +237,7 @@ npm run test:coverage
 - **leave_balances** - Employee leave entitlements
 - **departments** - Organizational structure
 - **assets** - Inventory and asset tracking
+- **announcements** - Company announcements and notifications
 
 ## 🔒 Security Features
 
@@ -278,6 +294,8 @@ npm run start:prod
 3. Commit your changes (`git commit -m 'Add amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+
+Please read our [Contributing Guidelines](CONTRIBUTING.md) for more details on our code of conduct and development process.
 
 ## 📝 License
 

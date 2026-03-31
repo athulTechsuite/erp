@@ -1,0 +1,437 @@
+const request = require('supertest');
+const app = require('../app');
+const { Announcement, User } = require('../models');
+
+describe('Announcement System Tests', () => {
+  let testUser;
+  let adminUser;
+  let authToken;
+  let adminToken;
+
+  beforeEach(async () => {
+    // Setup test users
+    testUser = await User.create({
+      username: 'testuser',
+      email: 'test@example.com',
+      password: 'password123',
+      role: 'user'
+    });
+
+    adminUser = await User.create({
+      username: 'admin',
+      email: 'admin@example.com',
+      password: 'admin123',
+      role: 'admin'
+    });
+
+    // Get auth tokens
+    const userResponse = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'test@example.com', password: 'password123' });
+    authToken = userResponse.body.token;
+
+    const adminResponse = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'admin@example.com', password: 'admin123' });
+    adminToken = adminResponse.body.token;
+  });
+
+  afterEach(async () => {
+    await Announcement.deleteMany({});
+    await User.deleteMany({});
+  });
+
+  describe('Announcement CRUD Operations', () => {
+    describe('CREATE - POST /api/announcements', () => {
+      it('should create announcement when admin user provides valid data', async () => {
+        const announcementData = {
+          title: 'Test Announcement',
+          content: 'This is a test announcement',
+          priority: 'high',
+          targetAudience: 'all'
+        };
+
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send(announcementData);
+
+        expect(response.status).toBe(201);
+        expect(response.body.title).toBe(announcementData.title);
+        expect(response.body.content).toBe(announcementData.content);
+        expect(response.body.author).toBe(adminUser.id);
+      });
+
+      it('should reject announcement creation by non-admin user', async () => {
+        const announcementData = {
+          title: 'Test Announcement',
+          content: 'This is a test announcement'
+        };
+
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send(announcementData);
+
+        expect(response.status).toBe(403);
+        expect(response.body.error).toBe('Access denied. Admin privileges required.');
+      });
+
+      it('should reject announcement with missing required fields', async () => {
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ title: 'Only title' });
+
+        expect(response.status).toBe(400);
+        expect(response.body.error).toContain('Content is required');
+      });
+    });
+
+    describe('READ - GET /api/announcements', () => {
+      beforeEach(async () => {
+        await Announcement.create([
+          {
+            title: 'Public Announcement',
+            content: 'Public content',
+            author: adminUser.id,
+            priority: 'medium',
+            isPublished: true
+          },
+          {
+            title: 'Draft Announcement',
+            content: 'Draft content',
+            author: adminUser.id,
+            priority: 'low',
+            isPublished: false
+          }
+        ]);
+      });
+
+      it('should return all published announcements for authenticated users', async () => {
+        const response = await request(app)
+          .get('/api/announcements')
+          .set('Authorization', `Bearer ${authToken}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.length).toBe(1);
+        expect(response.body[0].title).toBe('Public Announcement');
+      });
+
+      it('should return all announcements for admin users', async () => {
+        const response = await request(app)
+          .get('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.length).toBe(2);
+      });
+
+      it('should reject unauthenticated requests', async () => {
+        const response = await request(app).get('/api/announcements');
+        expect(response.status).toBe(401);
+      });
+    });
+
+    describe('UPDATE - PUT /api/announcements/:id', () => {
+      let testAnnouncement;
+
+      beforeEach(async () => {
+        testAnnouncement = await Announcement.create({
+          title: 'Original Title',
+          content: 'Original content',
+          author: adminUser.id,
+          priority: 'medium'
+        });
+      });
+
+      it('should update announcement when admin provides valid data', async () => {
+        const updateData = {
+          title: 'Updated Title',
+          content: 'Updated content',
+          priority: 'high'
+        };
+
+        const response = await request(app)
+          .put(`/api/announcements/${testAnnouncement.id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send(updateData);
+
+        expect(response.status).toBe(200);
+        expect(response.body.title).toBe(updateData.title);
+        expect(response.body.priority).toBe(updateData.priority);
+      });
+
+      it('should reject update by non-admin user', async () => {
+        const response = await request(app)
+          .put(`/api/announcements/${testAnnouncement.id}`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ title: 'Hacked title' });
+
+        expect(response.status).toBe(403);
+      });
+
+      it('should return 404 for non-existent announcement', async () => {
+        const response = await request(app)
+          .put('/api/announcements/999999999999999999999999')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ title: 'Updated' });
+
+        expect(response.status).toBe(404);
+      });
+    });
+
+    describe('DELETE - DELETE /api/announcements/:id', () => {
+      let testAnnouncement;
+
+      beforeEach(async () => {
+        testAnnouncement = await Announcement.create({
+          title: 'To be deleted',
+          content: 'Delete me',
+          author: adminUser.id
+        });
+      });
+
+      it('should delete announcement when admin user requests', async () => {
+        const response = await request(app)
+          .delete(`/api/announcements/${testAnnouncement.id}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(response.status).toBe(200);
+        
+        const deletedAnnouncement = await Announcement.findById(testAnnouncement.id);
+        expect(deletedAnnouncement).toBeNull();
+      });
+
+      it('should reject deletion by non-admin user', async () => {
+        const response = await request(app)
+          .delete(`/api/announcements/${testAnnouncement.id}`)
+          .set('Authorization', `Bearer ${authToken}`);
+
+        expect(response.status).toBe(403);
+      });
+    });
+  });
+
+  describe('User Interactions', () => {
+    let testAnnouncement;
+
+    beforeEach(async () => {
+      testAnnouncement = await Announcement.create({
+        title: 'Interactive Announcement',
+        content: 'Test interactions',
+        author: adminUser.id,
+        isPublished: true
+      });
+    });
+
+    describe('Mark as Read', () => {
+      it('should mark announcement as read for user', async () => {
+        const response = await request(app)
+          .post(`/api/announcements/${testAnnouncement.id}/read`)
+          .set('Authorization', `Bearer ${authToken}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.message).toBe('Announcement marked as read');
+      });
+
+      it('should prevent duplicate read marking', async () => {
+        await request(app)
+          .post(`/api/announcements/${testAnnouncement.id}/read`)
+          .set('Authorization', `Bearer ${authToken}`);
+
+        const response = await request(app)
+          .post(`/api/announcements/${testAnnouncement.id}/read`)
+          .set('Authorization', `Bearer ${authToken}`);
+
+        expect(response.status).toBe(400);
+        expect(response.body.error).toBe('Announcement already marked as read');
+      });
+    });
+
+    describe('User Reactions', () => {
+      it('should allow user to react to announcement', async () => {
+        const response = await request(app)
+          .post(`/api/announcements/${testAnnouncement.id}/react`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ reaction: 'like' });
+
+        expect(response.status).toBe(200);
+        expect(response.body.reaction).toBe('like');
+      });
+
+      it('should update existing reaction', async () => {
+        await request(app)
+          .post(`/api/announcements/${testAnnouncement.id}/react`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ reaction: 'like' });
+
+        const response = await request(app)
+          .post(`/api/announcements/${testAnnouncement.id}/react`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ reaction: 'dislike' });
+
+        expect(response.status).toBe(200);
+        expect(response.body.reaction).toBe('dislike');
+      });
+
+      it('should reject invalid reaction types', async () => {
+        const response = await request(app)
+          .post(`/api/announcements/${testAnnouncement.id}/react`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ reaction: 'invalid' });
+
+        expect(response.status).toBe(400);
+        expect(response.body.error).toBe('Invalid reaction type');
+      });
+    });
+
+    describe('Comments', () => {
+      it('should allow user to comment on announcement', async () => {
+        const commentData = { content: 'Great announcement!' };
+        
+        const response = await request(app)
+          .post(`/api/announcements/${testAnnouncement.id}/comments`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send(commentData);
+
+        expect(response.status).toBe(201);
+        expect(response.body.content).toBe(commentData.content);
+        expect(response.body.author).toBe(testUser.id);
+      });
+
+      it('should reject empty comments', async () => {
+        const response = await request(app)
+          .post(`/api/announcements/${testAnnouncement.id}/comments`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ content: '' });
+
+        expect(response.status).toBe(400);
+        expect(response.body.error).toBe('Comment content cannot be empty');
+      });
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should handle database connection errors gracefully', async () => {
+      // Mock database error
+      jest.spyOn(Announcement, 'find').mockImplementationOnce(() => {
+        throw new Error('Database connection failed');
+      });
+
+      const response = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', `Bearer ${authToken}`);
+
+      expect(response.status).toBe(500);
+      expect(response.body.error).toBe('Internal server error');
+    });
+
+    it('should validate announcement priority values', async () => {
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Test',
+          content: 'Test content',
+          priority: 'invalid_priority'
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toContain('Invalid priority level');
+    });
+
+    it('should handle malformed JSON requests', async () => {
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('Content-Type', 'application/json')
+        .send('{ invalid json }');
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Invalid JSON format');
+    });
+
+    it('should enforce rate limiting on announcement creation', async () => {
+      const announcementData = {
+        title: 'Rate limit test',
+        content: 'Testing rate limits'
+      };
+
+      // Make multiple rapid requests
+      const requests = Array(6).fill().map(() =>
+        request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send(announcementData)
+      );
+
+      const responses = await Promise.all(requests);
+      const rateLimitedResponses = responses.filter(r => r.status === 429);
+      
+      expect(rateLimitedResponses.length).toBeGreaterThan(0);
+    });
+
+    it('should sanitize user input to prevent XSS', async () => {
+      const maliciousData = {
+        title: '<script>alert("xss")</script>',
+        content: '<img src="x" onerror="alert(\'xss\')">'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(maliciousData);
+
+      expect(response.status).toBe(201);
+      expect(response.body.title).not.toContain('<script>');
+      expect(response.body.content).not.toContain('onerror');
+    });
+  });
+
+  describe('Authorization Edge Cases', () => {
+    it('should reject expired tokens', async () => {
+      const expiredToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyLCJleHAiOjF9.invalid';
+
+      const response = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', `Bearer ${expiredToken}`);
+
+      expect(response.status).toBe(401);
+      expect(response.body.error).toBe('Token expired');
+    });
+
+    it('should reject malformed tokens', async () => {
+      const response = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', 'Bearer invalid.token.format');
+
+      expect(response.status).toBe(401);
+      expect(response.body.error).toBe('Invalid token format');
+    });
+  });
+
+  describe('Performance Tests', () => {
+    it('should handle large announcement lists efficiently', async () => {
+      // Create 100 announcements
+      const announcements = Array(100).fill().map((_, i) => ({
+        title: `Announcement ${i}`,
+        content: `Content for announcement ${i}`,
+        author: adminUser.id,
+        isPublished: true
+      }));
+
+      await Announcement.insertMany(announcements);
+
+      const startTime = Date.now();
+      const response = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', `Bearer ${authToken}`);
+      const endTime = Date.now();
+
+      expect(response.status).toBe(200);
+      expect(response.body.length).toBe(100);
+      expect(endTime - startTime).toBeLessThan(1000); // Should complete within 1 second
+    });
+  });
+});

@@ -1,0 +1,144 @@
+const { test, expect } = require('@playwright/test');
+
+test.describe('Announcement Management Tests', () => {
+  
+  // TC-001: Announcement creation functionality
+  test.describe('TC-001: Announcement Creation', () => {
+    test('TC-001 Happy Path: Should successfully create a new announcement', async ({ page }) => {
+      await page.goto('/admin/announcements');
+      await page.click('[data-testid="create-announcement-btn"]');
+      
+      await page.fill('[data-testid="announcement-title"]', 'Test Announcement');
+      await page.fill('[data-testid="announcement-content"]', 'This is a test announcement content');
+      await page.selectOption('[data-testid="announcement-priority"]', 'high');
+      await page.click('[data-testid="save-announcement-btn"]');
+      
+      await expect(page.locator('[data-testid="success-message"]')).toContainText('Announcement created successfully');
+      await expect(page.locator('[data-testid="announcement-list"]')).toContainText('Test Announcement');
+    });
+
+    test('TC-001 Error Path: Should handle announcement creation failure', async ({ page }) => {
+      await page.goto('/admin/announcements');
+      await page.click('[data-testid="create-announcement-btn"]');
+      
+      // Try to save without required fields
+      await page.click('[data-testid="save-announcement-btn"]');
+      
+      await expect(page.locator('[data-testid="error-message"]')).toContainText('Title is required');
+      await expect(page.locator('[data-testid="announcement-list"]')).not.toContainText('Test Announcement');
+    });
+  });
+
+  // TC-002: Announcement editing functionality
+  test.describe('TC-002: Announcement Editing', () => {
+    test('TC-002 Happy Path: Should successfully edit an existing announcement', async ({ page }) => {
+      // Setup: Create an announcement first
+      await page.goto('/admin/announcements');
+      await page.click('[data-testid="create-announcement-btn"]');
+      await page.fill('[data-testid="announcement-title"]', 'Original Title');
+      await page.fill('[data-testid="announcement-content"]', 'Original content');
+      await page.click('[data-testid="save-announcement-btn"]');
+      
+      // Edit the announcement
+      await page.click('[data-testid="edit-announcement-btn"]:first-child');
+      await page.fill('[data-testid="announcement-title"]', 'Updated Title');
+      await page.fill('[data-testid="announcement-content"]', 'Updated content');
+      await page.click('[data-testid="save-announcement-btn"]');
+      
+      await expect(page.locator('[data-testid="success-message"]')).toContainText('Announcement updated successfully');
+      await expect(page.locator('[data-testid="announcement-list"]')).toContainText('Updated Title');
+      await expect(page.locator('[data-testid="announcement-list"]')).not.toContainText('Original Title');
+    });
+
+    test('TC-002 Error Path: Should handle announcement editing failure', async ({ page }) => {
+      await page.goto('/admin/announcements');
+      await page.click('[data-testid="edit-announcement-btn"]:first-child');
+      
+      // Clear required fields
+      await page.fill('[data-testid="announcement-title"]', '');
+      await page.click('[data-testid="save-announcement-btn"]');
+      
+      await expect(page.locator('[data-testid="error-message"]')).toContainText('Title is required');
+      await expect(page.locator('[data-testid="cancel-btn"]')).toBeVisible();
+    });
+  });
+
+  // TC-003: Announcement deletion functionality
+  test.describe('TC-003: Announcement Deletion', () => {
+    test('TC-003 Happy Path: Should successfully delete an announcement', async ({ page }) => {
+      // Setup: Create an announcement first
+      await page.goto('/admin/announcements');
+      await page.click('[data-testid="create-announcement-btn"]');
+      await page.fill('[data-testid="announcement-title"]', 'To Be Deleted');
+      await page.fill('[data-testid="announcement-content"]', 'This will be deleted');
+      await page.click('[data-testid="save-announcement-btn"]');
+      
+      // Delete the announcement
+      await page.click('[data-testid="delete-announcement-btn"]:first-child');
+      await page.click('[data-testid="confirm-delete-btn"]');
+      
+      await expect(page.locator('[data-testid="success-message"]')).toContainText('Announcement deleted successfully');
+      await expect(page.locator('[data-testid="announcement-list"]')).not.toContainText('To Be Deleted');
+    });
+
+    test('TC-003 Error Path: Should handle deletion cancellation', async ({ page }) => {
+      await page.goto('/admin/announcements');
+      const initialCount = await page.locator('[data-testid="announcement-item"]').count();
+      
+      await page.click('[data-testid="delete-announcement-btn"]:first-child');
+      await page.click('[data-testid="cancel-delete-btn"]');
+      
+      const finalCount = await page.locator('[data-testid="announcement-item"]').count();
+      expect(finalCount).toBe(initialCount);
+      await expect(page.locator('[data-testid="delete-modal"]')).not.toBeVisible();
+    });
+  });
+
+  // TC-005: Form validation and error handling
+  test.describe('TC-005: Form Validation and Error Handling', () => {
+    test('TC-005 Happy Path: Should validate all required fields correctly', async ({ page }) => {
+      await page.goto('/admin/announcements');
+      await page.click('[data-testid="create-announcement-btn"]');
+      
+      await page.fill('[data-testid="announcement-title"]', 'Valid Title');
+      await page.fill('[data-testid="announcement-content"]', 'Valid content with sufficient length');
+      await page.selectOption('[data-testid="announcement-priority"]', 'medium');
+      
+      await expect(page.locator('[data-testid="title-error"]')).not.toBeVisible();
+      await expect(page.locator('[data-testid="content-error"]')).not.toBeVisible();
+      await expect(page.locator('[data-testid="save-announcement-btn"]')).toBeEnabled();
+      
+      await page.click('[data-testid="save-announcement-btn"]');
+      await expect(page.locator('[data-testid="success-message"]')).toBeVisible();
+    });
+
+    test('TC-005 Error Path: Should show validation errors for invalid inputs', async ({ page }) => {
+      await page.goto('/admin/announcements');
+      await page.click('[data-testid="create-announcement-btn"]');
+      
+      // Test empty title
+      await page.fill('[data-testid="announcement-title"]', '');
+      await page.fill('[data-testid="announcement-content"]', 'Some content');
+      await page.click('[data-testid="save-announcement-btn"]');
+      await expect(page.locator('[data-testid="title-error"]')).toContainText('Title is required');
+      
+      // Test empty content
+      await page.fill('[data-testid="announcement-title"]', 'Valid Title');
+      await page.fill('[data-testid="announcement-content"]', '');
+      await page.click('[data-testid="save-announcement-btn"]');
+      await expect(page.locator('[data-testid="content-error"]')).toContainText('Content is required');
+      
+      // Test title too long
+      const longTitle = 'A'.repeat(256);
+      await page.fill('[data-testid="announcement-title"]', longTitle);
+      await page.click('[data-testid="save-announcement-btn"]');
+      await expect(page.locator('[data-testid="title-error"]')).toContainText('Title must be less than 255 characters');
+      
+      // Test content too short
+      await page.fill('[data-testid="announcement-title"]', 'Valid Title');
+      await page.fill('[data-testid="announcement-content"]', 'abc');
+      await page.click('[data-testid="save-announcement-btn"]');
+      await expect(page.locator('[data-testid="content-error"]')).toContainText('Content must be at least 10 characters');
+    });
+  });
+});

@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import announcementService from '../../services/announcementService';
 import { ANNOUNCEMENT_PRIORITIES } from '../../constants/announcements';
 
@@ -139,17 +139,6 @@ const AnnouncementForm = ({ announcement = null, onSuccess, onCancel }) => {
       onCancel();
     }
   };
-
-  // Check if user has admin permissions
-  if (!user || user.role !== 'admin') {
-    return (
-      <Alert>
-        <AlertDescription>
-          You don't have permission to create or edit announcements. Only administrators can manage company announcements.
-        </AlertDescription>
-      </Alert>
-    );
-  }
 
   return (
     <Card className="w-full max-w-2xl mx-auto">

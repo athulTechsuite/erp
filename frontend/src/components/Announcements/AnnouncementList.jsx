@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import { Card, CardHeader, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Edit2, Trash2, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth';
+import { AuthContext } from '../../contexts/AuthContext';
 import AnnouncementForm from './AnnouncementForm';
 import { toast } from 'react-hot-toast';
 import { announcementService } from '../../services/announcementService';
@@ -16,7 +16,7 @@ const AnnouncementList = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
   const itemsPerPage = 10;
-  const { user } = useAuth();
+  const { user } = useContext(AuthContext);
   const operationLockRef = useRef(false);
 
   const isAdmin = user?.role === 'admin';

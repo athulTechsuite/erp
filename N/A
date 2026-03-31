@@ -1,134 +1,134 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { jest } from '@jest/globals';
-import Component from '../Component';
+import AnnouncementComponent from '../AnnouncementComponent';
 
-describe('TC-004: Frontend component tests', () => {
+describe('Announcement Component Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  // TC-004: Happy path validation
-  it('TC-004: should render component successfully with valid props', async () => {
+  // Happy path validation
+  it('should render announcement successfully with valid props', async () => {
     const mockProps = {
-      title: 'Test Component',
-      data: { id: 1, name: 'Test Data' },
-      onAction: jest.fn()
+      title: 'System Maintenance Notice',
+      message: 'Scheduled maintenance will occur on Sunday',
+      type: 'info',
+      onDismiss: jest.fn()
     };
 
-    render(<Component {...mockProps} />);
+    render(<AnnouncementComponent {...mockProps} />);
 
-    expect(screen.getByText('Test Component')).toBeInTheDocument();
-    expect(screen.getByText('Test Data')).toBeInTheDocument();
-    
-    const actionButton = screen.getByRole('button', { name: /action/i });
-    fireEvent.click(actionButton);
-    
-    await waitFor(() => {
-      expect(mockProps.onAction).toHaveBeenCalledWith({ id: 1, name: 'Test Data' });
-    });
+    expect(screen.getByText('System Maintenance Notice')).toBeInTheDocument();
+    expect(screen.getByText('Scheduled maintenance will occur on Sunday')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveClass('announcement--info');
   });
 
-  it('TC-004: should handle user interactions correctly in happy path', async () => {
-    const mockOnAction = jest.fn().mockResolvedValue({ success: true });
+  it('should handle announcement dismissal correctly', async () => {
+    const mockOnDismiss = jest.fn();
     const props = {
-      title: 'Interactive Component',
-      data: { id: 2, name: 'Interactive Data' },
-      onAction: mockOnAction
+      title: 'Important Update',
+      message: 'New features are now available',
+      type: 'success',
+      dismissible: true,
+      onDismiss: mockOnDismiss
     };
 
-    render(<Component {...props} />);
+    render(<AnnouncementComponent {...props} />);
 
-    const input = screen.getByRole('textbox');
-    fireEvent.change(input, { target: { value: 'test input' } });
-    
-    const submitButton = screen.getByRole('button', { name: /submit/i });
-    fireEvent.click(submitButton);
+    const dismissButton = screen.getByRole('button', { name: /dismiss/i });
+    fireEvent.click(dismissButton);
 
     await waitFor(() => {
-      expect(mockOnAction).toHaveBeenCalledWith(
+      expect(mockOnDismiss).toHaveBeenCalledWith(
         expect.objectContaining({
-          inputValue: 'test input',
-          data: { id: 2, name: 'Interactive Data' }
+          title: 'Important Update',
+          dismissed: true
         })
       );
     });
   });
 
-  // TC-004: Error path validation
-  it('TC-004: should handle missing required props gracefully', () => {
+  it('should display different announcement types with correct styling', () => {
+    const types = ['info', 'warning', 'error', 'success'];
+    
+    types.forEach(type => {
+      const { container } = render(
+        <AnnouncementComponent
+          title={`${type} announcement`}
+          message={`This is a ${type} message`}
+          type={type}
+        />
+      );
+      
+      expect(container.querySelector('.announcement')).toHaveClass(`announcement--${type}`);
+    });
+  });
+
+  // Error path validation
+  it('should handle missing required props gracefully', () => {
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     
-    render(<Component />);
+    render(<AnnouncementComponent />);
     
-    expect(screen.getByText(/error/i)).toBeInTheDocument();
+    expect(screen.getByText(/no announcement to display/i)).toBeInTheDocument();
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Required prop missing')
+      expect.stringContaining('Announcement title and message are required')
     );
     
     consoleSpy.mockRestore();
   });
 
-  it('TC-004: should handle API errors and display error state', async () => {
-    const mockOnAction = jest.fn().mockRejectedValue(new Error('API Error'));
+  it('should handle invalid announcement type and fallback to default', () => {
     const props = {
-      title: 'Error Test Component',
-      data: { id: 3, name: 'Error Data' },
-      onAction: mockOnAction
+      title: 'Test Announcement',
+      message: 'Testing invalid type handling',
+      type: 'invalid-type'
     };
 
-    render(<Component {...props} />);
+    render(<AnnouncementComponent {...props} />);
 
-    const actionButton = screen.getByRole('button', { name: /action/i });
-    fireEvent.click(actionButton);
-
-    await waitFor(() => {
-      expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
-      expect(screen.getByText(/api error/i)).toBeInTheDocument();
-    });
+    expect(screen.getByRole('alert')).toHaveClass('announcement--info');
   });
 
-  it('TC-004: should handle invalid data formats and show validation errors', async () => {
-    const props = {
-      title: 'Validation Test',
-      data: { id: 'invalid', name: '' },
-      onAction: jest.fn()
-    };
-
-    render(<Component {...props} />);
-
-    const input = screen.getByRole('textbox');
-    fireEvent.change(input, { target: { value: '' } });
+  it('should handle long announcement messages and display properly', () => {
+    const longMessage = 'This is a very long announcement message that should be displayed properly without breaking the layout or causing any display issues in the user interface.'.repeat(3);
     
-    const submitButton = screen.getByRole('button', { name: /submit/i });
-    fireEvent.click(submitButton);
-
-    await waitFor(() => {
-      expect(screen.getByText(/validation error/i)).toBeInTheDocument();
-      expect(screen.getByText(/name is required/i)).toBeInTheDocument();
-    });
-  });
-
-  it('TC-004: should handle network timeout errors', async () => {
-    const mockOnAction = jest.fn().mockImplementation(() => 
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Network timeout')), 100)
-      )
-    );
-
     const props = {
-      title: 'Timeout Test',
-      data: { id: 4, name: 'Timeout Data' },
-      onAction: mockOnAction
+      title: 'Long Message Test',
+      message: longMessage,
+      type: 'warning'
     };
 
-    render(<Component {...props} />);
+    render(<AnnouncementComponent {...props} />);
 
-    const actionButton = screen.getByRole('button', { name: /action/i });
-    fireEvent.click(actionButton);
+    expect(screen.getByText(longMessage)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('should handle announcement with action buttons', async () => {
+    const mockOnAction = jest.fn();
+    const props = {
+      title: 'Action Required',
+      message: 'Please update your profile information',
+      type: 'warning',
+      actions: [
+        { label: 'Update Now', onClick: mockOnAction, primary: true },
+        { label: 'Later', onClick: jest.fn(), secondary: true }
+      ]
+    };
+
+    render(<AnnouncementComponent {...props} />);
+
+    const updateButton = screen.getByRole('button', { name: /update now/i });
+    const laterButton = screen.getByRole('button', { name: /later/i });
+
+    expect(updateButton).toHaveClass('btn--primary');
+    expect(laterButton).toHaveClass('btn--secondary');
+
+    fireEvent.click(updateButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/network timeout/i)).toBeInTheDocument();
-      expect(screen.getByText(/please try again/i)).toBeInTheDocument();
-    }, { timeout: 2000 });
+      expect(mockOnAction).toHaveBeenCalled();
+    });
   });
 });

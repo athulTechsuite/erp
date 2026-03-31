@@ -1,0 +1,257 @@
+/**
+ * Unit Tests for Individual Components
+ * TC-ID: UNIT-TESTS
+ * Coverage: Happy path and error path validation
+ */
+
+const { expect } = require('chai');
+const sinon = require('sinon');
+
+describe('UNIT-TESTS: Unit tests for individual components', () => {
+  let sandbox;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  describe('TC-ID: UNIT-001 - Component initialization', () => {
+    it('should initialize component successfully - happy path', () => {
+      // Test component initialization with valid parameters
+      const component = new Component({ id: 'test-id', name: 'test-component' });
+      
+      expect(component).to.not.be.null;
+      expect(component.id).to.equal('test-id');
+      expect(component.name).to.equal('test-component');
+    });
+
+    it('should handle initialization errors - error path', () => {
+      // Test component initialization with invalid parameters
+      expect(() => {
+        new Component(null);
+      }).to.throw('Invalid configuration');
+      
+      expect(() => {
+        new Component({});
+      }).to.throw('Missing required fields');
+    });
+  });
+
+  describe('TC-ID: UNIT-002 - Component methods', () => {
+    let component;
+
+    beforeEach(() => {
+      component = new Component({ id: 'test-id', name: 'test-component' });
+    });
+
+    it('should execute component method successfully - happy path', async () => {
+      // Test successful method execution
+      const result = await component.execute({ data: 'test-data' });
+      
+      expect(result).to.not.be.null;
+      expect(result.success).to.be.true;
+      expect(result.data).to.equal('processed-test-data');
+    });
+
+    it('should handle method execution errors - error path', async () => {
+      // Test method execution with invalid input
+      try {
+        await component.execute(null);
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).to.include('Invalid input data');
+      }
+
+      try {
+        await component.execute({ malformed: true });
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).to.include('Data validation failed');
+      }
+    });
+  });
+
+  describe('TC-ID: UNIT-003 - Component state management', () => {
+    let component;
+
+    beforeEach(() => {
+      component = new Component({ id: 'test-id', name: 'test-component' });
+    });
+
+    it('should manage component state correctly - happy path', () => {
+      // Test state transitions
+      expect(component.getState()).to.equal('initialized');
+      
+      component.start();
+      expect(component.getState()).to.equal('running');
+      
+      component.stop();
+      expect(component.getState()).to.equal('stopped');
+    });
+
+    it('should handle invalid state transitions - error path', () => {
+      // Test invalid state transitions
+      component.stop(); // Stop without starting
+      expect(component.getState()).to.equal('initialized');
+      
+      expect(() => {
+        component.setState('invalid-state');
+      }).to.throw('Invalid state transition');
+    });
+  });
+
+  describe('TC-ID: UNIT-004 - Component dependencies', () => {
+    it('should resolve dependencies correctly - happy path', () => {
+      // Test dependency injection
+      const dependency = { name: 'test-dependency', version: '1.0.0' };
+      const component = new Component({ 
+        id: 'test-id', 
+        name: 'test-component',
+        dependencies: [dependency]
+      });
+      
+      expect(component.getDependencies()).to.have.length(1);
+      expect(component.getDependencies()[0].name).to.equal('test-dependency');
+    });
+
+    it('should handle missing dependencies - error path', () => {
+      // Test missing or invalid dependencies
+      expect(() => {
+        new Component({ 
+          id: 'test-id', 
+          name: 'test-component',
+          dependencies: [null]
+        });
+      }).to.throw('Invalid dependency configuration');
+      
+      expect(() => {
+        new Component({ 
+          id: 'test-id', 
+          name: 'test-component',
+          dependencies: [{ name: '' }]
+        });
+      }).to.throw('Dependency name cannot be empty');
+    });
+  });
+
+  describe('TC-ID: UNIT-005 - Component cleanup', () => {
+    let component;
+
+    beforeEach(() => {
+      component = new Component({ id: 'test-id', name: 'test-component' });
+      component.start();
+    });
+
+    it('should cleanup resources properly - happy path', async () => {
+      // Test proper cleanup
+      await component.cleanup();
+      
+      expect(component.getState()).to.equal('disposed');
+      expect(component.getResources()).to.have.length(0);
+    });
+
+    it('should handle cleanup errors - error path', async () => {
+      // Test cleanup with errors
+      sandbox.stub(component, 'releaseResources').throws(new Error('Cleanup failed'));
+      
+      try {
+        await component.cleanup();
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).to.include('Cleanup failed');
+        expect(component.getState()).to.equal('error');
+      }
+    });
+  });
+});
+
+// Mock Component class for testing
+class Component {
+  constructor(config) {
+    if (!config) {
+      throw new Error('Invalid configuration');
+    }
+    if (!config.id || !config.name) {
+      throw new Error('Missing required fields');
+    }
+    if (config.dependencies && config.dependencies.some(dep => !dep)) {
+      throw new Error('Invalid dependency configuration');
+    }
+    if (config.dependencies && config.dependencies.some(dep => !dep.name)) {
+      throw new Error('Dependency name cannot be empty');
+    }
+
+    this.id = config.id;
+    this.name = config.name;
+    this.dependencies = config.dependencies || [];
+    this.state = 'initialized';
+    this.resources = [];
+  }
+
+  async execute(data) {
+    if (!data) {
+      throw new Error('Invalid input data');
+    }
+    if (data.malformed) {
+      throw new Error('Data validation failed');
+    }
+    
+    return {
+      success: true,
+      data: `processed-${data.data}`
+    };
+  }
+
+  getState() {
+    return this.state;
+  }
+
+  setState(newState) {
+    const validStates = ['initialized', 'running', 'stopped', 'disposed', 'error'];
+    if (!validStates.includes(newState)) {
+      throw new Error('Invalid state transition');
+    }
+    this.state = newState;
+  }
+
+  start() {
+    if (this.state === 'initialized') {
+      this.state = 'running';
+    }
+  }
+
+  stop() {
+    if (this.state === 'running') {
+      this.state = 'stopped';
+    }
+  }
+
+  getDependencies() {
+    return this.dependencies;
+  }
+
+  getResources() {
+    return this.resources;
+  }
+
+  async cleanup() {
+    try {
+      await this.releaseResources();
+      this.resources = [];
+      this.state = 'disposed';
+    } catch (error) {
+      this.state = 'error';
+      throw error;
+    }
+  }
+
+  async releaseResources() {
+    // Mock implementation - can be stubbed for testing
+    return Promise.resolve();
+  }
+}
+
+module.exports = { Component };

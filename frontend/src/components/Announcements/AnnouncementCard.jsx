@@ -40,7 +40,7 @@ const AnnouncementCard = ({ announcement, onDelete }) => {
 
   const sanitizeContent = (content) => {
     return DOMPurify.sanitize(content, {
-      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'ol', 'ul', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'ol', 'ul', 'li'],
       ALLOWED_ATTR: []
     });
   };
@@ -68,7 +68,13 @@ const AnnouncementCard = ({ announcement, onDelete }) => {
 
     setIsDeleting(true);
     try {
-      await announcementService.deleteAnnouncement(announcement._id);
+      // Add version/timestamp check for optimistic locking
+      const deletePayload = {
+        id: announcement._id,
+        version: announcement.version || announcement.updatedAt || announcement.createdAt
+      };
+      
+      await announcementService.deleteAnnouncement(deletePayload);
       toast({
         title: "Success",
         description: "Announcement deleted successfully",
@@ -78,11 +84,21 @@ const AnnouncementCard = ({ announcement, onDelete }) => {
       }
     } catch (error) {
       console.error('Error deleting announcement:', error);
-      toast({
-        title: "Error",
-        description: error.response?.data?.error || "Failed to delete announcement",
-        variant: "destructive",
-      });
+      
+      // Handle specific race condition errors
+      if (error.response?.status === 409 || error.response?.data?.error?.includes('version')) {
+        toast({
+          title: "Error",
+          description: "This announcement was modified by another user. Please refresh and try again.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: error.response?.data?.error || "Failed to delete announcement",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsDeleting(false);
     }
@@ -98,16 +114,26 @@ const AnnouncementCard = ({ announcement, onDelete }) => {
     }
 
     // Remove any potential script injections or harmful characters
-    const sanitized = imagePath.replace(/[<>'"]/g, '');
+    const sanitized = imagePath.replace(/[<>'"]/g, '').trim();
     
-    // Validate path contains only allowed characters (alphanumeric, dash, underscore, dot, slash)
-    const allowedPathRegex = /^[a-zA-Z0-9\-_./]+$/;
-    if (!allowedPathRegex.test(sanitized)) {
+    // Prevent directory traversal attacks - be more strict
+    if (sanitized.includes('..') || sanitized.includes('\\') || sanitized.includes('//')) {
+      console.warn('Potential path traversal attempt blocked:', imagePath);
       return null;
     }
 
-    // Prevent directory traversal attacks
-    if (sanitized.includes('..') || sanitized.includes('\\')) {
+    // Only allow specific safe characters and patterns for file paths
+    const allowedPathRegex = /^[a-zA-Z0-9\-_./]+$/;
+    if (!allowedPathRegex.test(sanitized)) {
+      console.warn('Invalid characters in image path:', imagePath);
+      return null;
+    }
+
+    // Ensure path doesn't start with potentially dangerous patterns
+    if (sanitized.startsWith('/etc/') || sanitized.startsWith('/var/') || 
+        sanitized.startsWith('/home/') || sanitized.startsWith('/root/') ||
+        sanitized.startsWith('file://') || sanitized.startsWith('data:')) {
+      console.warn('Dangerous path pattern blocked:', imagePath);
       return null;
     }
 
@@ -135,8 +161,17 @@ const AnnouncementCard = ({ announcement, onDelete }) => {
       }
     }
     
-    // Construct the full URL for uploaded images using centralized API config
-    return `${API_CONFIG.BASE_URL}${sanitizedPath.startsWith('/') ? '' : '/'}${sanitizedPath}`;
+    // For relative paths, ensure they're properly formatted and safe
+    const cleanPath = sanitizedPath.startsWith('/') ? sanitizedPath : `/${sanitizedPath}`;
+    
+    // Construct the full URL using centralized API config with additional validation
+    const baseUrl = API_CONFIG.BASE_URL;
+    if (!baseUrl || typeof baseUrl !== 'string') {
+      console.warn('Invalid API base URL configuration');
+      return null;
+    }
+    
+    return `${baseUrl}${cleanPath}`;
   };
 
   if (!announcement) {
@@ -247,6 +282,8 @@ AnnouncementCard.propTypes = {
     content: PropTypes.string,
     image: PropTypes.string,
     createdAt: PropTypes.string.isRequired,
+    updatedAt: PropTypes.string,
+    version: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     createdBy: PropTypes.shape({
       name: PropTypes.string,
       email: PropTypes.string

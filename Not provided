@@ -1,12 +1,18 @@
 const { test, expect } = require('@playwright/test');
 
+// Get test credentials from environment variables with fallbacks for local testing
+const TEST_ADMIN_USERNAME = process.env.TEST_ADMIN_USERNAME || 'test-admin';
+const TEST_ADMIN_PASSWORD = process.env.TEST_ADMIN_PASSWORD || 'test-password';
+const TEST_USER_USERNAME = process.env.TEST_USER_USERNAME || 'test-user';
+const TEST_USER_PASSWORD = process.env.TEST_USER_PASSWORD || 'test-user-password';
+
 // TC-001: Admin can create announcements
 test.describe('TC-001: Admin can create announcements', () => {
   test('happy path - admin successfully creates announcement', async ({ page }) => {
     // Login as admin
     await page.goto('/admin/login');
-    await page.fill('#username', 'admin');
-    await page.fill('#password', 'password');
+    await page.fill('#username', TEST_ADMIN_USERNAME);
+    await page.fill('#password', TEST_ADMIN_PASSWORD);
     await page.click('#login-btn');
     
     // Navigate to announcements
@@ -29,8 +35,8 @@ test.describe('TC-001: Admin can create announcements', () => {
   test('error path - admin fails to create announcement with missing required fields', async ({ page }) => {
     // Login as admin
     await page.goto('/admin/login');
-    await page.fill('#username', 'admin');
-    await page.fill('#password', 'password');
+    await page.fill('#username', TEST_ADMIN_USERNAME);
+    await page.fill('#password', TEST_ADMIN_PASSWORD);
     await page.click('#login-btn');
     
     // Navigate to announcements
@@ -51,13 +57,13 @@ test.describe('TC-002: Non-admin users cannot create announcements', () => {
   test('happy path - non-admin user properly restricted from creating announcements', async ({ page }) => {
     // Login as non-admin user
     await page.goto('/login');
-    await page.fill('#username', 'regularuser');
-    await page.fill('#password', 'userpassword');
+    await page.fill('#username', TEST_USER_USERNAME);
+    await page.fill('#password', TEST_USER_PASSWORD);
     await page.click('#login-btn');
     
     // Verify successful login as regular user
     await expect(page.locator('.welcome-message')).toBeVisible();
-    await expect(page.locator('.welcome-message')).toContainText('Welcome, regularuser');
+    await expect(page.locator('.welcome-message')).toContainText(`Welcome, ${TEST_USER_USERNAME}`);
     
     // Try to access announcement creation page directly
     await page.goto('/admin/announcements');
@@ -77,8 +83,8 @@ test.describe('TC-002: Non-admin users cannot create announcements', () => {
   test('error path - non-admin user receives proper error when attempting to create announcement via API', async ({ page }) => {
     // Login as non-admin user
     await page.goto('/login');
-    await page.fill('#username', 'regularuser');
-    await page.fill('#password', 'userpassword');
+    await page.fill('#username', TEST_USER_USERNAME);
+    await page.fill('#password', TEST_USER_PASSWORD);
     await page.click('#login-btn');
     
     // Attempt to make direct API call to create announcement
@@ -131,8 +137,8 @@ test.describe('TC-003: Announcements display on dashboard', () => {
   test('happy path - announcements display correctly on dashboard', async ({ page }) => {
     // Create test announcement first
     await page.goto('/admin/announcements');
-    await page.fill('#admin-username', 'admin');
-    await page.fill('#admin-password', 'password');
+    await page.fill('#admin-username', TEST_ADMIN_USERNAME);
+    await page.fill('#admin-password', TEST_ADMIN_PASSWORD);
     await page.click('#admin-login');
     
     await page.click('#create-announcement-btn');
@@ -152,8 +158,8 @@ test.describe('TC-003: Announcements display on dashboard', () => {
   test('error path - no announcements display when none exist', async ({ page }) => {
     // Clear all announcements first
     await page.goto('/admin/announcements');
-    await page.fill('#admin-username', 'admin');
-    await page.fill('#admin-password', 'password');
+    await page.fill('#admin-username', TEST_ADMIN_USERNAME);
+    await page.fill('#admin-password', TEST_ADMIN_PASSWORD);
     await page.click('#admin-login');
     
     // Delete existing announcements
@@ -176,13 +182,13 @@ test.describe('TC-004: Authentication and authorization tests', () => {
     await page.goto('/admin/login');
     
     // Fill valid admin credentials
-    await page.fill('#username', 'admin');
-    await page.fill('#password', 'adminpassword123');
+    await page.fill('#username', TEST_ADMIN_USERNAME);
+    await page.fill('#password', TEST_ADMIN_PASSWORD);
     await page.click('#login-btn');
     
     // Verify successful authentication
     await expect(page.locator('.welcome-message')).toBeVisible();
-    await expect(page.locator('.welcome-message')).toContainText('Welcome, admin');
+    await expect(page.locator('.welcome-message')).toContainText(`Welcome, ${TEST_ADMIN_USERNAME}`);
     
     // Verify access to admin features
     await expect(page.locator('#admin-dashboard')).toBeVisible();
@@ -199,7 +205,7 @@ test.describe('TC-004: Authentication and authorization tests', () => {
     await page.goto('/admin/login');
     
     // Fill invalid credentials
-    await page.fill('#username', 'admin');
+    await page.fill('#username', TEST_ADMIN_USERNAME);
     await page.fill('#password', 'wrongpassword');
     await page.click('#login-btn');
     
@@ -222,8 +228,8 @@ test.describe('TC-004: Authentication and authorization tests', () => {
     await expect(page.locator('.auth-required-message')).toContainText('Authentication required');
     
     // Login as regular user
-    await page.fill('#username', 'regularuser');
-    await page.fill('#password', 'userpassword');
+    await page.fill('#username', TEST_USER_USERNAME);
+    await page.fill('#password', TEST_USER_PASSWORD);
     await page.click('#login-btn');
     
     // Try to access admin features
@@ -240,8 +246,8 @@ test.describe('TC-005: File upload functionality tests', () => {
   test('happy path - file uploads successfully with valid format and size', async ({ page }) => {
     // Login as admin
     await page.goto('/admin/login');
-    await page.fill('#username', 'admin');
-    await page.fill('#password', 'password');
+    await page.fill('#username', TEST_ADMIN_USERNAME);
+    await page.fill('#password', TEST_ADMIN_PASSWORD);
     await page.click('#login-btn');
     
     // Navigate to file upload section
@@ -273,8 +279,8 @@ test.describe('TC-005: File upload functionality tests', () => {
   test('error path - file upload fails with invalid format', async ({ page }) => {
     // Login as admin
     await page.goto('/admin/login');
-    await page.fill('#username', 'admin');
-    await page.fill('#password', 'password');
+    await page.fill('#username', TEST_ADMIN_USERNAME);
+    await page.fill('#password', TEST_ADMIN_PASSWORD);
     await page.click('#login-btn');
     
     // Navigate to file upload section
@@ -302,8 +308,8 @@ test.describe('TC-005: File upload functionality tests', () => {
   test('error path - file upload fails when size exceeds limit', async ({ page }) => {
     // Login as admin
     await page.goto('/admin/login');
-    await page.fill('#username', 'admin');
-    await page.fill('#password', 'password');
+    await page.fill('#username', TEST_ADMIN_USERNAME);
+    await page.fill('#password', TEST_ADMIN_PASSWORD);
     await page.click('#login-btn');
     
     // Navigate to file upload section
@@ -337,8 +343,8 @@ test.describe('TC-006: Image upload and display functionality', () => {
   test('happy path - image uploads and displays successfully', async ({ page }) => {
     // Login as admin
     await page.goto('/admin/login');
-    await page.fill('#username', 'admin');
-    await page.fill('#password', 'password');
+    await page.fill('#username', TEST_ADMIN_USERNAME);
+    await page.fill('#password', TEST_ADMIN_PASSWORD);
     await page.click('#login-btn');
     
     // Create announcement with image
@@ -361,8 +367,8 @@ test.describe('TC-006: Image upload and display functionality', () => {
   test('error path - invalid image format rejected', async ({ page }) => {
     // Login as admin
     await page.goto('/admin/login');
-    await page.fill('#username', 'admin');
-    await page.fill('#password', 'password');
+    await page.fill('#username', TEST_ADMIN_USERNAME);
+    await page.fill('#password', TEST_ADMIN_PASSWORD);
     await page.click('#login-btn');
     
     // Try to upload invalid file
@@ -388,8 +394,8 @@ test.describe('TC-007: Announcement deletion with confirmation', () => {
   test('happy path - announcement deleted after confirmation', async ({ page }) => {
     // Create announcement first
     await page.goto('/admin/login');
-    await page.fill('#username', 'admin');
-    await page.fill('#password', 'password');
+    await page.fill('#username', TEST_ADMIN_USERNAME);
+    await page.fill('#password', TEST_ADMIN_PASSWORD);
     await page.click('#login-btn');
     
     await page.goto('/admin/announcements');
@@ -416,8 +422,8 @@ test.describe('TC-007: Announcement deletion with confirmation', () => {
   test('error path - deletion cancelled when user clicks cancel', async ({ page }) => {
     // Create announcement first
     await page.goto('/admin/login');
-    await page.fill('#username', 'admin');
-    await page.fill('#password', 'password');
+    await page.fill('#username', TEST_ADMIN_USERNAME);
+    await page.fill('#password', TEST_ADMIN_PASSWORD);
     await page.click('#login-btn');
     
     await page.goto('/admin/announcements');
@@ -446,8 +452,8 @@ test.describe('TC-008: Error handling for failed operations', () => {
     
     // Try to load announcements
     await page.goto('/admin/announcements');
-    await page.fill('#username', 'admin');
-    await page.fill('#password', 'password');
+    await page.fill('#username', TEST_ADMIN_USERNAME);
+    await page.fill('#password', TEST_ADMIN_PASSWORD);
     await page.click('#login-btn');
     
     // Verify error handling
@@ -465,8 +471,8 @@ test.describe('TC-008: Error handling for failed operations', () => {
     
     // Try to create announcement
     await page.goto('/admin/login');
-    await page.fill('#username', 'admin');
-    await page.fill('#password', 'password');
+    await page.fill('#username', TEST_ADMIN_USERNAME);
+    await page.fill('#password', TEST_ADMIN_PASSWORD);
     await page.click('#login-btn');
     
     await page.goto('/admin/announcements');

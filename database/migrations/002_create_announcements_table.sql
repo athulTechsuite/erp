@@ -6,7 +6,7 @@ CREATE TABLE announcements (
     image_url VARCHAR(500),
     created_by INTEGER NOT NULL,
     is_active BOOLEAN DEFAULT true NOT NULL,
-    visibility_scope VARCHAR(50) DEFAULT 'all' NOT NULL CHECK (visibility_scope IN ('all', 'students', 'instructors', 'admins')),
+    visibility_scope VARCHAR(50) DEFAULT 'all' NOT NULL CHECK (visibility_scope IN ('all', 'ADMIN', 'MANAGER', 'EMPLOYEE', 'HR_ADMIN')),
     priority INTEGER DEFAULT 0 NOT NULL,
     expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

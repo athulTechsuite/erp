@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import PropTypes from 'prop-types';
 import { toast } from 'react-toastify';
 import './AnnouncementManager.css';
 
@@ -13,6 +12,7 @@ const AnnouncementManager = () => {
   });
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState({ show: false, id: null, title: '' });
   const requestQueueRef = useRef([]);
   const isProcessingRef = useRef(false);
 
@@ -190,11 +190,15 @@ const AnnouncementManager = () => {
     setShowForm(true);
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this announcement?')) {
-      return;
-    }
+  const showDeleteConfirmation = (id, title) => {
+    setDeleteConfirm({ show: true, id, title });
+  };
 
+  const hideDeleteConfirmation = () => {
+    setDeleteConfirm({ show: false, id: null, title: '' });
+  };
+
+  const handleDelete = async (id) => {
     const deleteRequest = async () => {
       setLoading(true);
       const token = localStorage.getItem('token');
@@ -212,6 +216,7 @@ const AnnouncementManager = () => {
       setAnnouncements(prev => prev.filter(ann => ann.id !== id));
       toast.success('Announcement deleted successfully');
       setLoading(false);
+      hideDeleteConfirmation();
     };
 
     try {
@@ -219,6 +224,7 @@ const AnnouncementManager = () => {
     } catch (error) {
       toast.error(error.message);
       setLoading(false);
+      hideDeleteConfirmation();
     }
   };
 
@@ -279,6 +285,33 @@ const AnnouncementManager = () => {
           {showForm ? 'Cancel' : 'Create New Announcement'}
         </button>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm.show && (
+        <div className="modal-overlay">
+          <div className="confirmation-modal">
+            <h3>Confirm Delete</h3>
+            <p>Are you sure you want to delete the announcement "{deleteConfirm.title}"?</p>
+            <p className="warning-text">This action cannot be undone.</p>
+            <div className="modal-actions">
+              <button
+                className="btn btn-danger"
+                onClick={() => handleDelete(deleteConfirm.id)}
+                disabled={loading}
+              >
+                {loading ? 'Deleting...' : 'Delete'}
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={hideDeleteConfirmation}
+                disabled={loading}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <div className="announcement-form-container">
@@ -397,7 +430,7 @@ const AnnouncementManager = () => {
               </button>
               <button
                 className="btn btn-sm btn-danger"
-                onClick={() => handleDelete(announcement.id)}
+                onClick={() => showDeleteConfirmation(announcement.id, announcement.title)}
                 disabled={loading}
               >
                 Delete
@@ -409,8 +442,5 @@ const AnnouncementManager = () => {
     </div>
   );
 };
-
-// PropTypes for type checking
-AnnouncementManager.propTypes = {};
 
 export default AnnouncementManager;

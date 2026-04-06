@@ -3,53 +3,11 @@ const { validationResult } = require('express-validator');
 const DOMPurify = require('isomorphic-dompurify');
 const mongoose = require('mongoose');
 
-// Authentication middleware - ensures user is logged in
-const requireAuth = (req, res, next) => {
-  if (!req.user) {
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication required. Please log in.'
-    });
-  }
-  next();
-};
-
 // Input sanitization middleware
 const sanitizeInput = (input) => {
   if (typeof input !== 'string') return input;
   // Strip HTML tags and sanitize content to prevent XSS
   return DOMPurify.sanitize(input, { ALLOWED_TAGS: [] });
-};
-
-// Secure database query helper - ensures parameterized queries
-const executeSecureQuery = async (model, operation, params = {}, options = {}) => {
-  try {
-    // All Mongoose operations use parameterized queries by default
-    // This wrapper provides additional validation and logging
-    switch (operation) {
-      case 'find':
-        return await model.find(params, null, options);
-      case 'findById':
-        // Validate ObjectId to prevent injection
-        if (!mongoose.Types.ObjectId.isValid(params)) {
-          throw new Error('Invalid ObjectId format');
-        }
-        return await model.findById(params, null, options);
-      case 'findByIdAndDelete':
-        if (!mongoose.Types.ObjectId.isValid(params)) {
-          throw new Error('Invalid ObjectId format');
-        }
-        return await model.findByIdAndDelete(params, options);
-      case 'create':
-        return await model.create(params);
-      default:
-        throw new Error('Unsupported database operation');
-    }
-  } catch (error) {
-    // Log potential injection attempts
-    console.error('Database query error:', error.message);
-    throw error;
-  }
 };
 
 // Middleware to check if user is admin
@@ -63,19 +21,13 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-// Get all announcements (authenticated users only)
+// Get all announcements (public - for dashboard display)
 const getAllAnnouncements = async (req, res) => {
   try {
-    // Using secure parameterized query through Mongoose ODM
-    const announcements = await executeSecureQuery(
-      Announcement,
-      'find',
-      { isActive: true },
-      {
-        sort: { createdAt: -1 },
-        select: 'title content createdAt updatedAt'
-      }
-    );
+    // Using parameterized query with MongoDB's find method (no string concatenation)
+    const announcements = await Announcement.find({ isActive: true })
+      .sort({ createdAt: -1 })
+      .select('title content createdAt updatedAt');
 
     res.json({
       success: true,
@@ -93,13 +45,8 @@ const getAllAnnouncements = async (req, res) => {
 // Get all announcements for admin management
 const getAnnouncementsForAdmin = async (req, res) => {
   try {
-    // Using secure parameterized query through Mongoose ODM
-    const announcements = await executeSecureQuery(
-      Announcement,
-      'find',
-      {},
-      { sort: { createdAt: -1 } }
-    );
+    const announcements = await Announcement.find()
+      .sort({ createdAt: -1 });
 
     res.json({
       success: true,
@@ -133,25 +80,17 @@ const createAnnouncement = async (req, res) => {
     const sanitizedTitle = sanitizeInput(title);
     const sanitizedContent = sanitizeInput(content);
 
-    // Validate user ID format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(req.user._id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid user ID format'
-      });
-    }
-
-    // Using secure parameterized query - Mongoose automatically parameterizes
-    const announcementData = {
+    const announcement = new Announcement({
       title: sanitizedTitle,
       content: sanitizedContent,
       isActive,
-      createdBy: new mongoose.Types.ObjectId(req.user._id)
-    };
+      createdBy: req.user._id,
+      version: 1 // Initialize version for optimistic locking
+    });
 
-    const announcement = await executeSecureQuery(Announcement, 'create', announcementData);
+    await announcement.save();
 
-    // Populate creator info for response using secure query
+    // Populate creator info for response
     await announcement.populate('createdBy', 'name email');
 
     res.status(201).json({
@@ -173,8 +112,16 @@ const getAnnouncementById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Using secure query helper with built-in validation
-    const announcement = await executeSecureQuery(Announcement, 'findById', id);
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
+
+    const announcement = await Announcement.findById(id)
+      .populate('createdBy', 'name email');
 
     if (!announcement) {
       return res.status(404).json({
@@ -190,9 +137,6 @@ const getAnnouncementById = async (req, res) => {
         message: 'Announcement not found'
       });
     }
-
-    // Populate with secure query
-    await announcement.populate('createdBy', 'name email');
 
     res.json({
       success: true,
@@ -221,34 +165,59 @@ const updateAnnouncement = async (req, res) => {
     }
 
     const { id } = req.params;
-    const { title, content, isActive } = req.body;
+    const { title, content, isActive, version } = req.body;
 
-    // Using secure query helper with built-in validation
-    const announcement = await executeSecureQuery(Announcement, 'findById', id);
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
+
+    // Optimistic locking: check version for concurrent updates
+    const query = { _id: id };
+    if (version !== undefined) {
+      query.version = version;
+    }
+
+    const announcement = await Announcement.findOne(query);
 
     if (!announcement) {
       return res.status(404).json({
         success: false,
-        message: 'Announcement not found'
+        message: version !== undefined ? 'Announcement was modified by another user. Please refresh and try again.' : 'Announcement not found'
       });
     }
 
-    // Update fields with sanitization - Mongoose saves use parameterized queries
-    if (title !== undefined) announcement.title = sanitizeInput(title);
-    if (content !== undefined) announcement.content = sanitizeInput(content);
-    if (isActive !== undefined) announcement.isActive = isActive;
+    // Update fields with sanitization
+    const updateData = {
+      updatedAt: new Date(),
+      $inc: { version: 1 } // Increment version for optimistic locking
+    };
 
-    announcement.updatedAt = new Date();
-    // Mongoose save() uses parameterized queries internally
-    await announcement.save();
+    if (title !== undefined) updateData.title = sanitizeInput(title);
+    if (content !== undefined) updateData.content = sanitizeInput(content);
+    if (isActive !== undefined) updateData.isActive = isActive;
 
-    // Populate creator info for response
-    await announcement.populate('createdBy', 'name email');
+    // Use findOneAndUpdate with version check for atomic operation
+    const updatedAnnouncement = await Announcement.findOneAndUpdate(
+      query,
+      updateData,
+      { new: true, runValidators: true }
+    ).populate('createdBy', 'name email');
+
+    if (!updatedAnnouncement) {
+      return res.status(409).json({
+        success: false,
+        message: 'Announcement was modified by another user. Please refresh and try again.'
+      });
+    }
 
     res.json({
       success: true,
       message: 'Announcement updated successfully',
-      data: announcement
+      data: updatedAnnouncement
     });
   } catch (error) {
     res.status(500).json({
@@ -264,8 +233,15 @@ const deleteAnnouncement = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Using secure query helper with built-in validation
-    const announcement = await executeSecureQuery(Announcement, 'findById', id);
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
+
+    const announcement = await Announcement.findById(id);
 
     if (!announcement) {
       return res.status(404).json({
@@ -274,8 +250,7 @@ const deleteAnnouncement = async (req, res) => {
       });
     }
 
-    // Using secure parameterized delete operation
-    await executeSecureQuery(Announcement, 'findByIdAndDelete', id);
+    await Announcement.findByIdAndDelete(id);
 
     res.json({
       success: true,
@@ -294,28 +269,53 @@ const deleteAnnouncement = async (req, res) => {
 const toggleAnnouncementStatus = async (req, res) => {
   try {
     const { id } = req.params;
+    const { version } = req.body;
 
-    // Using secure query helper with built-in validation
-    const announcement = await executeSecureQuery(Announcement, 'findById', id);
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
+
+    // Optimistic locking: check version for concurrent updates
+    const query = { _id: id };
+    if (version !== undefined) {
+      query.version = version;
+    }
+
+    const announcement = await Announcement.findOne(query);
 
     if (!announcement) {
       return res.status(404).json({
         success: false,
-        message: 'Announcement not found'
+        message: version !== undefined ? 'Announcement was modified by another user. Please refresh and try again.' : 'Announcement not found'
       });
     }
 
-    announcement.isActive = !announcement.isActive;
-    announcement.updatedAt = new Date();
-    // Mongoose save() uses parameterized queries internally
-    await announcement.save();
+    // Use findOneAndUpdate with version check for atomic operation
+    const updatedAnnouncement = await Announcement.findOneAndUpdate(
+      query,
+      {
+        isActive: !announcement.isActive,
+        updatedAt: new Date(),
+        $inc: { version: 1 }
+      },
+      { new: true, runValidators: true }
+    ).populate('createdBy', 'name email');
 
-    await announcement.populate('createdBy', 'name email');
+    if (!updatedAnnouncement) {
+      return res.status(409).json({
+        success: false,
+        message: 'Announcement was modified by another user. Please refresh and try again.'
+      });
+    }
 
     res.json({
       success: true,
-      message: `Announcement ${announcement.isActive ? 'activated' : 'deactivated'} successfully`,
-      data: announcement
+      message: `Announcement ${updatedAnnouncement.isActive ? 'activated' : 'deactivated'} successfully`,
+      data: updatedAnnouncement
     });
   } catch (error) {
     res.status(500).json({
@@ -327,7 +327,6 @@ const toggleAnnouncementStatus = async (req, res) => {
 };
 
 module.exports = {
-  requireAuth,
   requireAdmin,
   getAllAnnouncements,
   getAnnouncementsForAdmin,

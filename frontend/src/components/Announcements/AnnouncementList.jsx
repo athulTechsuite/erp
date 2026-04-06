@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardContent } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Trash2, Edit, Calendar } from 'lucide-react';
@@ -11,6 +12,7 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchAnnouncements();
@@ -58,9 +60,8 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
 
   const sanitizeContent = (content) => {
     return DOMPurify.sanitize(content, {
-      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'a', 'ul', 'ol', 'li'],
-      ALLOWED_ATTR: ['href', 'target'],
-      ALLOW_DATA_ATTR: false
+      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u'],
+      ALLOWED_ATTR: []
     });
   };
 
@@ -120,7 +121,7 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
               {showActions && (
                 <div className="flex items-center space-x-2 ml-4">
                   <button
-                    onClick={() => window.location.href = `/admin/announcements/edit/${announcement.id}`}
+                    onClick={() => navigate(`/admin/announcements/edit/${announcement.id}`)}
                     className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                     title="Edit announcement"
                   >

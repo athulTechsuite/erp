@@ -2,6 +2,14 @@
 -- Description: Creates the announcements table for company-wide announcements system
 -- Date: 2024-01-01
 
+-- Verify users table exists before creating announcements table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
+        RAISE EXCEPTION 'Users table does not exist. Please run users migration first.';
+    END IF;
+END $$;
+
 CREATE TABLE announcements (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,

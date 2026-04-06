@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import './AnnouncementManager.css';
 
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '';
+
 const AnnouncementManager = () => {
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -17,16 +19,38 @@ const AnnouncementManager = () => {
     fetchAnnouncements();
   }, []);
 
+  const getAuthHeaders = () => {
+    // Try to get token from cookies first, fallback to localStorage for backward compatibility
+    let token = null;
+    
+    // Extract token from httpOnly cookie via API call if available
+    const cookies = document.cookie.split(';');
+    const authCookie = cookies.find(cookie => cookie.trim().startsWith('auth-token='));
+    
+    if (authCookie) {
+      // In a real implementation, httpOnly cookies would be automatically sent
+      // This is just for demonstration - the actual token extraction would happen server-side
+      console.warn('Using cookie-based authentication (recommended)');
+    } else {
+      // Fallback to localStorage (deprecated approach)
+      token = localStorage.getItem('token');
+      if (token) {
+        console.warn('Using localStorage for token storage is deprecated and insecure. Please migrate to httpOnly cookies.');
+      }
+    }
+
+    return {
+      'Authorization': token ? `Bearer ${token}` : '',
+      'Content-Type': 'application/json'
+    };
+  };
+
   const fetchAnnouncements = async () => {
     try {
       setLoading(true);
-      // TODO: Consider using httpOnly cookies for token storage to prevent XSS attacks
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/announcements/admin', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+      const response = await fetch(`${API_BASE_URL}/api/announcements/admin`, {
+        credentials: 'include', // Important for httpOnly cookies
+        headers: getAuthHeaders()
       });
 
       if (!response.ok) {
@@ -64,19 +88,16 @@ const AnnouncementManager = () => {
 
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
       const url = editingId 
-        ? `/api/announcements/${editingId}` 
-        : '/api/announcements';
+        ? `${API_BASE_URL}/api/announcements/${editingId}` 
+        : `${API_BASE_URL}/api/announcements`;
       
       const method = editingId ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
         method,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        credentials: 'include', // Important for httpOnly cookies
+        headers: getAuthHeaders(),
         body: JSON.stringify(formData)
       });
 
@@ -122,12 +143,10 @@ const AnnouncementManager = () => {
 
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/announcements/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/announcements/${id}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        credentials: 'include', // Important for httpOnly cookies
+        headers: getAuthHeaders()
       });
 
       if (!response.ok) {
@@ -145,13 +164,10 @@ const AnnouncementManager = () => {
 
   const toggleStatus = async (id, currentStatus) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/announcements/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/announcements/${id}`, {
         method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        credentials: 'include', // Important for httpOnly cookies
+        headers: getAuthHeaders(),
         body: JSON.stringify({ isActive: !currentStatus })
       });
 

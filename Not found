@@ -1,0 +1,140 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { vi } from 'vitest';
+import AnnouncementForm from '../components/AnnouncementForm';
+
+describe('TC-003: AnnouncementForm validation', () => {
+  const mockOnSubmit = vi.fn();
+
+  beforeEach(() => {
+    mockOnSubmit.mockClear();
+  });
+
+  describe('Happy path validation', () => {
+    it('should submit form with valid data', async () => {
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+
+      const titleInput = screen.getByLabelText(/title/i);
+      const contentTextarea = screen.getByLabelText(/content/i);
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+
+      fireEvent.change(titleInput, { target: { value: 'Valid Announcement Title' } });
+      fireEvent.change(contentTextarea, { target: { value: 'This is a valid announcement content with sufficient length.' } });
+      
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(mockOnSubmit).toHaveBeenCalledWith({
+          title: 'Valid Announcement Title',
+          content: 'This is a valid announcement content with sufficient length.'
+        });
+      });
+    });
+
+    it('should clear validation errors when valid input is provided', async () => {
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+
+      const titleInput = screen.getByLabelText(/title/i);
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+
+      // Trigger validation error first
+      fireEvent.click(submitButton);
+      
+      await waitFor(() => {
+        expect(screen.getByText(/title is required/i)).toBeInTheDocument();
+      });
+
+      // Fix the error
+      fireEvent.change(titleInput, { target: { value: 'Valid Title' } });
+
+      await waitFor(() => {
+        expect(screen.queryByText(/title is required/i)).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Error path validation', () => {
+    it('should show validation errors for empty required fields', async () => {
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/title is required/i)).toBeInTheDocument();
+        expect(screen.getByText(/content is required/i)).toBeInTheDocument();
+      });
+
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+
+    it('should show validation error for title too short', async () => {
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+
+      const titleInput = screen.getByLabelText(/title/i);
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+
+      fireEvent.change(titleInput, { target: { value: 'Hi' } });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/title must be at least 3 characters/i)).toBeInTheDocument();
+      });
+
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+
+    it('should show validation error for title too long', async () => {
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+
+      const titleInput = screen.getByLabelText(/title/i);
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+
+      const longTitle = 'a'.repeat(101);
+      fireEvent.change(titleInput, { target: { value: longTitle } });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/title must not exceed 100 characters/i)).toBeInTheDocument();
+      });
+
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+
+    it('should show validation error for content too short', async () => {
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+
+      const titleInput = screen.getByLabelText(/title/i);
+      const contentTextarea = screen.getByLabelText(/content/i);
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+
+      fireEvent.change(titleInput, { target: { value: 'Valid Title' } });
+      fireEvent.change(contentTextarea, { target: { value: 'Short' } });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/content must be at least 10 characters/i)).toBeInTheDocument();
+      });
+
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+
+    it('should show validation error for content too long', async () => {
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+
+      const titleInput = screen.getByLabelText(/title/i);
+      const contentTextarea = screen.getByLabelText(/content/i);
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+
+      const longContent = 'a'.repeat(1001);
+      fireEvent.change(titleInput, { target: { value: 'Valid Title' } });
+      fireEvent.change(contentTextarea, { target: { value: longContent } });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/content must not exceed 1000 characters/i)).toBeInTheDocument();
+      });
+
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+  });
+});

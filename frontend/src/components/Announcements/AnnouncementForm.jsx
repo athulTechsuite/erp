@@ -4,8 +4,31 @@ import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Save, X, AlertCircle } from 'lucide-react';
+
+// Validation configuration constants
+const VALIDATION_LIMITS = {
+  TITLE_MAX_LENGTH: 200,
+  CONTENT_MAX_LENGTH: 5000
+};
+
+// Enum values that should match backend schema
+const PRIORITY_OPTIONS = [
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'urgent', label: 'Urgent' }
+];
+
+const CATEGORY_OPTIONS = [
+  { value: 'general', label: 'General' },
+  { value: 'maintenance', label: 'Maintenance' },
+  { value: 'security', label: 'Security' },
+  { value: 'feature', label: 'Feature Update' },
+  { value: 'event', label: 'Event' }
+];
 
 const AnnouncementForm = ({ 
   announcement = null, 
@@ -15,41 +38,47 @@ const AnnouncementForm = ({
 }) => {
   const [formData, setFormData] = useState({
     title: '',
-    content: ''
+    content: '',
+    priority: 'medium',
+    category: 'general'
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
 
-  // Sanitize input function with strict settings
-  const sanitizeInput = (input) => {
-    return DOMPurify.sanitize(input, { 
-      ALLOWED_TAGS: [],
-      ALLOWED_ATTR: [],
-      KEEP_CONTENT: true,
-      FORBID_TAGS: ['script', 'object', 'embed', 'link', 'style', 'img', 'svg'],
-      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur', 'onchange', 'onsubmit']
-    });
-  };
-
-  // Additional HTML entity encoding for display
-  const encodeForDisplay = (input) => {
-    return input
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#x27;')
-      .replace(/\//g, '&#x2F;');
-  };
-
   useEffect(() => {
     if (announcement) {
       setFormData({
-        title: sanitizeInput(announcement.title || ''),
-        content: sanitizeInput(announcement.content || '')
+        title: announcement.title || '',
+        content: announcement.content || '',
+        priority: announcement.priority || 'medium',
+        category: announcement.category || 'general'
       });
     }
   }, [announcement]);
+
+  const sanitizeInput = (input) => {
+    if (typeof input !== 'string') {
+      return '';
+    }
+    // Sanitize HTML content using DOMPurify to prevent XSS
+    return DOMPurify.sanitize(input, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+  };
+
+  const sanitizeErrorMessage = (message) => {
+    if (typeof message !== 'string') {
+      return 'An error occurred. Please try again.';
+    }
+    // Sanitize HTML content using DOMPurify
+    return DOMPurify.sanitize(message, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+  };
+
+  const validateEnumValue = (value, validOptions, fieldName) => {
+    const validValues = validOptions.map(option => option.value);
+    if (!validValues.includes(value)) {
+      return `Invalid ${fieldName}. Must be one of: ${validValues.join(', ')}`;
+    }
+    return null;
+  };
 
   const validateField = (name, value) => {
     const fieldErrors = {};
@@ -57,16 +86,30 @@ const AnnouncementForm = ({
     if (name === 'title') {
       if (!value.trim()) {
         fieldErrors.title = 'Title is required';
-      } else if (value.length > 200) {
-        fieldErrors.title = 'Title must be less than 200 characters';
+      } else if (value.length > VALIDATION_LIMITS.TITLE_MAX_LENGTH) {
+        fieldErrors.title = `Title must be less than ${VALIDATION_LIMITS.TITLE_MAX_LENGTH} characters`;
       }
     }
     
     if (name === 'content') {
       if (!value.trim()) {
         fieldErrors.content = 'Content is required';
-      } else if (value.length > 5000) {
-        fieldErrors.content = 'Content must be less than 5000 characters';
+      } else if (value.length > VALIDATION_LIMITS.CONTENT_MAX_LENGTH) {
+        fieldErrors.content = `Content must be less than ${VALIDATION_LIMITS.CONTENT_MAX_LENGTH} characters`;
+      }
+    }
+
+    if (name === 'priority') {
+      const priorityError = validateEnumValue(value, PRIORITY_OPTIONS, 'priority');
+      if (priorityError) {
+        fieldErrors.priority = priorityError;
+      }
+    }
+
+    if (name === 'category') {
+      const categoryError = validateEnumValue(value, CATEGORY_OPTIONS, 'category');
+      if (categoryError) {
+        fieldErrors.category = categoryError;
       }
     }
     
@@ -76,8 +119,10 @@ const AnnouncementForm = ({
   const validateForm = () => {
     const titleErrors = validateField('title', formData.title);
     const contentErrors = validateField('content', formData.content);
+    const priorityErrors = validateField('priority', formData.priority);
+    const categoryErrors = validateField('category', formData.category);
     
-    const allErrors = { ...titleErrors, ...contentErrors };
+    const allErrors = { ...titleErrors, ...contentErrors, ...priorityErrors, ...categoryErrors };
     setErrors(allErrors);
     
     return Object.keys(allErrors).length === 0;
@@ -85,8 +130,6 @@ const AnnouncementForm = ({
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    
-    // Sanitize input value immediately
     const sanitizedValue = sanitizeInput(value);
     
     setFormData(prev => ({
@@ -103,50 +146,57 @@ const AnnouncementForm = ({
     }
   };
 
+  const handleSelectChange = (name, value) => {
+    const sanitizedValue = sanitizeInput(value);
+    
+    setFormData(prev => ({
+      ...prev,
+      [name]: sanitizedValue
+    }));
+
+    // Clear errors for this field when user makes a selection
+    if (errors[name]) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: undefined
+      }));
+    }
+  };
+
   const handleBlur = (e) => {
     const { name, value } = e.target;
     setTouched(prev => ({ ...prev, [name]: true }));
     
-    const fieldErrors = validateField(name, sanitizeInput(value));
+    const fieldErrors = validateField(name, value);
     setErrors(prev => ({ ...prev, ...fieldErrors }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    setTouched({ title: true, content: true });
+    setTouched({ title: true, content: true, priority: true, category: true });
     
     if (!validateForm()) {
       return;
     }
 
     try {
-      // Double sanitization: once for storage, once for any potential rendering
-      const sanitizedData = {
-        title: sanitizeInput(formData.title.trim()),
-        content: sanitizeInput(formData.content.trim())
-      };
-
-      // Additional validation to ensure no malicious content
-      if (sanitizedData.title !== formData.title.trim() || 
-          sanitizedData.content !== formData.content.trim()) {
-        setErrors({ 
-          submit: 'Invalid content detected. Please remove any HTML tags or scripts.' 
-        });
-        return;
-      }
-
-      await onSave(sanitizedData);
+      await onSave({
+        ...formData,
+        title: formData.title.trim(),
+        content: formData.content.trim()
+      });
     } catch (error) {
       console.error('Error saving announcement:', error);
+      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to save announcement. Please try again.';
       setErrors({ 
-        submit: 'Failed to save announcement. Please try again.' 
+        submit: sanitizeErrorMessage(errorMessage)
       });
     }
   };
 
   const handleCancel = () => {
-    setFormData({ title: '', content: '' });
+    setFormData({ title: '', content: '', priority: 'medium', category: 'general' });
     setErrors({});
     setTouched({});
     onCancel();
@@ -164,7 +214,7 @@ const AnnouncementForm = ({
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{encodeForDisplay(errors.submit)}</AlertDescription>
+              <AlertDescription>{errors.submit}</AlertDescription>
             </Alert>
           )}
           
@@ -180,15 +230,59 @@ const AnnouncementForm = ({
               onBlur={handleBlur}
               placeholder="Enter announcement title..."
               className={errors.title && touched.title ? 'border-red-500' : ''}
-              maxLength={200}
+              maxLength={VALIDATION_LIMITS.TITLE_MAX_LENGTH}
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.title && touched.title && (
-                  <span className="text-red-500">{encodeForDisplay(errors.title)}</span>
+                  <span className="text-red-500">{errors.title}</span>
                 )}
               </span>
-              <span>{formData.title.length}/200</span>
+              <span>{formData.title.length}/{VALIDATION_LIMITS.TITLE_MAX_LENGTH}</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label htmlFor="priority" className="text-sm font-medium">
+                Priority <span className="text-red-500">*</span>
+              </label>
+              <Select value={formData.priority} onValueChange={(value) => handleSelectChange('priority', value)}>
+                <SelectTrigger className={errors.priority && touched.priority ? 'border-red-500' : ''}>
+                  <SelectValue placeholder="Select priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRIORITY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.priority && touched.priority && (
+                <span className="text-xs text-red-500">{errors.priority}</span>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="category" className="text-sm font-medium">
+                Category <span className="text-red-500">*</span>
+              </label>
+              <Select value={formData.category} onValueChange={(value) => handleSelectChange('category', value)}>
+                <SelectTrigger className={errors.category && touched.category ? 'border-red-500' : ''}>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.category && touched.category && (
+                <span className="text-xs text-red-500">{errors.category}</span>
+              )}
             </div>
           </div>
 
@@ -205,15 +299,15 @@ const AnnouncementForm = ({
               placeholder="Enter announcement content..."
               rows={8}
               className={errors.content && touched.content ? 'border-red-500' : ''}
-              maxLength={5000}
+              maxLength={VALIDATION_LIMITS.CONTENT_MAX_LENGTH}
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.content && touched.content && (
-                  <span className="text-red-500">{encodeForDisplay(errors.content)}</span>
+                  <span className="text-red-500">{errors.content}</span>
                 )}
               </span>
-              <span>{formData.content.length}/5000</span>
+              <span>{formData.content.length}/{VALIDATION_LIMITS.CONTENT_MAX_LENGTH}</span>
             </div>
           </div>
 

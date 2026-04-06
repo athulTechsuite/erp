@@ -733,8 +733,347 @@ describe('Announcement System Tests', () => {
     });
   });
 
-  // TC-004: AnnouncementForm validation
-  describe('TC-004: AnnouncementForm validation', () => {
+  // TC-004: Performance and load testing
+  describe('TC-004: Performance and load testing', () => {
+    let announcementManager;
+    let mockDb;
+    let mockPerformanceMonitor;
+    let mockLoadBalancer;
+
+    beforeEach(() => {
+      mockDb = {
+        create: sinon.stub(),
+        findById: sinon.stub(),
+        update: sinon.stub(),
+        delete: sinon.stub(),
+        findAll: sinon.stub(),
+        bulkCreate: sinon.stub(),
+        getConnectionPool: sinon.stub(),
+        query: sinon.stub()
+      };
+      mockPerformanceMonitor = {
+        startTimer: sinon.stub().returns({ stop: sinon.stub().returns(100) }),
+        recordMetric: sinon.stub(),
+        getMemoryUsage: sinon.stub(),
+        getCPUUsage: sinon.stub()
+      };
+      mockLoadBalancer = {
+        distributeLoad: sinon.stub(),
+        checkCapacity: sinon.stub(),
+        getActiveConnections: sinon.stub()
+      };
+      announcementManager = new AnnouncementManager(mockDb, null, null, mockPerformanceMonitor, mockLoadBalancer);
+    });
+
+    describe('Happy Path', () => {
+      it('should handle concurrent read operations efficiently', async () => {
+        const announcementId = 1;
+        const expectedAnnouncement = { id: 1, title: 'Test', content: 'Content' };
+        const concurrentRequests = 100;
+
+        mockDb.findById.resolves(expectedAnnouncement);
+        mockPerformanceMonitor.getMemoryUsage.returns({ used: 50, total: 100 });
+        mockPerformanceMonitor.getCPUUsage.returns(30);
+
+        const promises = Array(concurrentRequests).fill().map(() => 
+          announcementManager.getAnnouncement(announcementId)
+        );
+
+        const results = await Promise.all(promises);
+
+        expect(results).to.have.length(concurrentRequests);
+        results.forEach(result => {
+          expect(result).to.deep.equal(expectedAnnouncement);
+        });
+        expect(mockPerformanceMonitor.recordMetric.called).to.be.true;
+      });
+
+      it('should handle bulk operations with optimal performance', async () => {
+        const bulkData = Array(1000).fill().map((_, i) => ({
+          title: `Announcement ${i}`,
+          content: `Content ${i}`,
+          priority: 'medium'
+        }));
+        const expectedResults = bulkData.map((data, i) => ({ id: i + 1, ...data }));
+
+        mockDb.bulkCreate.resolves(expectedResults);
+        mockPerformanceMonitor.startTimer.returns({ 
+          stop: sinon.stub().returns(500) // 500ms for 1000 records
+        });
+
+        const result = await announcementManager.bulkCreateAnnouncements(bulkData);
+
+        expect(result).to.have.length(1000);
+        expect(mockPerformanceMonitor.recordMetric.calledWith('bulk_create_time', 500)).to.be.true;
+        expect(mockPerformanceMonitor.recordMetric.calledWith('bulk_create_count', 1000)).to.be.true;
+      });
+
+      it('should maintain response time under load', async () => {
+        const announcementData = { title: 'Load Test', content: 'Content', priority: 'high' };
+        const expectedResult = { id: 1, ...announcementData };
+        const loadTestRequests = 50;
+
+        mockDb.create.resolves(expectedResult);
+        mockLoadBalancer.distributeLoad.resolves(true);
+        mockLoadBalancer.checkCapacity.returns(true);
+
+        const timer = mockPerformanceMonitor.startTimer();
+        timer.stop.returns(200); // 200ms response time
+
+        const promises = Array(loadTestRequests).fill().map(() => 
+          announcementManager.createAnnouncement(announcementData)
+        );
+
+        const results = await Promise.all(promises);
+
+        expect(results).to.have.length(loadTestRequests);
+        expect(mockLoadBalancer.distributeLoad.callCount).to.equal(loadTestRequests);
+        expect(mockPerformanceMonitor.recordMetric.calledWith('response_time')).to.be.true;
+      });
+
+      it('should efficiently handle database connection pooling', async () => {
+        const connectionPoolSize = 10;
+        const mockPool = {
+          getConnection: sinon.stub(),
+          releaseConnection: sinon.stub(),
+          activeConnections: 5,
+          maxConnections: connectionPoolSize
+        };
+
+        mockDb.getConnectionPool.returns(mockPool);
+        mockDb.findAll.resolves([]);
+
+        await announcementManager.getAllAnnouncements();
+
+        expect(mockDb.getConnectionPool.called).to.be.true;
+        expect(mockPerformanceMonitor.recordMetric.calledWith('pool_utilization', 50)).to.be.true; // 5/10 = 50%
+      });
+
+      it('should optimize query performance with indexing', async () => {
+        const searchParams = { priority: 'high', category: 'urgent' };
+        const expectedResults = [
+          { id: 1, title: 'Urgent', priority: 'high', category: 'urgent' }
+        ];
+
+        mockDb.query.withArgs(sinon.match.string, sinon.match.array).resolves(expectedResults);
+        mockPerformanceMonitor.startTimer.returns({ stop: sinon.stub().returns(50) }); // Fast query
+
+        const result = await announcementManager.searchAnnouncements(searchParams);
+
+        expect(result).to.deep.equal(expectedResults);
+        expect(mockPerformanceMonitor.recordMetric.calledWith('query_time', 50)).to.be.true;
+        expect(mockDb.query.calledWith(sinon.match(/INDEX/), sinon.match.array)).to.be.true;
+      });
+
+      it('should handle memory-efficient pagination', async () => {
+        const pageSize = 100;
+        const totalRecords = 10000;
+        const pageData = Array(pageSize).fill().map((_, i) => ({
+          id: i + 1,
+          title: `Announcement ${i + 1}`,
+          content: 'Content'
+        }));
+
+        mockDb.findAll.resolves(pageData);
+        mockPerformanceMonitor.getMemoryUsage.returns({ used: 200, total: 1000 }); // 20% usage
+
+        const result = await announcementManager.getAllAnnouncements({ page: 1, limit: pageSize });
+
+        expect(result).to.have.length(pageSize);
+        expect(mockPerformanceMonitor.recordMetric.calledWith('memory_usage_percent', 20)).to.be.true;
+      });
+
+      it('should maintain performance during cache operations', async () => {
+        const announcementId = 1;
+        const cachedData = { id: 1, title: 'Cached', content: 'Content' };
+
+        const mockCache = {
+          get: sinon.stub().resolves(cachedData),
+          set: sinon.stub().resolves(true),
+          hit: true
+        };
+
+        announcementManager.cache = mockCache;
+        mockPerformanceMonitor.startTimer.returns({ stop: sinon.stub().returns(5) }); // Fast cache hit
+
+        const result = await announcementManager.getAnnouncement(announcementId);
+
+        expect(result).to.deep.equal(cachedData);
+        expect(mockCache.get.calledWith(`announcement:${announcementId}`)).to.be.true;
+        expect(mockPerformanceMonitor.recordMetric.calledWith('cache_hit_time', 5)).to.be.true;
+        expect(mockDb.findById.called).to.be.false; // Should not hit database
+      });
+    });
+
+    describe('Error Path', () => {
+      it('should handle performance degradation under extreme load', async () => {
+        const extremeLoad = 1000;
+        const announcementData = { title: 'Stress Test', content: 'Content' };
+        const slowResponseTime = 5000; // 5 seconds
+
+        mockDb.create.callsFake(() => new Promise(resolve => 
+          setTimeout(() => resolve({ id: 1, ...announcementData }), 100)
+        ));
+        mockPerformanceMonitor.startTimer.returns({ stop: sinon.stub().returns(slowResponseTime) });
+        mockLoadBalancer.checkCapacity.returns(false); // Over capacity
+
+        const promises = Array(extremeLoad).fill().map(() => 
+          announcementManager.createAnnouncement(announcementData)
+        );
+
+        await expect(Promise.all(promises))
+          .to.be.rejectedWith('System over capacity');
+        
+        expect(mockPerformanceMonitor.recordMetric.calledWith('performance_degradation', true)).to.be.true;
+      });
+
+      it('should handle database connection pool exhaustion', async () => {
+        const mockPool = {
+          getConnection: sinon.stub().rejects(new Error('Connection pool exhausted')),
+          activeConnections: 10,
+          maxConnections: 10
+        };
+
+        mockDb.getConnectionPool.returns(mockPool);
+
+        await expect(announcementManager.getAllAnnouncements())
+          .to.be.rejectedWith('Connection pool exhausted');
+
+        expect(mockPerformanceMonitor.recordMetric.calledWith('pool_exhausted', true)).to.be.true;
+      });
+
+      it('should handle memory pressure during bulk operations', async () => {
+        const largeBulkData = Array(50000).fill().map((_, i) => ({
+          title: `Large Bulk ${i}`,
+          content: `Content ${i}`.repeat(1000) // Large content
+        }));
+
+        mockPerformanceMonitor.getMemoryUsage.returns({ used: 950, total: 1000 }); // 95% usage
+        mockDb.bulkCreate.rejects(new Error('Out of memory'));
+
+        await expect(announcementManager.bulkCreateAnnouncements(largeBulkData))
+          .to.be.rejectedWith('Out of memory');
+
+        expect(mockPerformanceMonitor.recordMetric.calledWith('memory_pressure', 95)).to.be.true;
+      });
+
+      it('should handle slow query performance', async () => {
+        const complexQuery = { 
+          title: '%complex%', 
+          content: '%search%',
+          dateRange: { start: '2023-01-01', end: '2023-12-31' }
+        };
+        const slowQueryTime = 10000; // 10 seconds
+
+        mockDb.query.callsFake(() => new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Query timeout')), slowQueryTime)
+        ));
+        mockPerformanceMonitor.startTimer.returns({ stop: sinon.stub().returns(slowQueryTime) });
+
+        await expect(announcementManager.searchAnnouncements(complexQuery))
+          .to.be.rejectedWith('Query timeout');
+
+        expect(mockPerformanceMonitor.recordMetric.calledWith('slow_query', slowQueryTime)).to.be.true;
+      });
+
+      it('should handle CPU usage spikes during processing', async () => {
+        const processingIntensiveData = Array(1000).fill().map((_, i) => ({
+          title: `Processing ${i}`,
+          content: 'Complex content requiring heavy processing'
+        }));
+
+        mockPerformanceMonitor.getCPUUsage.returns(95); // 95% CPU usage
+        mockDb.bulkCreate.rejects(new Error('CPU overload'));
+
+        await expect(announcementManager.bulkCreateAnnouncements(processingIntensiveData))
+          .to.be.rejectedWith('CPU overload');
+
+        expect(mockPerformanceMonitor.recordMetric.calledWith('cpu_overload', 95)).to.be.true;
+      });
+
+      it('should handle cache miss performance impact', async () => {
+        const announcementId = 1;
+        const dbData = { id: 1, title: 'From DB', content: 'Content' };
+
+        const mockCache = {
+          get: sinon.stub().resolves(null), // Cache miss
+          set: sinon.stub().resolves(true)
+        };
+
+        announcementManager.cache = mockCache;
+        mockDb.findById.resolves(dbData);
+        mockPerformanceMonitor.startTimer.returns({ stop: sinon.stub().returns(200) }); // Slower DB hit
+
+        const result = await announcementManager.getAnnouncement(announcementId);
+
+        expect(result).to.deep.equal(dbData);
+        expect(mockCache.get.calledWith(`announcement:${announcementId}`)).to.be.true;
+        expect(mockDb.findById.calledOnceWith(announcementId)).to.be.true;
+        expect(mockPerformanceMonitor.recordMetric.calledWith('cache_miss', true)).to.be.true;
+      });
+
+      it('should handle load balancer failure', async () => {
+        const announcementData = { title: 'Load Balancer Test', content: 'Content' };
+        const loadBalancerError = new Error('Load balancer unavailable');
+
+        mockLoadBalancer.distributeLoad.rejects(loadBalancerError);
+
+        await expect(announcementManager.createAnnouncement(announcementData))
+          .to.be.rejectedWith('Load balancer unavailable');
+
+        expect(mockPerformanceMonitor.recordMetric.calledWith('load_balancer_failure', true)).to.be.true;
+      });
+
+      it('should handle concurrent write conflicts', async () => {
+        const announcementId = 1;
+        const updateData = { title: 'Concurrent Update' };
+        const conflictError = new Error('Deadlock detected');
+        conflictError.code = 'ER_LOCK_DEADLOCK';
+
+        mockDb.update.rejects(conflictError);
+        mockPerformanceMonitor.startTimer.returns({ stop: sinon.stub().returns(1000) });
+
+        await expect(announcementManager.updateAnnouncement(announcementId, updateData))
+          .to.be.rejectedWith('Deadlock detected');
+
+        expect(mockPerformanceMonitor.recordMetric.calledWith('deadlock_detected', true)).to.be.true;
+      });
+
+      it('should handle network latency issues', async () => {
+        const announcementId = 1;
+        const networkError = new Error('Network timeout');
+        networkError.code = 'ETIMEDOUT';
+
+        mockDb.findById.rejects(networkError);
+        mockPerformanceMonitor.startTimer.returns({ stop: sinon.stub().returns(30000) }); // 30 second timeout
+
+        await expect(announcementManager.getAnnouncement(announcementId))
+          .to.be.rejectedWith('Network timeout');
+
+        expect(mockPerformanceMonitor.recordMetric.calledWith('network_timeout', 30000)).to.be.true;
+      });
+
+      it('should handle resource cleanup on performance failures', async () => {
+        const resourceError = new Error('Resource leak detected');
+        const mockResourceManager = {
+          cleanup: sinon.stub(),
+          getActiveResources: sinon.stub().returns(1000) // Too many resources
+        };
+
+        announcementManager.resourceManager = mockResourceManager;
+        mockDb.findAll.rejects(resourceError);
+
+        await expect(announcementManager.getAllAnnouncements())
+          .to.be.rejectedWith('Resource leak detected');
+
+        expect(mockResourceManager.cleanup.called).to.be.true;
+        expect(mockPerformanceMonitor.recordMetric.calledWith('resource_leak', 1000)).to.be.true;
+      });
+    });
+  });
+
+  // TC-005: AnnouncementForm validation
+  describe('TC-005: AnnouncementForm validation', () => {
     let announcementForm;
 
     beforeEach(() => {
@@ -840,8 +1179,8 @@ describe('Announcement System Tests', () => {
     });
   });
 
-  // TC-005: Database migration
-  describe('TC-005: Database migration', () => {
+  // TC-006: Database migration
+  describe('TC-006: Database migration', () => {
     let databaseMigration;
     let mockConnection;
 

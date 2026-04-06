@@ -2,7 +2,7 @@ const request = require('supertest');
 const app = require('../../src/app');
 const { setupTestDb, teardownTestDb } = require('../helpers/db');
 
-describe('TC-004: Backend API endpoints - Announcements Integration Tests', () => {
+describe('TC-003: API endpoint tests - Announcements Integration Tests', () => {
   beforeAll(async () => {
     await setupTestDb();
   });

@@ -1,17 +1,4 @@
 const mongoose = require('mongoose');
-const validator = require('validator');
-
-// Input sanitization helper functions
-const sanitizeString = (str) => {
-  if (typeof str !== 'string') return '';
-  return validator.escape(str.trim());
-};
-
-const sanitizeHtml = (str) => {
-  if (typeof str !== 'string') return '';
-  // Remove HTML tags and escape remaining content
-  return validator.escape(str.replace(/<[^>]*>/g, '').trim());
-};
 
 const announcementSchema = new mongoose.Schema({
   title: {
@@ -21,15 +8,11 @@ const announcementSchema = new mongoose.Schema({
     maxlength: [200, 'Title cannot exceed 200 characters'],
     validate: {
       validator: function(v) {
-        // Validate title contains only safe characters
-        return validator.isLength(v, { min: 1, max: 200 }) && 
-               !validator.contains(v, '<script') && 
-               !validator.contains(v, 'javascript:');
+        // Prevent XSS and SQL injection patterns in title
+        const dangerousPatterns = /<script|javascript:|on\w+\s*=|<iframe|SELECT\s+|INSERT\s+|UPDATE\s+|DELETE\s+|DROP\s+|UNION\s+|OR\s+1\s*=\s*1|AND\s+1\s*=\s*1/i;
+        return !dangerousPatterns.test(v);
       },
-      message: 'Title contains invalid characters or unsafe content'
-    },
-    set: function(v) {
-      return sanitizeString(v);
+      message: 'Title contains potentially dangerous content'
     }
   },
   content: {
@@ -39,15 +22,11 @@ const announcementSchema = new mongoose.Schema({
     maxlength: [5000, 'Content cannot exceed 5000 characters'],
     validate: {
       validator: function(v) {
-        // Validate content length and safety
-        return validator.isLength(v, { min: 1, max: 5000 }) && 
-               !validator.contains(v, '<script') && 
-               !validator.contains(v, 'javascript:');
+        // Prevent XSS and SQL injection patterns in content
+        const dangerousPatterns = /<script|javascript:|on\w+\s*=|<iframe|SELECT\s+|INSERT\s+|UPDATE\s+|DELETE\s+|DROP\s+|UNION\s+|OR\s+1\s*=\s*1|AND\s+1\s*=\s*1/i;
+        return !dangerousPatterns.test(v);
       },
-      message: 'Content contains invalid characters or unsafe content'
-    },
-    set: function(v) {
-      return sanitizeHtml(v);
+      message: 'Content contains potentially dangerous content'
     }
   },
   createdBy: {
@@ -56,6 +35,7 @@ const announcementSchema = new mongoose.Schema({
     required: [true, 'Created by user is required'],
     validate: {
       validator: function(v) {
+        // Ensure it's a valid ObjectId format to prevent injection
         return mongoose.Types.ObjectId.isValid(v);
       },
       message: 'Invalid user ID format'
@@ -63,20 +43,15 @@ const announcementSchema = new mongoose.Schema({
   },
   isActive: {
     type: Boolean,
-    default: true,
-    validate: {
-      validator: function(v) {
-        return typeof v === 'boolean';
-      },
-      message: 'isActive must be a boolean value'
-    }
+    default: true
   },
   publishDate: {
     type: Date,
     default: Date.now,
     validate: {
       validator: function(v) {
-        return v instanceof Date && !isNaN(v);
+        // Ensure date is valid and not in the far future to prevent manipulation
+        return v instanceof Date && v.getTime() <= Date.now() + (365 * 24 * 60 * 60 * 1000);
       },
       message: 'Invalid publish date'
     }
@@ -87,14 +62,7 @@ const announcementSchema = new mongoose.Schema({
       values: ['low', 'medium', 'high', 'urgent'],
       message: 'Priority must be one of: low, medium, high, urgent'
     },
-    default: 'medium',
-    set: function(v) {
-      // Sanitize and validate priority input
-      if (typeof v !== 'string') return 'medium';
-      const sanitized = v.toLowerCase().trim();
-      const validPriorities = ['low', 'medium', 'high', 'urgent'];
-      return validPriorities.includes(sanitized) ? sanitized : 'medium';
-    }
+    default: 'medium'
   }
 }, {
   timestamps: true
@@ -105,9 +73,6 @@ announcementSchema.index({ isActive: 1, publishDate: -1 });
 
 // Virtual for formatted publish date
 announcementSchema.virtual('formattedPublishDate').get(function() {
-  if (!this.publishDate || !(this.publishDate instanceof Date)) {
-    return 'Invalid Date';
-  }
   return this.publishDate.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
@@ -116,6 +81,14 @@ announcementSchema.virtual('formattedPublishDate').get(function() {
     minute: '2-digit'
   });
 });
+
+// Input sanitization helper function
+const sanitizeInput = (input) => {
+  if (typeof input === 'string') {
+    return input.replace(/[<>\"'%;()&+]/g, '');
+  }
+  return input;
+};
 
 // Static method to get all active announcements - uses parameterized queries
 announcementSchema.statics.getActiveAnnouncements = function() {
@@ -128,12 +101,14 @@ announcementSchema.statics.getActiveAnnouncements = function() {
 
 // Static method to get announcements with pagination - using parameterized queries
 announcementSchema.statics.getAnnouncementsPaginated = function(page = 1, limit = 10, includeInactive = false) {
-  // Comprehensive input sanitization and validation
+  // Strict input sanitization and validation
   const sanitizedPage = Math.max(1, Math.min(1000, parseInt(page, 10) || 1));
   const sanitizedLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 10));
-  const sanitizedIncludeInactive = Boolean(includeInactive);
   
-  const filter = sanitizedIncludeInactive ? {} : { isActive: true };
+  // Validate boolean input
+  const validatedIncludeInactive = Boolean(includeInactive);
+  
+  const filter = validatedIncludeInactive ? {} : { isActive: true };
   const skip = (sanitizedPage - 1) * sanitizedLimit;
   
   // Use MongoDB's built-in query methods with proper parameterization
@@ -145,18 +120,14 @@ announcementSchema.statics.getAnnouncementsPaginated = function(page = 1, limit 
     .lean();
 };
 
-// Static method to find announcements by priority - parameterized query with strict validation
+// Static method to find announcements by priority - parameterized query
 announcementSchema.statics.getAnnouncementsByPriority = function(priority) {
-  // Strict input validation and sanitization
-  if (typeof priority !== 'string') {
-    throw new Error('Priority must be a string');
-  }
-  
-  const sanitizedPriority = priority.toLowerCase().trim();
+  // Strict validation against allowed enum values with sanitization
   const allowedPriorities = ['low', 'medium', 'high', 'urgent'];
+  const sanitizedPriority = sanitizeInput(priority);
   
   if (!allowedPriorities.includes(sanitizedPriority)) {
-    throw new Error('Invalid priority level. Must be one of: low, medium, high, urgent');
+    throw new Error('Invalid priority level');
   }
   
   // Use parameterized query with sanitized input
@@ -166,77 +137,35 @@ announcementSchema.statics.getAnnouncementsByPriority = function(priority) {
     .lean();
 };
 
-// Static method to search announcements with sanitized input using parameterized queries
-announcementSchema.statics.searchAnnouncements = function(searchTerm, options = {}) {
-  // Sanitize search input
-  if (typeof searchTerm !== 'string' || !searchTerm.trim()) {
-    throw new Error('Search term must be a non-empty string');
+// Static method to search announcements by title with input sanitization
+announcementSchema.statics.searchByTitle = function(searchTerm) {
+  // Sanitize and validate search term
+  if (!searchTerm || typeof searchTerm !== 'string') {
+    throw new Error('Invalid search term');
   }
   
-  // Use parameterized regex pattern instead of direct interpolation
-  const sanitizedTerm = searchTerm.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const sanitizedOptions = {
-    includeInactive: Boolean(options.includeInactive),
-    limit: Math.max(1, Math.min(100, parseInt(options.limit, 10) || 10))
-  };
+  const sanitizedTerm = sanitizeInput(searchTerm.trim());
+  if (sanitizedTerm.length < 2) {
+    throw new Error('Search term must be at least 2 characters');
+  }
   
-  // Build filter with parameterized queries
-  const filter = {
-    $and: [
-      sanitizedOptions.includeInactive ? {} : { isActive: true },
-      {
-        $or: [
-          { title: { $regex: new RegExp(sanitizedTerm, 'i') } },
-          { content: { $regex: new RegExp(sanitizedTerm, 'i') } }
-        ]
-      }
-    ]
-  };
+  // Use regex with escaped special characters to prevent ReDoS attacks
+  const escapedTerm = sanitizedTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   
-  return this.find(filter)
-    .sort({ publishDate: -1 })
-    .limit(sanitizedOptions.limit)
-    .populate('createdBy', 'name email')
-    .lean();
+  return this.find({
+    title: { $regex: new RegExp(escapedTerm, 'i') },
+    isActive: true
+  })
+  .sort({ publishDate: -1 })
+  .populate('createdBy', 'name email')
+  .lean();
 };
 
-// Instance method to toggle active status with validation
+// Instance method to toggle active status
 announcementSchema.methods.toggleActive = function() {
-  if (typeof this.isActive !== 'boolean') {
-    throw new Error('Invalid isActive state');
-  }
   this.isActive = !this.isActive;
   return this.save();
 };
-
-// Instance method to safely update announcement with input validation
-announcementSchema.methods.safeUpdate = function(updateData) {
-  const allowedFields = ['title', 'content', 'priority', 'isActive', 'publishDate'];
-  const sanitizedUpdate = {};
-  
-  Object.keys(updateData).forEach(key => {
-    if (allowedFields.includes(key)) {
-      sanitizedUpdate[key] = updateData[key];
-    }
-  });
-  
-  Object.assign(this, sanitizedUpdate);
-  return this.save();
-};
-
-// Pre-validate middleware for additional security
-announcementSchema.pre('validate', function(next) {
-  // Additional validation for XSS prevention
-  if (this.title && (this.title.includes('<script') || this.title.includes('javascript:'))) {
-    return next(new Error('Title contains potentially malicious content'));
-  }
-  
-  if (this.content && (this.content.includes('<script') || this.content.includes('javascript:'))) {
-    return next(new Error('Content contains potentially malicious content'));
-  }
-  
-  next();
-});
 
 // Pre-save middleware to validate user permissions with parameterized queries
 announcementSchema.pre('save', async function(next) {
@@ -249,43 +178,41 @@ announcementSchema.pre('save', async function(next) {
       
       const User = mongoose.model('User');
       // Use parameterized query with findById to prevent injection
-      const user = await User.findById(this.createdBy).lean();
+      const user = await User.findById(this.createdBy).select('role').lean();
       
-      if (!user) {
-        return next(new Error('User not found'));
-      }
-      
-      if (user.role !== 'admin') {
+      if (!user || user.role !== 'admin') {
         return next(new Error('Only admin users can create announcements'));
       }
     } catch (error) {
-      return next(new Error('Failed to validate user permissions: ' + error.message));
+      return next(new Error('User validation failed: ' + error.message));
     }
   }
+  
+  // Additional sanitization before save
+  if (this.isModified('title')) {
+    this.title = sanitizeInput(this.title);
+  }
+  if (this.isModified('content')) {
+    this.content = sanitizeInput(this.content);
+  }
+  
   next();
 });
 
 // Pre-remove middleware for cleanup
 announcementSchema.pre('remove', function(next) {
   // Add any cleanup logic here if needed
-  // Log removal for audit trail
-  console.log(`Announcement ${this._id} is being removed`);
   next();
 });
 
-// Transform output to sanitize data and include virtual fields
+// Transform output to include virtual fields and sanitize sensitive data
 announcementSchema.set('toJSON', {
   virtuals: true,
   transform: function(doc, ret) {
-    // Remove sensitive/internal fields
     delete ret.__v;
-    delete ret.createdBy?.password;
-    delete ret.createdBy?.email;
-    
-    // Additional sanitization of output
-    if (ret.title) ret.title = validator.escape(ret.title);
-    if (ret.content) ret.content = validator.escape(ret.content);
-    
+    // Additional output sanitization
+    if (ret.title) ret.title = sanitizeInput(ret.title);
+    if (ret.content) ret.content = sanitizeInput(ret.content);
     return ret;
   }
 });

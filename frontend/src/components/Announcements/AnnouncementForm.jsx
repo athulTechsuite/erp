@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import './AnnouncementForm.css';
 
 const AnnouncementForm = ({ onAnnouncementCreated, editingAnnouncement, onEditComplete }) => {
   const { user } = useAuth();

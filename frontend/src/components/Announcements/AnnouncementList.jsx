@@ -1,11 +1,71 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Textarea } from '../ui/textarea';
-import { Alert, AlertDescription } from '../ui/alert';
 import { Trash2, Edit, Plus, Save, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+
+// Fallback UI components using standard HTML elements with Tailwind classes
+const Card = ({ children, className = "" }) => (
+  <div className={`bg-white shadow rounded-lg border ${className}`}>{children}</div>
+);
+
+const CardContent = ({ children, className = "" }) => (
+  <div className={`p-6 ${className}`}>{children}</div>
+);
+
+const CardHeader = ({ children, className = "" }) => (
+  <div className={`px-6 py-4 border-b ${className}`}>{children}</div>
+);
+
+const CardTitle = ({ children, className = "" }) => (
+  <h2 className={`text-xl font-semibold ${className}`}>{children}</h2>
+);
+
+const Button = ({ children, onClick, type = "button", variant = "default", size = "default", className = "", ...props }) => {
+  const baseClasses = "inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
+  const variantClasses = {
+    default: "bg-blue-600 text-white hover:bg-blue-700",
+    outline: "border border-gray-300 bg-white hover:bg-gray-50",
+    destructive: "bg-red-600 text-white hover:bg-red-700"
+  };
+  const sizeClasses = {
+    default: "h-10 px-4 py-2",
+    sm: "h-8 px-3 py-1 text-sm"
+  };
+  
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+};
+
+const Input = ({ className = "", ...props }) => (
+  <input
+    className={`flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+    {...props}
+  />
+);
+
+const Textarea = ({ className = "", ...props }) => (
+  <textarea
+    className={`flex min-h-[80px] w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+    {...props}
+  />
+);
+
+const Alert = ({ children, className = "" }) => (
+  <div className={`relative w-full rounded-lg border p-4 ${className}`}>
+    {children}
+  </div>
+);
+
+const AlertDescription = ({ children, className = "" }) => (
+  <div className={`text-sm ${className}`}>{children}</div>
+);
 
 const AnnouncementList = () => {
   const { user, token } = useAuth();

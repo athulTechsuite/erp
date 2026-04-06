@@ -1,16 +1,16 @@
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { jest } from '@jest/globals';
-import Announcement from '../src/components/Announcement';
+import AnnouncementManager from '../components/Announcements/AnnouncementManager';
 
 // Mock the API service
-jest.mock('../src/services/api', () => ({
+jest.mock('../services/api', () => ({
   getAnnouncements: jest.fn(),
 }));
 
-import { getAnnouncements } from '../src/services/api';
+import { getAnnouncements } from '../services/api';
 
-describe('Announcement Component', () => {
+describe('AnnouncementManager Component', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -42,7 +42,7 @@ describe('Announcement Component', () => {
       });
 
       // Act
-      render(<Announcement />);
+      render(<AnnouncementManager />);
 
       // Assert
       await waitFor(() => {
@@ -60,7 +60,7 @@ describe('Announcement Component', () => {
       getAnnouncements.mockImplementation(() => new Promise(() => {})); // Never resolves
 
       // Act
-      render(<Announcement />);
+      render(<AnnouncementManager />);
 
       // Assert
       expect(screen.getByText(/loading/i)).toBeInTheDocument();
@@ -74,7 +74,7 @@ describe('Announcement Component', () => {
       });
 
       // Act
-      render(<Announcement />);
+      render(<AnnouncementManager />);
 
       // Assert
       await waitFor(() => {
@@ -91,7 +91,7 @@ describe('Announcement Component', () => {
       getAnnouncements.mockRejectedValue(mockError);
 
       // Act
-      render(<Announcement />);
+      render(<AnnouncementManager />);
 
       // Assert
       await waitFor(() => {
@@ -110,7 +110,7 @@ describe('Announcement Component', () => {
       });
 
       // Act
-      render(<Announcement />);
+      render(<AnnouncementManager />);
 
       // Assert
       await waitFor(() => {
@@ -125,7 +125,7 @@ describe('Announcement Component', () => {
       getAnnouncements.mockRejectedValue(timeoutError);
 
       // Act
-      render(<Announcement />);
+      render(<AnnouncementManager />);
 
       // Assert
       await waitFor(() => {
@@ -150,7 +150,7 @@ describe('Announcement Component', () => {
         });
 
       // Act
-      render(<Announcement />);
+      render(<AnnouncementManager />);
 
       // Wait for error to appear
       await waitFor(() => {

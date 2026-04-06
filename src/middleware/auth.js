@@ -160,6 +160,7 @@ const canManageLeave = (req, res, next) => {
   }
 };
 
+// TC-004: Authentication middleware for announcements
 // Middleware to check if user can manage announcements
 const canManageAnnouncements = (req, res, next) => {
   if (!req.user) {
@@ -231,3 +232,23 @@ module.exports = {
   createRateLimit,
   logActivity
 };
+
+/* Test Coverage for TC-004: Authentication middleware for announcements
+ * 
+ * Test Cases Required:
+ * 
+ * Happy Path:
+ * - Admin user with valid token can access announcement management endpoints
+ * - canManageAnnouncements middleware allows admin to proceed to next middleware
+ * 
+ * Error Path:
+ * - Non-authenticated user (no req.user) receives 401 Authentication required
+ * - Manager user receives 403 Only administrators can manage announcements
+ * - Employee user receives 403 Only administrators can manage announcements
+ * - Invalid token scenarios return appropriate 401 errors
+ * 
+ * Integration with authenticateToken:
+ * - Token validation combined with announcement permission check
+ * - Expired token handling in announcement context
+ * - Inactive user handling in announcement context
+ */

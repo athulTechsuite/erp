@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
+import './AnnouncementManager.css';
 
 const AnnouncementManager = () => {
   const [announcements, setAnnouncements] = useState([]);
@@ -11,10 +12,59 @@ const AnnouncementManager = () => {
   });
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const requestQueueRef = useRef([]);
+  const isProcessingRef = useRef(false);
 
   useEffect(() => {
     fetchAnnouncements();
   }, []);
+
+  // Input sanitization utility
+  const sanitizeInput = (input) => {
+    if (typeof input !== 'string') return '';
+    return input
+      .trim()
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove script tags
+      .replace(/<[^>]*>/g, '') // Remove HTML tags
+      .replace(/javascript:/gi, '') // Remove javascript: protocols
+      .replace(/on\w+\s*=/gi, '') // Remove event handlers
+      .slice(0, input === formData.title ? 200 : 2000); // Enforce length limits
+  };
+
+  // Request queue processor to handle race conditions
+  const processRequestQueue = async () => {
+    if (isProcessingRef.current || requestQueueRef.current.length === 0) {
+      return;
+    }
+
+    isProcessingRef.current = true;
+    
+    while (requestQueueRef.current.length > 0) {
+      const request = requestQueueRef.current.shift();
+      try {
+        await request();
+      } catch (error) {
+        console.error('Request failed:', error);
+      }
+    }
+    
+    isProcessingRef.current = false;
+  };
+
+  // Add request to queue
+  const queueRequest = (requestFn) => {
+    return new Promise((resolve, reject) => {
+      requestQueueRef.current.push(async () => {
+        try {
+          const result = await requestFn();
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        }
+      });
+      processRequestQueue();
+    });
+  };
 
   const fetchAnnouncements = async () => {
     try {
@@ -56,12 +106,33 @@ const AnnouncementManager = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!formData.title.trim() || !formData.content.trim()) {
+    // Sanitize inputs
+    const sanitizedTitle = sanitizeInput(formData.title);
+    const sanitizedContent = sanitizeInput(formData.content);
+    
+    if (!sanitizedTitle || !sanitizedContent) {
       toast.error('Title and content are required');
       return;
     }
 
-    try {
+    // Additional validation
+    if (sanitizedTitle.length < 3) {
+      toast.error('Title must be at least 3 characters long');
+      return;
+    }
+
+    if (sanitizedContent.length < 10) {
+      toast.error('Content must be at least 10 characters long');
+      return;
+    }
+
+    const sanitizedFormData = {
+      ...formData,
+      title: sanitizedTitle,
+      content: sanitizedContent
+    };
+
+    const submitRequest = async () => {
       setLoading(true);
       const token = localStorage.getItem('token');
       const url = editingId 
@@ -76,7 +147,7 @@ const AnnouncementManager = () => {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(sanitizedFormData)
       });
 
       if (!response.ok) {
@@ -97,9 +168,13 @@ const AnnouncementManager = () => {
       }
 
       resetForm();
+      setLoading(false);
+    };
+
+    try {
+      await queueRequest(submitRequest);
     } catch (error) {
       toast.error(error.message);
-    } finally {
       setLoading(false);
     }
   };
@@ -119,7 +194,7 @@ const AnnouncementManager = () => {
       return;
     }
 
-    try {
+    const deleteRequest = async () => {
       setLoading(true);
       const token = localStorage.getItem('token');
       const response = await fetch(`/api/announcements/${id}`, {
@@ -135,15 +210,19 @@ const AnnouncementManager = () => {
 
       setAnnouncements(prev => prev.filter(ann => ann.id !== id));
       toast.success('Announcement deleted successfully');
+      setLoading(false);
+    };
+
+    try {
+      await queueRequest(deleteRequest);
     } catch (error) {
       toast.error(error.message);
-    } finally {
       setLoading(false);
     }
   };
 
   const toggleStatus = async (id, currentStatus) => {
-    try {
+    const toggleRequest = async () => {
       const token = localStorage.getItem('token');
       const response = await fetch(`/api/announcements/${id}`, {
         method: 'PUT',
@@ -164,6 +243,10 @@ const AnnouncementManager = () => {
       );
       
       toast.success(`Announcement ${!currentStatus ? 'activated' : 'deactivated'}`);
+    };
+
+    try {
+      await queueRequest(toggleRequest);
     } catch (error) {
       toast.error(error.message);
     }

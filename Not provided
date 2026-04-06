@@ -232,6 +232,136 @@ describe('Announcement System Tests', () => {
     });
   });
 
+  // TC-005: AnnouncementForm validation and submission
+  describe('TC-005: AnnouncementForm validation and submission', () => {
+    let announcementForm;
+    let mockDb;
+
+    beforeEach(() => {
+      mockDb = {
+        create: sinon.stub(),
+        findAll: sinon.stub()
+      };
+      announcementForm = new AnnouncementForm(mockDb);
+    });
+
+    describe('Happy Path', () => {
+      it('should validate and submit announcement form successfully', async () => {
+        const validFormData = {
+          title: 'New Announcement',
+          content: 'This is a valid announcement content',
+          priority: 'high',
+          category: 'important',
+          publishDate: new Date().toISOString()
+        };
+
+        const expectedResult = { id: 1, ...validFormData, status: 'published' };
+        mockDb.create.resolves(expectedResult);
+
+        const result = await announcementForm.validateAndSubmit(validFormData);
+
+        expect(result.success).to.be.true;
+        expect(result.data).to.deep.equal(expectedResult);
+        expect(mockDb.create.calledOnce).to.be.true;
+      });
+
+      it('should handle form submission with auto-generated publish date', async () => {
+        const formData = {
+          title: 'Auto Date Announcement',
+          content: 'Content without specified date',
+          priority: 'medium'
+        };
+
+        mockDb.create.resolves({ id: 2, ...formData, publishDate: new Date().toISOString() });
+
+        const result = await announcementForm.validateAndSubmit(formData);
+
+        expect(result.success).to.be.true;
+        expect(result.data.publishDate).to.exist;
+      });
+
+      it('should validate form data before submission', async () => {
+        const validData = {
+          title: 'Valid Title',
+          content: 'Valid content for announcement',
+          priority: 'low'
+        };
+
+        const validationSpy = sinon.spy(announcementForm, 'validate');
+        mockDb.create.resolves({ id: 3, ...validData });
+
+        await announcementForm.validateAndSubmit(validData);
+
+        expect(validationSpy.calledOnceWith(validData)).to.be.true;
+        validationSpy.restore();
+      });
+    });
+
+    describe('Error Path', () => {
+      it('should reject submission with invalid form data', async () => {
+        const invalidFormData = {
+          title: '',
+          content: 'Valid content',
+          priority: 'invalid'
+        };
+
+        const result = await announcementForm.validateAndSubmit(invalidFormData);
+
+        expect(result.success).to.be.false;
+        expect(result.errors).to.include('Title is required');
+        expect(result.errors).to.include('Priority must be one of: low, medium, high, critical');
+        expect(mockDb.create.called).to.be.false;
+      });
+
+      it('should handle database submission failure', async () => {
+        const validFormData = {
+          title: 'Valid Title',
+          content: 'Valid content',
+          priority: 'medium'
+        };
+
+        const dbError = new Error('Database insertion failed');
+        mockDb.create.rejects(dbError);
+
+        const result = await announcementForm.validateAndSubmit(validFormData);
+
+        expect(result.success).to.be.false;
+        expect(result.error).to.equal('Database insertion failed');
+      });
+
+      it('should handle network timeout during submission', async () => {
+        const formData = {
+          title: 'Network Test',
+          content: 'Testing network failure',
+          priority: 'high'
+        };
+
+        const timeoutError = new Error('Network timeout');
+        timeoutError.code = 'ETIMEDOUT';
+        mockDb.create.rejects(timeoutError);
+
+        const result = await announcementForm.validateAndSubmit(formData);
+
+        expect(result.success).to.be.false;
+        expect(result.error).to.equal('Network timeout');
+        expect(result.retryable).to.be.true;
+      });
+
+      it('should sanitize form data on validation failure', async () => {
+        const maliciousData = {
+          title: '<script>alert("xss")</script>',
+          content: 'Valid content',
+          priority: 'medium'
+        };
+
+        const result = await announcementForm.validateAndSubmit(maliciousData);
+
+        expect(result.success).to.be.false;
+        expect(result.sanitizedData.title).to.not.include('<script>');
+      });
+    });
+  });
+
   // TC-005: Database migration
   describe('TC-005: Database migration', () => {
     let databaseMigration;
@@ -344,6 +474,173 @@ describe('Announcement System Tests', () => {
 
         expect(result.partialSuccess).to.be.true;
         expect(result.errors).to.include('Index already exists');
+      });
+    });
+  });
+
+  // TC-006: Database migration rollback scenarios
+  describe('TC-006: Database migration rollback scenarios', () => {
+    let databaseMigration;
+    let mockConnection;
+
+    beforeEach(() => {
+      mockConnection = {
+        query: sinon.stub(),
+        beginTransaction: sinon.stub(),
+        commit: sinon.stub(),
+        rollback: sinon.stub(),
+        getMigrationHistory: sinon.stub(),
+        logMigration: sinon.stub()
+      };
+      databaseMigration = new DatabaseMigration(mockConnection);
+    });
+
+    describe('Happy Path', () => {
+      it('should rollback migration successfully', async () => {
+        const migrationId = 'migration_001';
+        mockConnection.getMigrationHistory.resolves([
+          { id: migrationId, version: '1.0.0', operations: ['CREATE_TABLE announcements'] }
+        ]);
+        mockConnection.beginTransaction.resolves();
+        mockConnection.query.resolves();
+        mockConnection.commit.resolves();
+
+        const result = await databaseMigration.rollback(migrationId);
+
+        expect(result.success).to.be.true;
+        expect(result.rolledBackMigration).to.equal(migrationId);
+        expect(mockConnection.rollback.called).to.be.false; // Should commit, not rollback
+        expect(mockConnection.commit.calledOnce).to.be.true;
+      });
+
+      it('should rollback multiple migrations in correct order', async () => {
+        const targetMigration = 'migration_001';
+        mockConnection.getMigrationHistory.resolves([
+          { id: 'migration_003', version: '1.2.0', operations: ['ADD_INDEX'] },
+          { id: 'migration_002', version: '1.1.0', operations: ['ALTER_TABLE'] },
+          { id: 'migration_001', version: '1.0.0', operations: ['CREATE_TABLE'] }
+        ]);
+        mockConnection.beginTransaction.resolves();
+        mockConnection.query.resolves();
+        mockConnection.commit.resolves();
+
+        const result = await databaseMigration.rollbackTo(targetMigration);
+
+        expect(result.success).to.be.true;
+        expect(result.rolledBackMigrations).to.have.length(2);
+        expect(result.rolledBackMigrations).to.include('migration_003');
+        expect(result.rolledBackMigrations).to.include('migration_002');
+      });
+
+      it('should validate rollback operations before execution', async () => {
+        const migrationId = 'migration_001';
+        mockConnection.getMigrationHistory.resolves([
+          { id: migrationId, rollbackSQL: 'DROP TABLE announcements' }
+        ]);
+        
+        const validationResult = await databaseMigration.validateRollback(migrationId);
+
+        expect(validationResult.valid).to.be.true;
+        expect(validationResult.operations).to.exist;
+        expect(validationResult.safeguards).to.exist;
+      });
+    });
+
+    describe('Error Path', () => {
+      it('should handle rollback failure and perform emergency rollback', async () => {
+        const migrationId = 'migration_001';
+        mockConnection.getMigrationHistory.resolves([
+          { id: migrationId, rollbackSQL: 'DROP TABLE announcements' }
+        ]);
+        mockConnection.beginTransaction.resolves();
+        
+        const rollbackError = new Error('Foreign key constraint violation');
+        mockConnection.query.rejects(rollbackError);
+        mockConnection.rollback.resolves();
+
+        const result = await databaseMigration.rollback(migrationId);
+
+        expect(result.success).to.be.false;
+        expect(result.error).to.equal('Foreign key constraint violation');
+        expect(mockConnection.rollback.calledOnce).to.be.true;
+        expect(mockConnection.commit.called).to.be.false;
+      });
+
+      it('should handle missing migration history gracefully', async () => {
+        const nonExistentMigration = 'migration_999';
+        mockConnection.getMigrationHistory.resolves([]);
+
+        const result = await databaseMigration.rollback(nonExistentMigration);
+
+        expect(result.success).to.be.false;
+        expect(result.error).to.include('Migration not found');
+        expect(mockConnection.beginTransaction.called).to.be.false;
+      });
+
+      it('should handle corrupted migration data during rollback', async () => {
+        const migrationId = 'migration_001';
+        mockConnection.getMigrationHistory.resolves([
+          { id: migrationId, rollbackSQL: null } // Corrupted data
+        ]);
+
+        const result = await databaseMigration.rollback(migrationId);
+
+        expect(result.success).to.be.false;
+        expect(result.error).to.include('Invalid rollback data');
+      });
+
+      it('should handle connection loss during rollback transaction', async () => {
+        const migrationId = 'migration_001';
+        mockConnection.getMigrationHistory.resolves([
+          { id: migrationId, rollbackSQL: 'DROP TABLE announcements' }
+        ]);
+        mockConnection.beginTransaction.resolves();
+        
+        const connectionError = new Error('Connection lost');
+        connectionError.code = 'ECONNLOST';
+        mockConnection.query.rejects(connectionError);
+        mockConnection.rollback.rejects(new Error('Cannot rollback - connection lost'));
+
+        const result = await databaseMigration.rollback(migrationId);
+
+        expect(result.success).to.be.false;
+        expect(result.error).to.include('Connection lost');
+        expect(result.requiresManualIntervention).to.be.true;
+      });
+
+      it('should handle partial rollback failure with detailed error reporting', async () => {
+        const targetMigration = 'migration_001';
+        mockConnection.getMigrationHistory.resolves([
+          { id: 'migration_003', rollbackSQL: 'DROP INDEX idx_test' },
+          { id: 'migration_002', rollbackSQL: 'DROP COLUMN test_col' },
+          { id: 'migration_001', rollbackSQL: 'DROP TABLE test_table' }
+        ]);
+        mockConnection.beginTransaction.resolves();
+        mockConnection.query.onFirstCall().resolves(); // migration_003 succeeds
+        mockConnection.query.onSecondCall().rejects(new Error('Column does not exist')); // migration_002 fails
+        mockConnection.rollback.resolves();
+
+        const result = await databaseMigration.rollbackTo(targetMigration);
+
+        expect(result.success).to.be.false;
+        expect(result.partiallyCompleted).to.be.true;
+        expect(result.completedRollbacks).to.include('migration_003');
+        expect(result.failedRollback).to.equal('migration_002');
+        expect(mockConnection.rollback.calledOnce).to.be.true;
+      });
+
+      it('should validate dependencies before rollback and prevent unsafe operations', async () => {
+        const migrationId = 'migration_001';
+        mockConnection.getMigrationHistory.resolves([
+          { id: migrationId, dependencies: ['migration_002'], rollbackSQL: 'DROP TABLE announcements' }
+        ]);
+
+        const result = await databaseMigration.rollback(migrationId);
+
+        expect(result.success).to.be.false;
+        expect(result.error).to.include('Cannot rollback due to dependencies');
+        expect(result.dependentMigrations).to.include('migration_002');
+        expect(mockConnection.beginTransaction.called).to.be.false;
       });
     });
   });

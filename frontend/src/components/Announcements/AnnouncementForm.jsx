@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import DOMPurify from 'dompurify';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -28,6 +27,23 @@ const AnnouncementForm = ({
       });
     }
   }, [announcement]);
+
+  const sanitizeErrorMessage = (message) => {
+    if (typeof message !== 'string') {
+      return 'An error occurred. Please try again.';
+    }
+    // Remove HTML tags and escape special characters
+    return message.replace(/<[^>]*>/g, '').replace(/[<>&"']/g, (match) => {
+      const htmlEntities = {
+        '<': '&lt;',
+        '>': '&gt;',
+        '&': '&amp;',
+        '"': '&quot;',
+        "'": '&#x27;'
+      };
+      return htmlEntities[match];
+    });
+  };
 
   const validateField = (name, value) => {
     const fieldErrors = {};
@@ -103,8 +119,9 @@ const AnnouncementForm = ({
       });
     } catch (error) {
       console.error('Error saving announcement:', error);
+      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to save announcement. Please try again.';
       setErrors({ 
-        submit: 'Failed to save announcement. Please try again.' 
+        submit: sanitizeErrorMessage(errorMessage)
       });
     }
   };
@@ -114,12 +131,6 @@ const AnnouncementForm = ({
     setErrors({});
     setTouched({});
     onCancel();
-  };
-
-  const sanitizeAndRenderError = (errorMessage) => {
-    if (!errorMessage) return null;
-    const sanitizedError = DOMPurify.sanitize(errorMessage);
-    return <span className="text-red-500" dangerouslySetInnerHTML={{ __html: sanitizedError }} />;
   };
 
   return (
@@ -134,7 +145,7 @@ const AnnouncementForm = ({
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(errors.submit) }} />
+              <AlertDescription>{errors.submit}</AlertDescription>
             </Alert>
           )}
           
@@ -154,7 +165,9 @@ const AnnouncementForm = ({
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
-                {errors.title && touched.title && sanitizeAndRenderError(errors.title)}
+                {errors.title && touched.title && (
+                  <span className="text-red-500">{errors.title}</span>
+                )}
               </span>
               <span>{formData.title.length}/200</span>
             </div>
@@ -177,7 +190,9 @@ const AnnouncementForm = ({
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
-                {errors.content && touched.content && sanitizeAndRenderError(errors.content)}
+                {errors.content && touched.content && (
+                  <span className="text-red-500">{errors.content}</span>
+                )}
               </span>
               <span>{formData.content.length}/5000</span>
             </div>

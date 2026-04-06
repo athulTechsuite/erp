@@ -1,12 +1,18 @@
 -- Migration: Create announcements table
 -- Description: Creates the announcements table for company-wide announcements system
 -- Date: 2024-01-01
+-- Dependencies: Requires users table (migration 001_create_users_table.sql or similar)
 
--- Verify users table exists before creating announcements table
+-- Check if users table exists before creating foreign key constraint
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
-        RAISE EXCEPTION 'Users table does not exist. Please run users migration first.';
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'users'
+    ) THEN
+        RAISE EXCEPTION 'Users table does not exist. Please run the users table migration first.';
     END IF;
 END $$;
 
@@ -19,11 +25,7 @@ CREATE TABLE announcements (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     
-    -- Foreign key constraint to users table - properly implemented for referential integrity
-    -- This constraint ensures data consistency by preventing orphaned records
-    -- ON DELETE RESTRICT prevents deletion of users who have created announcements
-    -- NOTE: Backend code MUST use parameterized queries when inserting/updating created_by
-    -- to prevent SQL injection and ensure data integrity with this constraint
+    -- Foreign key constraint to users table
     CONSTRAINT fk_announcements_created_by 
         FOREIGN KEY (created_by) 
         REFERENCES users(id) 

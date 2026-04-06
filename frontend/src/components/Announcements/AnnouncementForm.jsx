@@ -7,7 +7,7 @@ import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Save, X, AlertCircle } from 'lucide-react';
 
-// Validation configuration constants
+// Validation constants
 const VALIDATION_LIMITS = {
   TITLE_MAX_LENGTH: 200,
   CONTENT_MAX_LENGTH: 5000

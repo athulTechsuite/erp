@@ -3,104 +3,56 @@ const { validationResult } = require('express-validator');
 const DOMPurify = require('isomorphic-dompurify');
 const mongoose = require('mongoose');
 
-// Enhanced input validation and sanitization
-const validateAndSanitizeInput = {
-  // Validate string input with length and content checks
-  validateString: (input, fieldName, minLength = 1, maxLength = 1000) => {
-    const errors = [];
-    
-    if (!input || typeof input !== 'string') {
-      errors.push(`${fieldName} is required and must be a string`);
-      return { isValid: false, errors, sanitized: '' };
-    }
-    
-    const trimmed = input.trim();
-    if (trimmed.length < minLength) {
-      errors.push(`${fieldName} must be at least ${minLength} characters long`);
-    }
-    if (trimmed.length > maxLength) {
-      errors.push(`${fieldName} must not exceed ${maxLength} characters`);
-    }
-    
-    // Additional security checks
-    if (/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi.test(trimmed)) {
-      errors.push(`${fieldName} contains potentially malicious content`);
-    }
-    
-    const sanitized = DOMPurify.sanitize(trimmed, { ALLOWED_TAGS: [] });
-    
-    return {
-      isValid: errors.length === 0,
-      errors,
-      sanitized
-    };
-  },
-
-  // Validate ObjectId with comprehensive checks
-  validateObjectId: (id, fieldName = 'ID') => {
-    if (!id) {
-      return { isValid: false, error: `${fieldName} is required` };
-    }
-    
-    if (typeof id !== 'string') {
-      return { isValid: false, error: `${fieldName} must be a string` };
-    }
-    
-    // Check for potential injection patterns
-    if (/[{}$]/.test(id)) {
-      return { isValid: false, error: `${fieldName} contains invalid characters` };
-    }
-    
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return { isValid: false, error: `Invalid ${fieldName} format` };
-    }
-    
-    // Additional length check for ObjectId
-    if (id.length !== 24) {
-      return { isValid: false, error: `${fieldName} must be exactly 24 characters` };
-    }
-    
-    return { isValid: true, sanitizedId: new mongoose.Types.ObjectId(id) };
-  },
-
-  // Validate boolean input
-  validateBoolean: (input, fieldName, defaultValue = true) => {
-    if (input === undefined || input === null) {
-      return { isValid: true, sanitized: defaultValue };
-    }
-    
-    if (typeof input === 'boolean') {
-      return { isValid: true, sanitized: input };
-    }
-    
-    if (typeof input === 'string') {
-      const lowerInput = input.toLowerCase().trim();
-      if (lowerInput === 'true' || lowerInput === '1') {
-        return { isValid: true, sanitized: true };
-      }
-      if (lowerInput === 'false' || lowerInput === '0') {
-        return { isValid: true, sanitized: false };
-      }
-    }
-    
-    return { isValid: false, error: `${fieldName} must be a boolean value` };
-  }
+// Input sanitization middleware
+const sanitizeInput = (input) => {
+  if (typeof input !== 'string') return input;
+  // Strip HTML tags and sanitize content to prevent XSS
+  return DOMPurify.sanitize(input, { ALLOWED_TAGS: [] });
 };
 
-// Middleware to check if user is authenticated
-const requireAuth = (req, res, next) => {
-  if (!req.user || !req.user._id) {
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication required.'
-    });
+// Enhanced parameterized query helper for MongoDB operations
+const executeSecureQuery = async (model, operation, params = {}) => {
+  try {
+    // Validate all ObjectId parameters to prevent injection
+    for (const [key, value] of Object.entries(params)) {
+      if (key.includes('Id') || key === '_id' || key === 'id') {
+        if (!mongoose.Types.ObjectId.isValid(value)) {
+          throw new Error(`Invalid ObjectId format for parameter: ${key}`);
+        }
+        // Convert to proper ObjectId to ensure parameterized query
+        params[key] = new mongoose.Types.ObjectId(value);
+      }
+    }
+
+    // Execute operation with validated parameters
+    switch (operation) {
+      case 'find':
+        return await model.find(params.filter || {}, params.select || null, params.options || {});
+      case 'findById':
+        return await model.findById(params.id, params.select || null);
+      case 'findOne':
+        return await model.findOne(params.filter || {}, params.select || null);
+      case 'create':
+        return await model.create(params.data);
+      case 'findByIdAndUpdate':
+        return await model.findByIdAndUpdate(params.id, params.update, params.options || {});
+      case 'findByIdAndDelete':
+        return await model.findByIdAndDelete(params.id);
+      case 'updateOne':
+        return await model.updateOne(params.filter, params.update, params.options || {});
+      case 'deleteOne':
+        return await model.deleteOne(params.filter);
+      default:
+        throw new Error(`Unsupported database operation: ${operation}`);
+    }
+  } catch (error) {
+    throw error;
   }
-  next();
 };
 
 // Middleware to check if user is admin
 const requireAdmin = (req, res, next) => {
-  if (!req.user || !req.user._id || req.user.role !== 'admin') {
+  if (!req.user || req.user.role !== 'admin') {
     return res.status(403).json({
       success: false,
       message: 'Access denied. Admin privileges required.'
@@ -112,24 +64,21 @@ const requireAdmin = (req, res, next) => {
 // Get all announcements (public - for dashboard display)
 const getAllAnnouncements = async (req, res) => {
   try {
-    // Use parameterized query with explicit conditions
-    const query = { isActive: { $eq: true } };
-    const projection = { title: 1, content: 1, createdAt: 1, updatedAt: 1, _id: 1 };
-    const sortOrder = { createdAt: -1 };
-
-    const announcements = await Announcement.find(query, projection)
-      .sort(sortOrder)
-      .lean(); // Use lean() for better performance on read-only operations
+    const announcements = await executeSecureQuery(Announcement, 'find', {
+      filter: { isActive: true },
+      select: 'title content createdAt updatedAt',
+      options: { sort: { createdAt: -1 } }
+    });
 
     res.json({
       success: true,
       data: announcements
     });
   } catch (error) {
-    console.error('Error fetching announcements:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching announcements'
+      message: 'Error fetching announcements',
+      error: error.message
     });
   }
 };
@@ -137,24 +86,20 @@ const getAllAnnouncements = async (req, res) => {
 // Get all announcements for admin management
 const getAnnouncementsForAdmin = async (req, res) => {
   try {
-    // Use explicit query object for parameterized query
-    const query = {};
-    const sortOrder = { createdAt: -1 };
-
-    const announcements = await Announcement.find(query)
-      .sort(sortOrder)
-      .populate('createdBy', 'name email')
-      .lean();
+    const announcements = await executeSecureQuery(Announcement, 'find', {
+      filter: {},
+      options: { sort: { createdAt: -1 } }
+    });
 
     res.json({
       success: true,
       data: announcements
     });
   } catch (error) {
-    console.error('Error fetching announcements for admin:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching announcements'
+      message: 'Error fetching announcements',
+      error: error.message
     });
   }
 };
@@ -162,58 +107,42 @@ const getAnnouncementsForAdmin = async (req, res) => {
 // Create new announcement (admin only)
 const createAnnouncement = async (req, res) => {
   try {
-    // Check for validation errors from express-validator
-    const validatorErrors = validationResult(req);
-    if (!validatorErrors.isEmpty()) {
+    // Check for validation errors
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
       return res.status(400).json({
         success: false,
         message: 'Validation errors',
-        errors: validatorErrors.array()
+        errors: errors.array()
       });
     }
 
-    const { title, content, isActive } = req.body;
+    const { title, content, isActive = true } = req.body;
 
-    // Comprehensive input validation and sanitization
-    const titleValidation = validateAndSanitizeInput.validateString(title, 'Title', 1, 200);
-    const contentValidation = validateAndSanitizeInput.validateString(content, 'Content', 1, 5000);
-    const isActiveValidation = validateAndSanitizeInput.validateBoolean(isActive, 'Active Status', true);
+    // Sanitize input to prevent stored XSS
+    const sanitizedTitle = sanitizeInput(title);
+    const sanitizedContent = sanitizeInput(content);
 
-    const validationErrors = [];
-    if (!titleValidation.isValid) validationErrors.push(...titleValidation.errors);
-    if (!contentValidation.isValid) validationErrors.push(...contentValidation.errors);
-    if (!isActiveValidation.isValid) validationErrors.push(isActiveValidation.error);
-
-    if (validationErrors.length > 0) {
+    // Validate createdBy user ID
+    if (!mongoose.Types.ObjectId.isValid(req.user._id)) {
       return res.status(400).json({
         success: false,
-        message: 'Input validation failed',
-        errors: validationErrors
+        message: 'Invalid user ID format'
       });
     }
 
-    // Validate user authentication
-    if (!req.user || !req.user._id) {
-      return res.status(401).json({
-        success: false,
-        message: 'User authentication required'
-      });
-    }
-
-    // Create announcement with sanitized and validated data
     const announcementData = {
-      title: titleValidation.sanitized,
-      content: contentValidation.sanitized,
-      isActive: isActiveValidation.sanitized,
-      createdBy: new mongoose.Types.ObjectId(req.user._id),
-      createdAt: new Date(),
-      updatedAt: new Date()
+      title: sanitizedTitle,
+      content: sanitizedContent,
+      isActive,
+      createdBy: new mongoose.Types.ObjectId(req.user._id)
     };
 
-    const announcement = new Announcement(announcementData);
-    await announcement.save();
+    const announcement = await executeSecureQuery(Announcement, 'create', {
+      data: announcementData
+    });
 
-    // Populate creator info for response using parameterized query
+    // Populate creator info for response using secure query
     await announcement.populate('createdBy', 'name email');
 
     res.status(201).json({
@@ -222,10 +151,10 @@ const createAnnouncement = async (req, res) => {
       data: announcement
     });
   } catch (error) {
-    console.error('Error creating announcement:', error);
     res.status(500).json({
       success: false,
-      message: 'Error creating announcement'
+      message: 'Error creating announcement',
+      error: error.message
     });
   }
 };
@@ -235,20 +164,10 @@ const getAnnouncementById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Validate and sanitize ObjectId
-    const idValidation = validateAndSanitizeInput.validateObjectId(id, 'Announcement ID');
-    if (!idValidation.isValid) {
-      return res.status(400).json({
-        success: false,
-        message: idValidation.error
-      });
-    }
-
-    // Use parameterized query with explicit ObjectId
-    const query = { _id: { $eq: idValidation.sanitizedId } };
-    const announcement = await Announcement.findOne(query)
-      .populate('createdBy', 'name email')
-      .lean();
+    // Use secure query which validates ObjectId
+    const announcement = await executeSecureQuery(Announcement, 'findById', {
+      id: id
+    });
 
     if (!announcement) {
       return res.status(404).json({
@@ -258,22 +177,24 @@ const getAnnouncementById = async (req, res) => {
     }
 
     // Non-admin users can only see active announcements
-    if (req.user && req.user.role !== 'admin' && !announcement.isActive) {
+    if (req.user.role !== 'admin' && !announcement.isActive) {
       return res.status(404).json({
         success: false,
         message: 'Announcement not found'
       });
     }
 
+    await announcement.populate('createdBy', 'name email');
+
     res.json({
       success: true,
       data: announcement
     });
   } catch (error) {
-    console.error('Error fetching announcement:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching announcement'
+      message: 'Error fetching announcement',
+      error: error.message
     });
   }
 };
@@ -281,70 +202,22 @@ const getAnnouncementById = async (req, res) => {
 // Update announcement (admin only)
 const updateAnnouncement = async (req, res) => {
   try {
-    // Check for validation errors from express-validator
-    const validatorErrors = validationResult(req);
-    if (!validatorErrors.isEmpty()) {
+    // Check for validation errors
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
       return res.status(400).json({
         success: false,
         message: 'Validation errors',
-        errors: validatorErrors.array()
+        errors: errors.array()
       });
     }
 
     const { id } = req.params;
     const { title, content, isActive } = req.body;
 
-    // Validate and sanitize ObjectId
-    const idValidation = validateAndSanitizeInput.validateObjectId(id, 'Announcement ID');
-    if (!idValidation.isValid) {
-      return res.status(400).json({
-        success: false,
-        message: idValidation.error
-      });
-    }
-
-    // Validate and sanitize input fields
-    const validationErrors = [];
-    let sanitizedData = {};
-
-    if (title !== undefined) {
-      const titleValidation = validateAndSanitizeInput.validateString(title, 'Title', 1, 200);
-      if (!titleValidation.isValid) {
-        validationErrors.push(...titleValidation.errors);
-      } else {
-        sanitizedData.title = titleValidation.sanitized;
-      }
-    }
-
-    if (content !== undefined) {
-      const contentValidation = validateAndSanitizeInput.validateString(content, 'Content', 1, 5000);
-      if (!contentValidation.isValid) {
-        validationErrors.push(...contentValidation.errors);
-      } else {
-        sanitizedData.content = contentValidation.sanitized;
-      }
-    }
-
-    if (isActive !== undefined) {
-      const isActiveValidation = validateAndSanitizeInput.validateBoolean(isActive, 'Active Status');
-      if (!isActiveValidation.isValid) {
-        validationErrors.push(isActiveValidation.error);
-      } else {
-        sanitizedData.isActive = isActiveValidation.sanitized;
-      }
-    }
-
-    if (validationErrors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Input validation failed',
-        errors: validationErrors
-      });
-    }
-
-    // Use parameterized query to find announcement
-    const query = { _id: { $eq: idValidation.sanitizedId } };
-    const announcement = await Announcement.findOne(query);
+    const announcement = await executeSecureQuery(Announcement, 'findById', {
+      id: id
+    });
 
     if (!announcement) {
       return res.status(404).json({
@@ -353,16 +226,21 @@ const updateAnnouncement = async (req, res) => {
       });
     }
 
-    // Update with sanitized data using parameterized update
-    sanitizedData.updatedAt = new Date();
-    const updateQuery = { _id: { $eq: idValidation.sanitizedId } };
-    const updateData = { $set: sanitizedData };
+    // Prepare update data with sanitization
+    const updateData = {};
+    if (title !== undefined) updateData.title = sanitizeInput(title);
+    if (content !== undefined) updateData.content = sanitizeInput(content);
+    if (isActive !== undefined) updateData.isActive = isActive;
+    updateData.updatedAt = new Date();
 
-    await Announcement.updateOne(updateQuery, updateData);
+    const updatedAnnouncement = await executeSecureQuery(Announcement, 'findByIdAndUpdate', {
+      id: id,
+      update: updateData,
+      options: { new: true }
+    });
 
-    // Fetch updated announcement with populated data
-    const updatedAnnouncement = await Announcement.findOne(query)
-      .populate('createdBy', 'name email');
+    // Populate creator info for response
+    await updatedAnnouncement.populate('createdBy', 'name email');
 
     res.json({
       success: true,
@@ -370,53 +248,56 @@ const updateAnnouncement = async (req, res) => {
       data: updatedAnnouncement
     });
   } catch (error) {
-    console.error('Error updating announcement:', error);
     res.status(500).json({
       success: false,
-      message: 'Error updating announcement'
+      message: 'Error updating announcement',
+      error: error.message
     });
   }
 };
 
 // Delete announcement (admin only)
 const deleteAnnouncement = async (req, res) => {
+  const session = await mongoose.startSession();
+  
   try {
     const { id } = req.params;
 
-    // Validate and sanitize ObjectId
-    const idValidation = validateAndSanitizeInput.validateObjectId(id, 'Announcement ID');
-    if (!idValidation.isValid) {
-      return res.status(400).json({
-        success: false,
-        message: idValidation.error
+    await session.withTransaction(async () => {
+      // First, verify the announcement exists within the transaction
+      const announcement = await executeSecureQuery(Announcement, 'findById', {
+        id: id
       });
-    }
 
-    // Use parameterized query to check existence
-    const query = { _id: { $eq: idValidation.sanitizedId } };
-    const announcement = await Announcement.findOne(query);
+      if (!announcement) {
+        throw new Error('Announcement not found');
+      }
 
-    if (!announcement) {
-      return res.status(404).json({
-        success: false,
-        message: 'Announcement not found'
+      // Perform the delete operation within the transaction
+      await executeSecureQuery(Announcement, 'findByIdAndDelete', {
+        id: id
       });
-    }
-
-    // Use parameterized delete operation
-    const deleteQuery = { _id: { $eq: idValidation.sanitizedId } };
-    await Announcement.deleteOne(deleteQuery);
+    });
 
     res.json({
       success: true,
       message: 'Announcement deleted successfully'
     });
   } catch (error) {
-    console.error('Error deleting announcement:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error deleting announcement'
-    });
+    if (error.message === 'Announcement not found') {
+      res.status(404).json({
+        success: false,
+        message: 'Announcement not found'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'Error deleting announcement',
+        error: error.message
+      });
+    }
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -425,18 +306,9 @@ const toggleAnnouncementStatus = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate and sanitize ObjectId
-    const idValidation = validateAndSanitizeInput.validateObjectId(id, 'Announcement ID');
-    if (!idValidation.isValid) {
-      return res.status(400).json({
-        success: false,
-        message: idValidation.error
-      });
-    }
-
-    // Use parameterized query to find announcement
-    const query = { _id: { $eq: idValidation.sanitizedId } };
-    const announcement = await Announcement.findOne(query);
+    const announcement = await executeSecureQuery(Announcement, 'findById', {
+      id: id
+    });
 
     if (!announcement) {
       return res.status(404).json({
@@ -445,38 +317,34 @@ const toggleAnnouncementStatus = async (req, res) => {
       });
     }
 
-    // Use parameterized update operation
-    const newStatus = !announcement.isActive;
-    const updateQuery = { _id: { $eq: idValidation.sanitizedId } };
-    const updateData = { 
-      $set: { 
-        isActive: newStatus, 
-        updatedAt: new Date() 
-      } 
+    const updateData = {
+      isActive: !announcement.isActive,
+      updatedAt: new Date()
     };
 
-    await Announcement.updateOne(updateQuery, updateData);
+    const updatedAnnouncement = await executeSecureQuery(Announcement, 'findByIdAndUpdate', {
+      id: id,
+      update: updateData,
+      options: { new: true }
+    });
 
-    // Fetch updated announcement with populated data
-    const updatedAnnouncement = await Announcement.findOne(query)
-      .populate('createdBy', 'name email');
+    await updatedAnnouncement.populate('createdBy', 'name email');
 
     res.json({
       success: true,
-      message: `Announcement ${newStatus ? 'activated' : 'deactivated'} successfully`,
+      message: `Announcement ${updatedAnnouncement.isActive ? 'activated' : 'deactivated'} successfully`,
       data: updatedAnnouncement
     });
   } catch (error) {
-    console.error('Error updating announcement status:', error);
     res.status(500).json({
       success: false,
-      message: 'Error updating announcement status'
+      message: 'Error updating announcement status',
+      error: error.message
     });
   }
 };
 
 module.exports = {
-  requireAuth,
   requireAdmin,
   getAllAnnouncements,
   getAnnouncementsForAdmin,

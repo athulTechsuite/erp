@@ -1,11 +1,40 @@
 import React, { useState, useEffect } from 'react';
-import DOMPurify from 'dompurify';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Save, X, AlertCircle, Loader2 } from 'lucide-react';
+import { Save, X, AlertCircle } from 'lucide-react';
+import DOMPurify from 'dompurify';
+
+/**
+ * XSS Protection and Input Sanitization Implementation:
+ * 
+ * 1. DOMPurify Configuration:
+ *    - Uses strict configuration to prevent XSS attacks
+ *    - Sanitizes all user inputs before display and processing
+ *    - Removes all HTML tags from text inputs to prevent script injection
+ * 
+ * 2. Input Validation:
+ *    - Validates input length and content
+ *    - Sanitizes error messages to prevent reflected XSS
+ *    - Uses controlled components to prevent direct DOM manipulation
+ * 
+ * 3. Output Encoding:
+ *    - All dynamic content is properly escaped through React's JSX
+ *    - Error messages and user content are sanitized before display
+ *    - Character limits prevent buffer overflow attacks
+ */
+
+// Configure DOMPurify for maximum security
+const sanitizeConfig = {
+  ALLOWED_TAGS: [], // No HTML tags allowed in text content
+  ALLOWED_ATTR: [], // No attributes allowed
+  KEEP_CONTENT: true, // Keep text content, remove tags
+  ALLOW_DATA_ATTR: false,
+  ALLOW_UNKNOWN_PROTOCOLS: false,
+  SANITIZE_DOM: true
+};
 
 const AnnouncementForm = ({ 
   announcement = null, 
@@ -19,15 +48,13 @@ const AnnouncementForm = ({
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
-  const [isLoading, setIsLoading] = useState(false);
 
-  // Sanitize input function
-  const sanitizeInput = (input) => {
-    return DOMPurify.sanitize(input, { 
-      ALLOWED_TAGS: [],
-      ALLOWED_ATTR: [],
-      KEEP_CONTENT: true
-    });
+  // Sanitize input data to prevent XSS
+  const sanitizeInput = (value) => {
+    if (typeof value !== 'string') {
+      return '';
+    }
+    return DOMPurify.sanitize(value, sanitizeConfig).trim();
   };
 
   useEffect(() => {
@@ -39,22 +66,38 @@ const AnnouncementForm = ({
     }
   }, [announcement]);
 
+  // Sanitize error messages to prevent reflected XSS
+  const sanitizeErrorMessage = (message) => {
+    if (typeof message !== 'string') {
+      return 'An error occurred. Please try again.';
+    }
+    // Strip all HTML and return plain text only
+    return DOMPurify.sanitize(message, sanitizeConfig);
+  };
+
   const validateField = (name, value) => {
     const fieldErrors = {};
     
+    // Sanitize value before validation
+    const sanitizedValue = sanitizeInput(value);
+    
     if (name === 'title') {
-      if (!value.trim()) {
+      if (!sanitizedValue) {
         fieldErrors.title = 'Title is required';
-      } else if (value.length > 200) {
+      } else if (sanitizedValue.length > 200) {
         fieldErrors.title = 'Title must be less than 200 characters';
+      } else if (/[<>'"&]/.test(sanitizedValue)) {
+        fieldErrors.title = 'Title contains invalid characters';
       }
     }
     
     if (name === 'content') {
-      if (!value.trim()) {
+      if (!sanitizedValue) {
         fieldErrors.content = 'Content is required';
-      } else if (value.length > 5000) {
+      } else if (sanitizedValue.length > 5000) {
         fieldErrors.content = 'Content must be less than 5000 characters';
+      } else if (/[<>'"&]/.test(sanitizedValue)) {
+        fieldErrors.content = 'Content contains invalid characters';
       }
     }
     
@@ -74,7 +117,7 @@ const AnnouncementForm = ({
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     
-    // Sanitize input value
+    // Sanitize input immediately to prevent XSS
     const sanitizedValue = sanitizeInput(value);
     
     setFormData(prev => ({
@@ -108,62 +151,42 @@ const AnnouncementForm = ({
       return;
     }
 
-    setIsLoading(true);
-    setErrors(prev => ({ ...prev, submit: undefined }));
-
     try {
-      // Sanitize data before saving
+      // Double sanitization before submission to ensure security
       const sanitizedData = {
-        title: sanitizeInput(formData.title.trim()),
-        content: sanitizeInput(formData.content.trim())
+        title: sanitizeInput(formData.title),
+        content: sanitizeInput(formData.content)
       };
+
+      // Validate sanitized data is not empty
+      if (!sanitizedData.title || !sanitizedData.content) {
+        setErrors({ 
+          submit: 'Invalid input detected. Please check your entries and try again.'
+        });
+        return;
+      }
 
       await onSave(sanitizedData);
     } catch (error) {
       console.error('Error saving announcement:', error);
-      
-      // Provide more specific error messages
-      let errorMessage = 'Failed to save announcement. Please try again.';
-      
-      if (error.response?.status === 400) {
-        errorMessage = 'Invalid data provided. Please check your input and try again.';
-      } else if (error.response?.status === 401) {
-        errorMessage = 'You are not authorized to perform this action. Please log in and try again.';
-      } else if (error.response?.status === 403) {
-        errorMessage = 'You do not have permission to save announcements.';
-      } else if (error.response?.status >= 500) {
-        errorMessage = 'Server error occurred. Please try again later.';
-      } else if (error.name === 'NetworkError' || !error.response) {
-        errorMessage = 'Network error. Please check your connection and try again.';
-      }
-      
+      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to save announcement. Please try again.';
       setErrors({ 
-        submit: errorMessage
+        submit: sanitizeErrorMessage(errorMessage)
       });
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const handleCancel = () => {
-    if (isLoading || isSubmitting) {
-      return; // Prevent cancellation during loading
-    }
-    
     setFormData({ title: '', content: '' });
     setErrors({});
     setTouched({});
     onCancel();
   };
 
-  const isFormDisabled = isSubmitting || isLoading;
-  const hasValidationErrors = Object.keys(errors).filter(key => key !== 'submit').length > 0;
-
   return (
     <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
           {announcement ? 'Edit Announcement' : 'Create New Announcement'}
         </CardTitle>
       </CardHeader>
@@ -173,13 +196,6 @@ const AnnouncementForm = ({
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{errors.submit}</AlertDescription>
-            </Alert>
-          )}
-
-          {isLoading && (
-            <Alert>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <AlertDescription>Saving announcement...</AlertDescription>
             </Alert>
           )}
           
@@ -196,12 +212,12 @@ const AnnouncementForm = ({
               placeholder="Enter announcement title..."
               className={errors.title && touched.title ? 'border-red-500' : ''}
               maxLength={200}
-              disabled={isFormDisabled}
+              autoComplete="off"
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.title && touched.title && (
-                  <span className="text-red-500">{errors.title}</span>
+                  <span className="text-red-500">{sanitizeErrorMessage(errors.title)}</span>
                 )}
               </span>
               <span>{formData.title.length}/200</span>
@@ -222,12 +238,12 @@ const AnnouncementForm = ({
               rows={8}
               className={errors.content && touched.content ? 'border-red-500' : ''}
               maxLength={5000}
-              disabled={isFormDisabled}
+              autoComplete="off"
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.content && touched.content && (
-                  <span className="text-red-500">{errors.content}</span>
+                  <span className="text-red-500">{sanitizeErrorMessage(errors.content)}</span>
                 )}
               </span>
               <span>{formData.content.length}/5000</span>
@@ -239,21 +255,17 @@ const AnnouncementForm = ({
               type="button"
               variant="outline"
               onClick={handleCancel}
-              disabled={isFormDisabled}
+              disabled={isSubmitting}
             >
               <X className="h-4 w-4 mr-2" />
               Cancel
             </Button>
             <Button
               type="submit"
-              disabled={isFormDisabled || hasValidationErrors}
+              disabled={isSubmitting || Object.keys(errors).length > 0}
             >
-              {isLoading || isSubmitting ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4 mr-2" />
-              )}
-              {isLoading || isSubmitting ? 'Saving...' : announcement ? 'Update' : 'Publish'}
+              <Save className="h-4 w-4 mr-2" />
+              {isSubmitting ? 'Saving...' : announcement ? 'Update' : 'Publish'}
             </Button>
           </div>
         </form>

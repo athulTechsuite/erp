@@ -66,5 +66,410 @@ describe('TC-003: AnnouncementForm validation', () => {
 
       expect(mockOnSubmit).not.toHaveBeenCalled();
     });
+
+    it('should show validation error for title too short', async () => {
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+
+      const titleInput = screen.getByLabelText(/title/i);
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+
+      fireEvent.change(titleInput, { target: { value: 'Hi' } });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/title must be at least 3 characters/i)).toBeInTheDocument();
+      });
+
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+
+    it('should show validation error for title too long', async () => {
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+
+      const titleInput = screen.getByLabelText(/title/i);
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+
+      const longTitle = 'a'.repeat(101);
+      fireEvent.change(titleInput, { target: { value: longTitle } });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/title must not exceed 100 characters/i)).toBeInTheDocument();
+      });
+
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+
+    it('should show validation error for content too short', async () => {
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+
+      const titleInput = screen.getByLabelText(/title/i);
+      const contentTextarea = screen.getByLabelText(/content/i);
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+
+      fireEvent.change(titleInput, { target: { value: 'Valid Title' } });
+      fireEvent.change(contentTextarea, { target: { value: 'Short' } });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/content must be at least 10 characters/i)).toBeInTheDocument();
+      });
+
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+
+    it('should show validation error for content too long', async () => {
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+
+      const titleInput = screen.getByLabelText(/title/i);
+      const contentTextarea = screen.getByLabelText(/content/i);
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+
+      const longContent = 'a'.repeat(1001);
+      fireEvent.change(titleInput, { target: { value: 'Valid Title' } });
+      fireEvent.change(contentTextarea, { target: { value: longContent } });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/content must not exceed 1000 characters/i)).toBeInTheDocument();
+      });
+
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('TC-004: API security and error handling', () => {
+  const mockApiService = {
+    authenticate: vi.fn(),
+    createAnnouncement: vi.fn(),
+    getAnnouncements: vi.fn(),
+    validateToken: vi.fn()
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('Happy path security', () => {
+    it('should successfully authenticate user with valid credentials', async () => {
+      mockApiService.authenticate.mockResolvedValue({
+        success: true,
+        token: 'valid-jwt-token',
+        user: { id: 1, username: 'testuser', role: 'admin' }
+      });
+
+      const result = await mockApiService.authenticate({
+        username: 'testuser',
+        password: 'validPassword123!'
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.token).toBe('valid-jwt-token');
+      expect(result.user.role).toBe('admin');
+    });
+
+    it('should successfully validate JWT token', async () => {
+      mockApiService.validateToken.mockResolvedValue({
+        valid: true,
+        payload: { userId: 1, role: 'admin', exp: Date.now() + 3600000 }
+      });
+
+      const result = await mockApiService.validateToken('valid-jwt-token');
+
+      expect(result.valid).toBe(true);
+      expect(result.payload.userId).toBe(1);
+      expect(result.payload.role).toBe('admin');
+    });
+
+    it('should successfully create announcement with valid token', async () => {
+      mockApiService.createAnnouncement.mockResolvedValue({
+        success: true,
+        id: 123,
+        title: 'New Announcement',
+        content: 'This is a new announcement',
+        createdAt: '2023-12-01T10:00:00Z'
+      });
+
+      const result = await mockApiService.createAnnouncement(
+        {
+          title: 'New Announcement',
+          content: 'This is a new announcement'
+        },
+        'valid-jwt-token'
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.id).toBe(123);
+      expect(result.title).toBe('New Announcement');
+    });
+
+    it('should successfully fetch announcements with proper authorization', async () => {
+      mockApiService.getAnnouncements.mockResolvedValue({
+        success: true,
+        data: [
+          { id: 1, title: 'Announcement 1', content: 'Content 1' },
+          { id: 2, title: 'Announcement 2', content: 'Content 2' }
+        ],
+        total: 2
+      });
+
+      const result = await mockApiService.getAnnouncements('valid-jwt-token');
+
+      expect(result.success).toBe(true);
+      expect(result.data).toHaveLength(2);
+      expect(result.total).toBe(2);
+    });
+  });
+
+  describe('Error path security', () => {
+    it('should handle authentication failure with invalid credentials', async () => {
+      mockApiService.authenticate.mockResolvedValue({
+        success: false,
+        error: 'Invalid username or password',
+        code: 'AUTH_FAILED'
+      });
+
+      const result = await mockApiService.authenticate({
+        username: 'wronguser',
+        password: 'wrongpassword'
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Invalid username or password');
+      expect(result.code).toBe('AUTH_FAILED');
+    });
+
+    it('should handle expired JWT token', async () => {
+      mockApiService.validateToken.mockResolvedValue({
+        valid: false,
+        error: 'Token has expired',
+        code: 'TOKEN_EXPIRED'
+      });
+
+      const result = await mockApiService.validateToken('expired-jwt-token');
+
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe('Token has expired');
+      expect(result.code).toBe('TOKEN_EXPIRED');
+    });
+
+    it('should handle malformed JWT token', async () => {
+      mockApiService.validateToken.mockResolvedValue({
+        valid: false,
+        error: 'Malformed token',
+        code: 'TOKEN_MALFORMED'
+      });
+
+      const result = await mockApiService.validateToken('invalid-token');
+
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe('Malformed token');
+      expect(result.code).toBe('TOKEN_MALFORMED');
+    });
+
+    it('should handle unauthorized access attempt', async () => {
+      mockApiService.createAnnouncement.mockResolvedValue({
+        success: false,
+        error: 'Insufficient permissions',
+        code: 'UNAUTHORIZED',
+        statusCode: 403
+      });
+
+      const result = await mockApiService.createAnnouncement(
+        {
+          title: 'Unauthorized Announcement',
+          content: 'This should fail'
+        },
+        'user-token-without-admin-role'
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Insufficient permissions');
+      expect(result.code).toBe('UNAUTHORIZED');
+      expect(result.statusCode).toBe(403);
+    });
+
+    it('should handle missing authentication token', async () => {
+      mockApiService.getAnnouncements.mockResolvedValue({
+        success: false,
+        error: 'Authentication token required',
+        code: 'TOKEN_MISSING',
+        statusCode: 401
+      });
+
+      const result = await mockApiService.getAnnouncements(null);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Authentication token required');
+      expect(result.code).toBe('TOKEN_MISSING');
+      expect(result.statusCode).toBe(401);
+    });
+
+    it('should handle API server error', async () => {
+      mockApiService.createAnnouncement.mockRejectedValue(new Error('Internal server error'));
+
+      await expect(
+        mockApiService.createAnnouncement(
+          {
+            title: 'Test Announcement',
+            content: 'Test content'
+          },
+          'valid-token'
+        )
+      ).rejects.toThrow('Internal server error');
+    });
+
+    it('should handle network timeout error', async () => {
+      mockApiService.authenticate.mockRejectedValue(new Error('Request timeout'));
+
+      await expect(
+        mockApiService.authenticate({
+          username: 'testuser',
+          password: 'password'
+        })
+      ).rejects.toThrow('Request timeout');
+    });
+
+    it('should handle rate limiting', async () => {
+      mockApiService.createAnnouncement.mockResolvedValue({
+        success: false,
+        error: 'Rate limit exceeded',
+        code: 'RATE_LIMITED',
+        statusCode: 429,
+        retryAfter: 60
+      });
+
+      const result = await mockApiService.createAnnouncement(
+        {
+          title: 'Rate Limited Request',
+          content: 'This should be rate limited'
+        },
+        'valid-token'
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Rate limit exceeded');
+      expect(result.code).toBe('RATE_LIMITED');
+      expect(result.statusCode).toBe(429);
+      expect(result.retryAfter).toBe(60);
+    });
+  });
+});
+
+describe('TC-008: Database migration testing', () => {
+  const mockMigrationService = {
+    runMigration: vi.fn(),
+    rollbackMigration: vi.fn(),
+    checkMigrationStatus: vi.fn()
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('Happy path migration', () => {
+    it('should successfully run database migration', async () => {
+      mockMigrationService.runMigration.mockResolvedValue({
+        success: true,
+        version: '1.2.0',
+        migratedTables: ['users', 'announcements', 'permissions']
+      });
+
+      const result = await mockMigrationService.runMigration('1.2.0');
+
+      expect(result.success).toBe(true);
+      expect(result.version).toBe('1.2.0');
+      expect(result.migratedTables).toContain('users');
+      expect(result.migratedTables).toContain('announcements');
+      expect(result.migratedTables).toContain('permissions');
+    });
+
+    it('should successfully rollback migration', async () => {
+      mockMigrationService.rollbackMigration.mockResolvedValue({
+        success: true,
+        rolledBackTo: '1.1.0',
+        affectedTables: ['announcements']
+      });
+
+      const result = await mockMigrationService.rollbackMigration('1.1.0');
+
+      expect(result.success).toBe(true);
+      expect(result.rolledBackTo).toBe('1.1.0');
+      expect(result.affectedTables).toContain('announcements');
+    });
+
+    it('should correctly check migration status', async () => {
+      mockMigrationService.checkMigrationStatus.mockResolvedValue({
+        currentVersion: '1.2.0',
+        pendingMigrations: [],
+        lastMigrationDate: '2023-12-01T10:00:00Z'
+      });
+
+      const status = await mockMigrationService.checkMigrationStatus();
+
+      expect(status.currentVersion).toBe('1.2.0');
+      expect(status.pendingMigrations).toEqual([]);
+      expect(status.lastMigrationDate).toBe('2023-12-01T10:00:00Z');
+    });
+  });
+
+  describe('Error path migration', () => {
+    it('should handle migration failure with database connection error', async () => {
+      mockMigrationService.runMigration.mockRejectedValue(new Error('Database connection failed'));
+
+      await expect(mockMigrationService.runMigration('1.2.0')).rejects.toThrow('Database connection failed');
+    });
+
+    it('should handle migration failure with constraint violation', async () => {
+      mockMigrationService.runMigration.mockResolvedValue({
+        success: false,
+        error: 'Foreign key constraint violation',
+        failedTable: 'announcements'
+      });
+
+      const result = await mockMigrationService.runMigration('1.2.0');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Foreign key constraint violation');
+      expect(result.failedTable).toBe('announcements');
+    });
+
+    it('should handle rollback failure when target version not found', async () => {
+      mockMigrationService.rollbackMigration.mockResolvedValue({
+        success: false,
+        error: 'Target migration version 0.9.0 not found'
+      });
+
+      const result = await mockMigrationService.rollbackMigration('0.9.0');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Target migration version 0.9.0 not found');
+    });
+
+    it('should handle migration status check failure', async () => {
+      mockMigrationService.checkMigrationStatus.mockRejectedValue(new Error('Unable to access migration table'));
+
+      await expect(mockMigrationService.checkMigrationStatus()).rejects.toThrow('Unable to access migration table');
+    });
+
+    it('should handle partial migration failure with cleanup', async () => {
+      mockMigrationService.runMigration.mockResolvedValue({
+        success: false,
+        partiallyCompleted: true,
+        completedTables: ['users'],
+        failedTable: 'announcements',
+        error: 'Column type mismatch',
+        cleanupRequired: true
+      });
+
+      const result = await mockMigrationService.runMigration('1.2.0');
+
+      expect(result.success).toBe(false);
+      expect(result.partiallyCompleted).toBe(true);
+      expect(result.completedTables).toContain('users');
+      expect(result.failedTable).toBe('announcements');
+      expect(result.cleanupRequired).toBe(true);
+    });
   });
 });

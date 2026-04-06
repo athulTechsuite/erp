@@ -16,15 +16,12 @@ BEGIN
     END IF;
 END $$;
 
--- Create enum type for announcement status
-CREATE TYPE announcement_status AS ENUM ('active', 'inactive', 'draft', 'archived');
-
 CREATE TABLE announcements (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
     created_by INTEGER NOT NULL,
-    status announcement_status DEFAULT 'active',
+    status VARCHAR(20) DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     
@@ -32,13 +29,27 @@ CREATE TABLE announcements (
     CONSTRAINT fk_announcements_created_by 
         FOREIGN KEY (created_by) 
         REFERENCES users(id) 
-        ON DELETE RESTRICT
+        ON DELETE RESTRICT,
+    
+    -- Check constraint for status field
+    CONSTRAINT chk_announcements_status 
+        CHECK (status IN ('active', 'inactive', 'archived', 'draft')),
+    
+    -- Check constraint for title length
+    CONSTRAINT chk_announcements_title_length 
+        CHECK (LENGTH(TRIM(title)) > 0),
+    
+    -- Check constraint for content length
+    CONSTRAINT chk_announcements_content_length 
+        CHECK (LENGTH(TRIM(content)) > 0)
 );
 
 -- Create indexes for better query performance
 CREATE INDEX idx_announcements_status ON announcements(status);
 CREATE INDEX idx_announcements_created_at ON announcements(created_at DESC);
 CREATE INDEX idx_announcements_created_by ON announcements(created_by);
+CREATE INDEX idx_announcements_title ON announcements(title);
+CREATE INDEX idx_announcements_status_created_at ON announcements(status, created_at DESC);
 
 -- Create trigger to automatically update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_announcements_updated_at()

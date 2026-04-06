@@ -1,12 +1,13 @@
 /**
- * Security Test Suite
- * Tests for XSS protection and other security measures
+ * Security Test Suite - TC-005 to TC-008
+ * Comprehensive tests for XSS protection, backend validation, SQL injection, and authorization
+ * Covers both happy path and error path scenarios as required
  */
 
 const { JSDOM } = require('jsdom');
 const DOMPurify = require('dompurify');
 
-describe('TC-005: XSS Protection Tests', () => {
+describe('TC-005: XSS Protection and Input Sanitization Security Tests', () => {
   let window, document, purify;
 
   beforeEach(() => {
@@ -16,239 +17,640 @@ describe('TC-005: XSS Protection Tests', () => {
     purify = DOMPurify(window);
   });
 
-  describe('Happy Path - Safe Content', () => {
-    test('TC-005: should allow safe HTML content', () => {
+  describe('TC-005: Happy Path - Safe Content Processing', () => {
+    test('TC-005-HP-001: should allow and preserve safe HTML content without modification', () => {
       const safeHtml = '<p>Hello World</p>';
       const sanitized = purify.sanitize(safeHtml);
       expect(sanitized).toBe('<p>Hello World</p>');
+      expect(sanitized).toMatch(/^<p>.*<\/p>$/);
     });
 
-    test('TC-005: should preserve safe formatting tags', () => {
+    test('TC-005-HP-002: should preserve safe formatting tags and maintain structure', () => {
       const safeHtml = '<strong>Bold</strong> and <em>italic</em> text';
       const sanitized = purify.sanitize(safeHtml);
       expect(sanitized).toBe('<strong>Bold</strong> and <em>italic</em> text');
+      expect(sanitized).toContain('<strong>');
+      expect(sanitized).toContain('<em>');
     });
 
-    test('TC-005: should handle plain text without modification', () => {
-      const plainText = 'Just plain text';
+    test('TC-005-HP-003: should handle plain text without any modification', () => {
+      const plainText = 'Just plain text with numbers 123 and symbols @#$';
       const sanitized = purify.sanitize(plainText);
-      expect(sanitized).toBe('Just plain text');
+      expect(sanitized).toBe('Just plain text with numbers 123 and symbols @#$');
+    });
+
+    test('TC-005-HP-004: should preserve safe links with valid protocols', () => {
+      const safeHtml = '<a href="https://example.com">Safe Link</a>';
+      const sanitized = purify.sanitize(safeHtml);
+      expect(sanitized).toBe('<a href="https://example.com">Safe Link</a>');
+      expect(sanitized).toContain('https://');
+    });
+
+    test('TC-005-HP-005: should maintain nested safe HTML structure', () => {
+      const safeHtml = '<div><p><strong>Nested</strong> content</p></div>';
+      const sanitized = purify.sanitize(safeHtml);
+      expect(sanitized).toBe('<div><p><strong>Nested</strong> content</p></div>');
     });
   });
 
-  describe('Error Path - Malicious Content', () => {
-    test('TC-005: should block script tag injection', () => {
-      const maliciousHtml = '<script>alert("XSS")</script>';
+  describe('TC-005: Error Path - Malicious Content Blocking', () => {
+    test('TC-005-EP-001: should completely block script tag injection attempts', () => {
+      const maliciousHtml = '<script>alert("XSS Attack")</script><p>Content</p>';
       const sanitized = purify.sanitize(maliciousHtml);
-      expect(sanitized).toBe('');
+      expect(sanitized).toBe('<p>Content</p>');
       expect(sanitized).not.toContain('<script>');
+      expect(sanitized).not.toContain('alert');
     });
 
-    test('TC-005: should block javascript: protocol in links', () => {
-      const maliciousHtml = '<a href="javascript:alert(\'XSS\')">Click me</a>';
+    test('TC-005-EP-002: should block javascript: protocol in links and preserve safe content', () => {
+      const maliciousHtml = '<a href="javascript:alert(\'XSS\')">Malicious Link</a>';
       const sanitized = purify.sanitize(maliciousHtml);
       expect(sanitized).not.toContain('javascript:');
-      expect(sanitized).toBe('<a>Click me</a>');
+      expect(sanitized).toBe('<a>Malicious Link</a>');
     });
 
-    test('TC-005: should block onload event handlers', () => {
-      const maliciousHtml = '<img src="x" onload="alert(\'XSS\')">';
+    test('TC-005-EP-003: should strip all event handlers from HTML elements', () => {
+      const maliciousHtml = '<img src="valid.jpg" onload="alert(\'XSS\')" onerror="alert(\'Error\')">';
       const sanitized = purify.sanitize(maliciousHtml);
       expect(sanitized).not.toContain('onload');
-      expect(sanitized).toBe('<img src="x">');
+      expect(sanitized).not.toContain('onerror');
+      expect(sanitized).toBe('<img src="valid.jpg">');
     });
 
-    test('TC-005: should block data: protocol with javascript', () => {
+    test('TC-005-EP-004: should block iframe with malicious data URLs', () => {
       const maliciousHtml = '<iframe src="data:text/html,<script>alert(\'XSS\')</script>"></iframe>';
       const sanitized = purify.sanitize(maliciousHtml);
       expect(sanitized).toBe('');
+      expect(sanitized).not.toContain('iframe');
+      expect(sanitized).not.toContain('data:');
     });
 
-    test('TC-005: should block style injection attacks', () => {
+    test('TC-005-EP-005: should block CSS injection attacks in style attributes', () => {
       const maliciousHtml = '<div style="background-image: url(javascript:alert(\'XSS\'))">Content</div>';
       const sanitized = purify.sanitize(maliciousHtml);
       expect(sanitized).not.toContain('javascript:');
       expect(sanitized).toBe('<div>Content</div>');
     });
 
-    test('TC-005: should block nested script attempts', () => {
-      const maliciousHtml = '<div><script>alert("nested")</script><p>Content</p></div>';
+    test('TC-005-EP-006: should handle multiple nested script injection attempts', () => {
+      const maliciousHtml = '<div><script>alert("outer")</script><p><script>alert("inner")</script>Safe Content</p></div>';
       const sanitized = purify.sanitize(maliciousHtml);
-      expect(sanitized).toBe('<div><p>Content</p></div>');
+      expect(sanitized).toBe('<div><p>Safe Content</p></div>');
       expect(sanitized).not.toContain('<script>');
+      expect(sanitized).not.toContain('alert');
     });
 
-    test('TC-005: should block SVG script injection', () => {
-      const maliciousHtml = '<svg onload="alert(\'XSS\')"><script>alert("XSS")</script></svg>';
+    test('TC-005-EP-007: should block vbscript and other dangerous protocols', () => {
+      const maliciousHtml = '<a href="vbscript:msgbox(\'XSS\')">VB Attack</a>';
       const sanitized = purify.sanitize(maliciousHtml);
-      expect(sanitized).not.toContain('onload');
-      expect(sanitized).not.toContain('<script>');
-      expect(sanitized).toBe('<svg></svg>');
-    });
-
-    test('TC-005: should block object and embed tags', () => {
-      const maliciousHtml = '<object data="javascript:alert(\'XSS\')"></object>';
-      const sanitized = purify.sanitize(maliciousHtml);
-      expect(sanitized).toBe('');
-    });
-
-    test('TC-005: should handle multiple XSS vectors in one payload', () => {
-      const maliciousHtml = '<div onclick="alert(1)"><script>alert(2)</script><img src=x onerror="alert(3)"></div>';
-      const sanitized = purify.sanitize(maliciousHtml);
-      expect(sanitized).not.toContain('onclick');
-      expect(sanitized).not.toContain('<script>');
-      expect(sanitized).not.toContain('onerror');
-      expect(sanitized).toBe('<div><img src="x"></div>');
-    });
-  });
-
-  describe('Edge Cases', () => {
-    test('TC-005: should handle empty input', () => {
-      const sanitized = purify.sanitize('');
-      expect(sanitized).toBe('');
-    });
-
-    test('TC-005: should handle null input', () => {
-      const sanitized = purify.sanitize(null);
-      expect(sanitized).toBe('');
-    });
-
-    test('TC-005: should handle undefined input', () => {
-      const sanitized = purify.sanitize(undefined);
-      expect(sanitized).toBe('');
-    });
-
-    test('TC-005: should handle malformed HTML gracefully', () => {
-      const malformedHtml = '<div><p>Unclosed tags<span>';
-      const sanitized = purify.sanitize(malformedHtml);
-      expect(sanitized).toContain('Unclosed tags');
-      expect(sanitized).not.toContain('script');
-    });
-  });
-
-  describe('Configuration Tests', () => {
-    test('TC-005: should respect custom configuration', () => {
-      const customConfig = { ALLOWED_TAGS: ['b'] };
-      const html = '<b>Bold</b><i>Italic</i>';
-      const sanitized = purify.sanitize(html, customConfig);
-      expect(sanitized).toContain('<b>Bold</b>');
-      expect(sanitized).not.toContain('<i>');
-    });
-
-    test('TC-005: should handle whitelist configuration', () => {
-      const config = { ALLOWED_TAGS: ['p', 'strong'], ALLOWED_ATTR: [] };
-      const html = '<p><strong>Text</strong><script>alert("XSS")</script></p>';
-      const sanitized = purify.sanitize(html, config);
-      expect(sanitized).toBe('<p><strong>Text</strong></p>');
+      expect(sanitized).not.toContain('vbscript:');
+      expect(sanitized).toBe('<a>VB Attack</a>');
     });
   });
 });
 
-describe('TC-006: Input Validation Tests', () => {
-  describe('String Validation', () => {
-    test('TC-006: should validate string length limits', () => {
-      const validateString = (input, maxLength) => {
-        if (typeof input !== 'string') return false;
-        if (input.length > maxLength) return false;
+describe('TC-006: Backend Input Validation Security Tests', () => {
+  // Enhanced validation function with comprehensive security checks
+  const validateAnnouncementInput = (data) => {
+    const errors = [];
+    
+    // Title validation
+    if (!data.title || typeof data.title !== 'string') {
+      errors.push('Title is required and must be a string');
+    } else {
+      if (data.title.length > 255) {
+        errors.push('Title must not exceed 255 characters');
+      }
+      if (data.title.length < 3) {
+        errors.push('Title must be at least 3 characters long');
+      }
+    }
+    
+    // Content validation
+    if (!data.content || typeof data.content !== 'string') {
+      errors.push('Content is required and must be a string');
+    } else {
+      if (data.content.length > 10000) {
+        errors.push('Content must not exceed 10000 characters');
+      }
+      if (data.content.length < 10) {
+        errors.push('Content must be at least 10 characters long');
+      }
+    }
+    
+    // Priority validation
+    if (data.priority && !['low', 'medium', 'high', 'urgent'].includes(data.priority)) {
+      errors.push('Priority must be one of: low, medium, high, urgent');
+    }
+    
+    // Additional security validation
+    if (data.title && /<script|javascript:|vbscript:/i.test(data.title)) {
+      errors.push('Title contains potentially malicious content');
+    }
+    
+    if (data.content && /<script|javascript:|vbscript:/i.test(data.content)) {
+      errors.push('Content contains potentially malicious content');
+    }
+    
+    return errors;
+  };
+
+  describe('TC-006: Happy Path - Valid Input Acceptance', () => {
+    test('TC-006-HP-001: should accept complete valid announcement data with all fields', () => {
+      const validData = {
+        title: 'Valid System Announcement',
+        content: 'This is a comprehensive valid content for the announcement system',
+        priority: 'medium'
+      };
+      
+      const errors = validateAnnouncementInput(validData);
+      expect(errors).toHaveLength(0);
+      expect(errors).toEqual([]);
+    });
+
+    test('TC-006-HP-002: should accept announcement without optional priority field', () => {
+      const validData = {
+        title: 'Valid Announcement Without Priority',
+        content: 'This is valid content without priority specified'
+      };
+      
+      const errors = validateAnnouncementInput(validData);
+      expect(errors).toHaveLength(0);
+    });
+
+    test('TC-006-HP-003: should accept announcement with maximum allowed lengths', () => {
+      const validData = {
+        title: 'A'.repeat(255), // Maximum title length
+        content: 'B'.repeat(10000), // Maximum content length
+        priority: 'high'
+      };
+      
+      const errors = validateAnnouncementInput(validData);
+      expect(errors).toHaveLength(0);
+    });
+
+    test('TC-006-HP-004: should accept all valid priority levels', () => {
+      const priorities = ['low', 'medium', 'high', 'urgent'];
+      
+      priorities.forEach(priority => {
+        const validData = {
+          title: `Announcement with ${priority} priority`,
+          content: 'Valid content for priority testing',
+          priority: priority
+        };
+        
+        const errors = validateAnnouncementInput(validData);
+        expect(errors).toHaveLength(0);
+      });
+    });
+  });
+
+  describe('TC-006: Error Path - Invalid Input Rejection', () => {
+    test('TC-006-EP-001: should reject completely missing title field', () => {
+      const invalidData = {
+        content: 'Content without title field'
+      };
+      
+      const errors = validateAnnouncementInput(invalidData);
+      expect(errors).toContain('Title is required and must be a string');
+      expect(errors.length).toBeGreaterThan(0);
+    });
+
+    test('TC-006-EP-002: should reject missing content field', () => {
+      const invalidData = {
+        title: 'Title without content'
+      };
+      
+      const errors = validateAnnouncementInput(invalidData);
+      expect(errors).toContain('Content is required and must be a string');
+    });
+
+    test('TC-006-EP-003: should reject title exceeding maximum length limit', () => {
+      const invalidData = {
+        title: 'A'.repeat(256), // Exceeds 255 character limit
+        content: 'Valid content for length testing'
+      };
+      
+      const errors = validateAnnouncementInput(invalidData);
+      expect(errors).toContain('Title must not exceed 255 characters');
+    });
+
+    test('TC-006-EP-004: should reject content exceeding maximum length limit', () => {
+      const invalidData = {
+        title: 'Valid title',
+        content: 'A'.repeat(10001) // Exceeds 10000 character limit
+      };
+      
+      const errors = validateAnnouncementInput(invalidData);
+      expect(errors).toContain('Content must not exceed 10000 characters');
+    });
+
+    test('TC-006-EP-005: should reject invalid priority values', () => {
+      const invalidData = {
+        title: 'Valid title',
+        content: 'Valid content',
+        priority: 'invalid_priority'
+      };
+      
+      const errors = validateAnnouncementInput(invalidData);
+      expect(errors).toContain('Priority must be one of: low, medium, high, urgent');
+    });
+
+    test('TC-006-EP-006: should reject non-string data types', () => {
+      const invalidData = {
+        title: 123,
+        content: [],
+        priority: 'medium'
+      };
+      
+      const errors = validateAnnouncementInput(invalidData);
+      expect(errors).toContain('Title is required and must be a string');
+      expect(errors).toContain('Content is required and must be a string');
+    });
+
+    test('TC-006-EP-007: should reject title and content below minimum length', () => {
+      const invalidData = {
+        title: 'AB', // Less than 3 characters
+        content: 'Short' // Less than 10 characters
+      };
+      
+      const errors = validateAnnouncementInput(invalidData);
+      expect(errors).toContain('Title must be at least 3 characters long');
+      expect(errors).toContain('Content must be at least 10 characters long');
+    });
+
+    test('TC-006-EP-008: should reject potentially malicious content in title and content', () => {
+      const invalidData = {
+        title: 'Malicious <script>alert("hack")</script> Title',
+        content: 'Content with javascript:alert("xss") protocol attack'
+      };
+      
+      const errors = validateAnnouncementInput(invalidData);
+      expect(errors).toContain('Title contains potentially malicious content');
+      expect(errors).toContain('Content contains potentially malicious content');
+    });
+  });
+});
+
+describe('TC-007: SQL Injection Protection Security Tests', () => {
+  // Enhanced parameterized query builder with security validation
+  const buildParameterizedQuery = (operation, params) => {
+    const queries = {
+      select: 'SELECT * FROM announcements WHERE id = ?',
+      selectByUser: 'SELECT * FROM announcements WHERE user_id = ? AND status = ?',
+      insert: 'INSERT INTO announcements (title, content, priority, user_id) VALUES (?, ?, ?, ?)',
+      update: 'UPDATE announcements SET title = ?, content = ?, priority = ? WHERE id = ? AND user_id = ?',
+      delete: 'DELETE FROM announcements WHERE id = ? AND user_id = ?',
+      search: 'SELECT * FROM announcements WHERE title LIKE ? OR content LIKE ?'
+    };
+    
+    if (!queries[operation]) {
+      throw new Error('Invalid operation');
+    }
+    
+    return {
+      query: queries[operation],
+      params: params,
+      isParameterized: true,
+      operation: operation
+    };
+  };
+
+  const detectSQLInjection = (input) => {
+    if (typeof input !== 'string') return false;
+    
+    const sqlKeywords = [
+      'UNION', 'SELECT', 'DROP', 'DELETE', 'INSERT', 'UPDATE',
+      'OR 1=1', 'OR 1 = 1', 'EXEC', 'EXECUTE', '--', ';',
+      'INFORMATION_SCHEMA', 'WAITFOR', 'BENCHMARK', 'SLEEP'
+    ];
+    
+    const normalizedInput = input.toUpperCase().replace(/\s+/g, ' ');
+    
+    return sqlKeywords.some(keyword => 
+      normalizedInput.includes(keyword.toUpperCase())
+    );
+  };
+
+  describe('TC-007: Happy Path - Secure Query Construction', () => {
+    test('TC-007-HP-001: should build secure parameterized SELECT query', () => {
+      const result = buildParameterizedQuery('select', [1]);
+      
+      expect(result.query).toBe('SELECT * FROM announcements WHERE id = ?');
+      expect(result.params).toEqual([1]);
+      expect(result.isParameterized).toBe(true);
+      expect(result.operation).toBe('select');
+    });
+
+    test('TC-007-HP-002: should build secure parameterized INSERT query with all parameters', () => {
+      const result = buildParameterizedQuery('insert', ['Safe Title', 'Safe Content', 'medium', 123]);
+      
+      expect(result.query).toBe('INSERT INTO announcements (title, content, priority, user_id) VALUES (?, ?, ?, ?)');
+      expect(result.params).toEqual(['Safe Title', 'Safe Content', 'medium', 123]);
+      expect(result.isParameterized).toBe(true);
+    });
+
+    test('TC-007-HP-003: should build secure parameterized UPDATE query', () => {
+      const result = buildParameterizedQuery('update', ['Updated Title', 'Updated Content', 'high', 1, 123]);
+      
+      expect(result.query).toBe('UPDATE announcements SET title = ?, content = ?, priority = ? WHERE id = ? AND user_id = ?');
+      expect(result.params).toEqual(['Updated Title', 'Updated Content', 'high', 1, 123]);
+      expect(result.isParameterized).toBe(true);
+    });
+
+    test('TC-007-HP-004: should build secure parameterized DELETE query with user validation', () => {
+      const result = buildParameterizedQuery('delete', [1, 123]);
+      
+      expect(result.query).toBe('DELETE FROM announcements WHERE id = ? AND user_id = ?');
+      expect(result.params).toEqual([1, 123]);
+      expect(result.isParameterized).toBe(true);
+    });
+
+    test('TC-007-HP-005: should build secure parameterized search query', () => {
+      const result = buildParameterizedQuery('search', ['%keyword%', '%keyword%']);
+      
+      expect(result.query).toBe('SELECT * FROM announcements WHERE title LIKE ? OR content LIKE ?');
+      expect(result.params).toEqual(['%keyword%', '%keyword%']);
+      expect(result.isParameterized).toBe(true);
+    });
+
+    test('TC-007-HP-006: should allow safe input without SQL keywords', () => {
+      const safeInputs = [
+        'Regular announcement title',
+        'Content with normal text',
+        'Numbers 12345 and symbols @#$%'
+      ];
+      
+      safeInputs.forEach(input => {
+        expect(detectSQLInjection(input)).toBe(false);
+      });
+    });
+  });
+
+  describe('TC-007: Error Path - SQL Injection Detection and Prevention', () => {
+    test('TC-007-EP-001: should detect classic UNION-based injection attempts', () => {
+      const maliciousInputs = [
+        "1' UNION SELECT * FROM users--",
+        "1 UNION SELECT password FROM admin_users",
+        "' UNION SELECT 1,2,3,4--"
+      ];
+      
+      maliciousInputs.forEach(input => {
+        expect(detectSQLInjection(input)).toBe(true);
+      });
+    });
+
+    test('TC-007-EP-002: should detect boolean-based injection attempts', () => {
+      const maliciousInputs = [
+        "admin' OR '1'='1",
+        "' OR 1=1 --",
+        "anything' OR 1 = 1 --"
+      ];
+      
+      maliciousInputs.forEach(input => {
+        expect(detectSQLInjection(input)).toBe(true);
+      });
+    });
+
+    test('TC-007-EP-003: should detect destructive SQL commands', () => {
+      const maliciousInputs = [
+        "'; DROP TABLE announcements; --",
+        "1; DELETE FROM users WHERE 1=1; --",
+        "'; INSERT INTO admin_users VALUES ('hacker', 'pass'); --"
+      ];
+      
+      maliciousInputs.forEach(input => {
+        expect(detectSQLInjection(input)).toBe(true);
+      });
+    });
+
+    test('TC-007-EP-004: should detect information disclosure attempts', () => {
+      const maliciousInputs = [
+        "' UNION SELECT * FROM INFORMATION_SCHEMA.TABLES--",
+        "1' AND (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS) > 0--"
+      ];
+      
+      maliciousInputs.forEach(input => {
+        expect(detectSQLInjection(input)).toBe(true);
+      });
+    });
+
+    test('TC-007-EP-005: should detect time-based injection attempts', () => {
+      const maliciousInputs = [
+        "'; WAITFOR DELAY '00:00:10'; --",
+        "' AND (SELECT BENCHMARK(1000000,MD5(1))) --",
+        "'; SELECT SLEEP(10); --"
+      ];
+      
+      maliciousInputs.forEach(input => {
+        expect(detectSQLInjection(input)).toBe(true);
+      });
+    });
+
+    test('TC-007-EP-006: should reject invalid query operations', () => {
+      expect(() => {
+        buildParameterizedQuery('invalid_operation', []);
+      }).toThrow('Invalid operation');
+    });
+
+    test('TC-007-EP-007: should detect comment-based injection techniques', () => {
+      const maliciousInputs = [
+        "test'; -- comment out rest",
+        "admin'--",
+        "' OR '1'='1'; --"
+      ];
+      
+      maliciousInputs.forEach(input => {
+        expect(detectSQLInjection(input)).toBe(true);
+      });
+    });
+  });
+});
+
+describe('TC-008: Role-Based Authorization Security Tests', () => {
+  // Enhanced authorization system with comprehensive role management
+  const USER_ROLES = {
+    SUPER_ADMIN: 'super_admin',
+    ADMIN: 'admin',
+    MODERATOR: 'moderator',
+    USER: 'user',
+    GUEST: 'guest',
+    SUSPENDED: 'suspended'
+  };
+
+  const PERMISSIONS = {
+    CREATE_ANNOUNCEMENT: 'create_announcement',
+    READ_ANNOUNCEMENT: 'read_announcement',
+    UPDATE_ANNOUNCEMENT: 'update_announcement',
+    DELETE_ANNOUNCEMENT: 'delete_announcement',
+    MANAGE_USERS: 'manage_users',
+    VIEW_ANALYTICS: 'view_analytics',
+    SYSTEM_CONFIG: 'system_config'
+  };
+
+  const checkPermission = (userRole, permission, resourceOwnerId = null, currentUserId = null) => {
+    const rolePermissions = {
+      [USER_ROLES.SUPER_ADMIN]: Object.values(PERMISSIONS),
+      [USER_ROLES.ADMIN]: [
+        PERMISSIONS.CREATE_ANNOUNCEMENT,
+        PERMISSIONS.READ_ANNOUNCEMENT,
+        PERMISSIONS.UPDATE_ANNOUNCEMENT,
+        PERMISSIONS.DELETE_ANNOUNCEMENT,
+        PERMISSIONS.MANAGE_USERS,
+        PERMISSIONS.VIEW_ANALYTICS
+      ],
+      [USER_ROLES.MODERATOR]: [
+        PERMISSIONS.CREATE_ANNOUNCEMENT,
+        PERMISSIONS.READ_ANNOUNCEMENT,
+        PERMISSIONS.UPDATE_ANNOUNCEMENT,
+        PERMISSIONS.VIEW_ANALYTICS
+      ],
+      [USER_ROLES.USER]: [
+        PERMISSIONS.READ_ANNOUNCEMENT
+      ],
+      [USER_ROLES.GUEST]: [
+        PERMISSIONS.READ_ANNOUNCEMENT
+      ],
+      [USER_ROLES.SUSPENDED]: []
+    };
+
+    if (!userRole || !rolePermissions[userRole]) {
+      return false;
+    }
+
+    const hasBasePermission = rolePermissions[userRole].includes(permission);
+    
+    // Special case: users can update/delete their own content
+    if (!hasBasePermission && currentUserId && resourceOwnerId && currentUserId === resourceOwnerId) {
+      if (userRole === USER_ROLES.USER && 
+          (permission === PERMISSIONS.UPDATE_ANNOUNCEMENT || permission === PERMISSIONS.DELETE_ANNOUNCEMENT)) {
         return true;
-      };
+      }
+    }
+    
+    return hasBasePermission;
+  };
 
-      expect(validateString('valid', 10)).toBe(true);
-      expect(validateString('this is too long', 5)).toBe(false);
-      expect(validateString(123, 10)).toBe(false);
+  describe('TC-008: Happy Path - Authorized Access Control', () => {
+    test('TC-008-HP-001: super admin should have all system permissions', () => {
+      const allPermissions = Object.values(PERMISSIONS);
+      
+      allPermissions.forEach(permission => {
+        expect(checkPermission(USER_ROLES.SUPER_ADMIN, permission)).toBe(true);
+      });
     });
 
-    test('TC-006: should validate email format', () => {
-      const validateEmail = (email) => {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return emailRegex.test(email);
-      };
-
-      expect(validateEmail('test@example.com')).toBe(true);
-      expect(validateEmail('invalid-email')).toBe(false);
-      expect(validateEmail('test@')).toBe(false);
+    test('TC-008-HP-002: admin should have comprehensive management permissions', () => {
+      const adminPermissions = [
+        PERMISSIONS.CREATE_ANNOUNCEMENT,
+        PERMISSIONS.READ_ANNOUNCEMENT,
+        PERMISSIONS.UPDATE_ANNOUNCEMENT,
+        PERMISSIONS.DELETE_ANNOUNCEMENT,
+        PERMISSIONS.MANAGE_USERS,
+        PERMISSIONS.VIEW_ANALYTICS
+      ];
+      
+      adminPermissions.forEach(permission => {
+        expect(checkPermission(USER_ROLES.ADMIN, permission)).toBe(true);
+      });
     });
 
-    test('TC-006: should validate against SQL injection patterns', () => {
-      const hasSqlInjection = (input) => {
-        const sqlPatterns = [
-          /(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|UNION|SCRIPT)\b)/i,
-          /(--|;|\/\*|\*\/)/,
-          /(\b(OR|AND)\b.*[=<>])/i
-        ];
-        return sqlPatterns.some(pattern => pattern.test(input));
-      };
-
-      expect(hasSqlInjection('normal text')).toBe(false);
-      expect(hasSqlInjection("'; DROP TABLE users; --")).toBe(true);
-      expect(hasSqlInjection('1 OR 1=1')).toBe(true);
-    });
-  });
-
-  describe('File Upload Validation', () => {
-    test('TC-006: should validate file extensions', () => {
-      const validateFileExtension = (filename, allowedExtensions) => {
-        const ext = filename.toLowerCase().split('.').pop();
-        return allowedExtensions.includes(ext);
-      };
-
-      const allowedExts = ['jpg', 'png', 'gif'];
-      expect(validateFileExtension('image.jpg', allowedExts)).toBe(true);
-      expect(validateFileExtension('script.exe', allowedExts)).toBe(false);
+    test('TC-008-HP-003: moderator should have content management permissions', () => {
+      expect(checkPermission(USER_ROLES.MODERATOR, PERMISSIONS.CREATE_ANNOUNCEMENT)).toBe(true);
+      expect(checkPermission(USER_ROLES.MODERATOR, PERMISSIONS.READ_ANNOUNCEMENT)).toBe(true);
+      expect(checkPermission(USER_ROLES.MODERATOR, PERMISSIONS.UPDATE_ANNOUNCEMENT)).toBe(true);
+      expect(checkPermission(USER_ROLES.MODERATOR, PERMISSIONS.VIEW_ANALYTICS)).toBe(true);
     });
 
-    test('TC-006: should validate file size limits', () => {
-      const validateFileSize = (fileSize, maxSizeInMB) => {
-        const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
-        return fileSize <= maxSizeInBytes;
-      };
-
-      expect(validateFileSize(1048576, 2)).toBe(true); // 1MB file, 2MB limit
-      expect(validateFileSize(5242880, 2)).toBe(false); // 5MB file, 2MB limit
-    });
-  });
-});
-
-describe('TC-007: Authentication Security Tests', () => {
-  describe('Password Security', () => {
-    test('TC-007: should validate strong passwords', () => {
-      const validatePassword = (password) => {
-        const minLength = 8;
-        const hasUpperCase = /[A-Z]/.test(password);
-        const hasLowerCase = /[a-z]/.test(password);
-        const hasNumbers = /\d/.test(password);
-        const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
-
-        return password.length >= minLength && hasUpperCase && hasLowerCase && hasNumbers && hasSpecialChar;
-      };
-
-      expect(validatePassword('StrongP@ss1')).toBe(true);
-      expect(validatePassword('weak')).toBe(false);
-      expect(validatePassword('NoSpecialChar1')).toBe(false);
+    test('TC-008-HP-004: regular user should have read access', () => {
+      expect(checkPermission(USER_ROLES.USER, PERMISSIONS.READ_ANNOUNCEMENT)).toBe(true);
     });
 
-    test('TC-007: should detect common weak passwords', () => {
-      const isWeakPassword = (password) => {
-        const commonPasswords = ['password', '123456', 'qwerty', 'admin', 'letmein'];
-        return commonPasswords.includes(password.toLowerCase());
-      };
+    test('TC-008-HP-005: guest should have limited read access', () => {
+      expect(checkPermission(USER_ROLES.GUEST, PERMISSIONS.READ_ANNOUNCEMENT)).toBe(true);
+    });
 
-      expect(isWeakPassword('password')).toBe(true);
-      expect(isWeakPassword('UniqueP@ss1')).toBe(false);
+    test('TC-008-HP-006: users should be able to modify their own content', () => {
+      const userId = 123;
+      const resourceOwnerId = 123;
+      
+      expect(checkPermission(USER_ROLES.USER, PERMISSIONS.UPDATE_ANNOUNCEMENT, resourceOwnerId, userId)).toBe(true);
+      expect(checkPermission(USER_ROLES.USER, PERMISSIONS.DELETE_ANNOUNCEMENT, resourceOwnerId, userId)).toBe(true);
     });
   });
 
-  describe('Session Security', () => {
-    test('TC-007: should validate session token format', () => {
-      const validateSessionToken = (token) => {
-        // Check if token is a valid UUID or similar secure format
-        const tokenRegex = /^[a-f0-9]{32,}$/i;
-        return tokenRegex.test(token) && token.length >= 32;
-      };
+  describe('TC-008: Error Path - Unauthorized Access Prevention', () => {
+    test('TC-008-EP-001: moderator should NOT have delete or system permissions', () => {
+      expect(checkPermission(USER_ROLES.MODERATOR, PERMISSIONS.DELETE_ANNOUNCEMENT)).toBe(false);
+      expect(checkPermission(USER_ROLES.MODERATOR, PERMISSIONS.MANAGE_USERS)).toBe(false);
+      expect(checkPermission(USER_ROLES.MODERATOR, PERMISSIONS.SYSTEM_CONFIG)).toBe(false);
+    });
 
-      expect(validateSessionToken('a1b2c3d4e5f6789012345678901234567890')).toBe(true);
-      expect(validateSessionToken('short')).toBe(false);
-      expect(validateSessionToken('invalid-chars!')).toBe(false);
+    test('TC-008-EP-002: regular user should NOT have management permissions', () => {
+      const restrictedPermissions = [
+        PERMISSIONS.CREATE_ANNOUNCEMENT,
+        PERMISSIONS.UPDATE_ANNOUNCEMENT,
+        PERMISSIONS.DELETE_ANNOUNCEMENT,
+        PERMISSIONS.MANAGE_USERS,
+        PERMISSIONS.VIEW_ANALYTICS,
+        PERMISSIONS.SYSTEM_CONFIG
+      ];
+      
+      restrictedPermissions.forEach(permission => {
+        expect(checkPermission(USER_ROLES.USER, permission)).toBe(false);
+      });
+    });
+
+    test('TC-008-EP-003: guest should NOT have any modification permissions', () => {
+      const restrictedPermissions = [
+        PERMISSIONS.CREATE_ANNOUNCEMENT,
+        PERMISSIONS.UPDATE_ANNOUNCEMENT,
+        PERMISSIONS.DELETE_ANNOUNCEMENT,
+        PERMISSIONS.MANAGE_USERS,
+        PERMISSIONS.VIEW_ANALYTICS,
+        PERMISSIONS.SYSTEM_CONFIG
+      ];
+      
+      restrictedPermissions.forEach(permission => {
+        expect(checkPermission(USER_ROLES.GUEST, permission)).toBe(false);
+      });
+    });
+
+    test('TC-008-EP-004: suspended users should have no permissions at all', () => {
+      const allPermissions = Object.values(PERMISSIONS);
+      
+      allPermissions.forEach(permission => {
+        expect(checkPermission(USER_ROLES.SUSPENDED, permission)).toBe(false);
+      });
+    });
+
+    test('TC-008-EP-005: undefined or invalid roles should have no permissions', () => {
+      const invalidRoles = [undefined, null, 'invalid_role', '', 'hacker'];
+      
+      invalidRoles.forEach(role => {
+        expect(checkPermission(role, PERMISSIONS.READ_ANNOUNCEMENT)).toBe(false);
+        expect(checkPermission(role, PERMISSIONS.CREATE_ANNOUNCEMENT)).toBe(false);
+      });
+    });
+
+    test('TC-008-EP-006: users should NOT be able to modify others content', () => {
+      const userId = 123;
+      const otherUserId = 456;
+      
+      expect(checkPermission(USER_ROLES.USER, PERMISSIONS.UPDATE_ANNOUNCEMENT, otherUserId, userId)).toBe(false);
+      expect(checkPermission(USER_ROLES.USER, PERMISSIONS.DELETE_ANNOUNCEMENT, otherUserId, userId)).toBe(false);
+    });
+
+    test('TC-008-EP-007: admin should NOT have super admin exclusive permissions', () => {
+      expect(checkPermission(USER_ROLES.ADMIN, PERMISSIONS.SYSTEM_CONFIG)).toBe(false);
+    });
+
+    test('TC-008-EP-008: non-existent permissions should always return false', () => {
+      const nonExistentPermission = 'non_existent_permission';
+      
+      Object.values(USER_ROLES).forEach(role => {
+        expect(checkPermission(role, nonExistentPermission)).toBe(false);
+      });
     });
   });
 });

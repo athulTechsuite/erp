@@ -18,21 +18,14 @@ const AnnouncementForm = ({
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
-  const [csrfToken, setCsrfToken] = useState('');
 
   useEffect(() => {
-    // Populate form data if editing existing announcement
     if (announcement) {
       setFormData({
         title: announcement.title || '',
         content: announcement.content || ''
       });
     }
-    
-    // Get CSRF token from meta tag or cookie
-    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
-                  document.cookie.split('; ').find(row => row.startsWith('csrftoken='))?.split('=')[1] || '';
-    setCsrfToken(token);
   }, [announcement]);
 
   const validateField = (name, value) => {
@@ -105,8 +98,7 @@ const AnnouncementForm = ({
       await onSave({
         ...formData,
         title: formData.title.trim(),
-        content: formData.content.trim(),
-        csrfToken: csrfToken
+        content: formData.content.trim()
       });
     } catch (error) {
       console.error('Error saving announcement:', error);
@@ -123,6 +115,10 @@ const AnnouncementForm = ({
     onCancel();
   };
 
+  const titleError = errors.title && touched.title;
+  const contentError = errors.content && touched.content;
+  const hasErrors = Object.keys(errors).some(key => key !== 'submit' && errors[key]);
+
   return (
     <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
@@ -131,11 +127,9 @@ const AnnouncementForm = ({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input type="hidden" name="csrfToken" value={csrfToken} />
-          
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           {errors.submit && (
-            <Alert variant="destructive">
+            <Alert variant="destructive" role="alert" aria-live="polite">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{errors.submit}</AlertDescription>
             </Alert>
@@ -143,7 +137,7 @@ const AnnouncementForm = ({
           
           <div className="space-y-2">
             <label htmlFor="title" className="text-sm font-medium">
-              Title <span className="text-red-500">*</span>
+              Title <span className="text-red-500" aria-label="required">*</span>
             </label>
             <Input
               id="title"
@@ -152,22 +146,35 @@ const AnnouncementForm = ({
               onChange={handleInputChange}
               onBlur={handleBlur}
               placeholder="Enter announcement title..."
-              className={errors.title && touched.title ? 'border-red-500' : ''}
+              className={titleError ? 'border-red-500' : ''}
               maxLength={200}
+              required
+              aria-invalid={titleError ? 'true' : 'false'}
+              aria-describedby={titleError ? 'title-error' : 'title-count'}
+              aria-label="Announcement title"
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
-                {errors.title && touched.title && (
-                  <span className="text-red-500">{errors.title}</span>
+                {titleError && (
+                  <span 
+                    id="title-error" 
+                    className="text-red-500" 
+                    role="alert"
+                    aria-live="polite"
+                  >
+                    {errors.title}
+                  </span>
                 )}
               </span>
-              <span>{formData.title.length}/200</span>
+              <span id="title-count" aria-label={`${formData.title.length} of 200 characters used`}>
+                {formData.title.length}/200
+              </span>
             </div>
           </div>
 
           <div className="space-y-2">
             <label htmlFor="content" className="text-sm font-medium">
-              Content <span className="text-red-500">*</span>
+              Content <span className="text-red-500" aria-label="required">*</span>
             </label>
             <Textarea
               id="content"
@@ -177,16 +184,29 @@ const AnnouncementForm = ({
               onBlur={handleBlur}
               placeholder="Enter announcement content..."
               rows={8}
-              className={errors.content && touched.content ? 'border-red-500' : ''}
+              className={contentError ? 'border-red-500' : ''}
               maxLength={5000}
+              required
+              aria-invalid={contentError ? 'true' : 'false'}
+              aria-describedby={contentError ? 'content-error' : 'content-count'}
+              aria-label="Announcement content"
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
-                {errors.content && touched.content && (
-                  <span className="text-red-500">{errors.content}</span>
+                {contentError && (
+                  <span 
+                    id="content-error" 
+                    className="text-red-500" 
+                    role="alert"
+                    aria-live="polite"
+                  >
+                    {errors.content}
+                  </span>
                 )}
               </span>
-              <span>{formData.content.length}/5000</span>
+              <span id="content-count" aria-label={`${formData.content.length} of 5000 characters used`}>
+                {formData.content.length}/5000
+              </span>
             </div>
           </div>
 
@@ -196,15 +216,17 @@ const AnnouncementForm = ({
               variant="outline"
               onClick={handleCancel}
               disabled={isSubmitting}
+              aria-label="Cancel announcement creation"
             >
-              <X className="h-4 w-4 mr-2" />
+              <X className="h-4 w-4 mr-2" aria-hidden="true" />
               Cancel
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting || Object.keys(errors).length > 0}
+              disabled={isSubmitting || hasErrors}
+              aria-label={isSubmitting ? 'Saving announcement' : announcement ? 'Update announcement' : 'Publish announcement'}
             >
-              <Save className="h-4 w-4 mr-2" />
+              <Save className="h-4 w-4 mr-2" aria-hidden="true" />
               {isSubmitting ? 'Saving...' : announcement ? 'Update' : 'Publish'}
             </Button>
           </div>

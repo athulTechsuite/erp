@@ -166,26 +166,28 @@ announcementSchema.statics.getAnnouncementsByPriority = function(priority) {
     .lean();
 };
 
-// Static method to search announcements with sanitized input
+// Static method to search announcements with sanitized input using parameterized queries
 announcementSchema.statics.searchAnnouncements = function(searchTerm, options = {}) {
   // Sanitize search input
   if (typeof searchTerm !== 'string' || !searchTerm.trim()) {
     throw new Error('Search term must be a non-empty string');
   }
   
-  const sanitizedTerm = validator.escape(searchTerm.trim());
+  // Use parameterized regex pattern instead of direct interpolation
+  const sanitizedTerm = searchTerm.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const sanitizedOptions = {
     includeInactive: Boolean(options.includeInactive),
     limit: Math.max(1, Math.min(100, parseInt(options.limit, 10) || 10))
   };
   
+  // Build filter with parameterized queries
   const filter = {
     $and: [
       sanitizedOptions.includeInactive ? {} : { isActive: true },
       {
         $or: [
-          { title: { $regex: sanitizedTerm, $options: 'i' } },
-          { content: { $regex: sanitizedTerm, $options: 'i' } }
+          { title: { $regex: new RegExp(sanitizedTerm, 'i') } },
+          { content: { $regex: new RegExp(sanitizedTerm, 'i') } }
         ]
       }
     ]

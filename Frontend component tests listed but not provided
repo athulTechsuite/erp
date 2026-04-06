@@ -10,13 +10,13 @@ jest.mock('../services/api', () => ({
 
 import { getAnnouncements } from '../services/api';
 
-describe('Announcement Component', () => {
+describe('TC-002: Frontend component rendering tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  // TC-002: Announcement component integration - Happy path
-  describe('TC-002: Announcement component integration - Happy path', () => {
+  // TC-002: Frontend component rendering tests - Happy path
+  describe('TC-002: Frontend component rendering tests - Happy path', () => {
     test('should render announcements successfully when API returns data', async () => {
       // Arrange
       const mockAnnouncements = [
@@ -81,10 +81,76 @@ describe('Announcement Component', () => {
         expect(screen.getByText(/no announcements/i)).toBeInTheDocument();
       });
     });
+
+    test('should render component structure and styling correctly', async () => {
+      // Arrange
+      const mockAnnouncements = [
+        {
+          id: 1,
+          title: 'Styled Announcement',
+          content: 'Testing component styling',
+          priority: 'high',
+          createdAt: '2023-01-01T00:00:00Z'
+        }
+      ];
+
+      getAnnouncements.mockResolvedValue({
+        data: mockAnnouncements,
+        status: 200
+      });
+
+      // Act
+      const { container } = render(<Announcement />);
+
+      // Assert
+      await waitFor(() => {
+        const announcementContainer = container.querySelector('.announcement-container');
+        expect(announcementContainer).toBeInTheDocument();
+        
+        const priorityElement = container.querySelector('.priority-high');
+        expect(priorityElement).toBeInTheDocument();
+        
+        expect(screen.getByText('Styled Announcement')).toHaveClass('announcement-title');
+      });
+    });
+
+    test('should render multiple priority levels correctly', async () => {
+      // Arrange
+      const mockAnnouncements = [
+        {
+          id: 1,
+          title: 'High Priority',
+          content: 'Urgent announcement',
+          priority: 'high',
+          createdAt: '2023-01-01T00:00:00Z'
+        },
+        {
+          id: 2,
+          title: 'Low Priority',
+          content: 'Regular announcement',
+          priority: 'low',
+          createdAt: '2023-01-02T00:00:00Z'
+        }
+      ];
+
+      getAnnouncements.mockResolvedValue({
+        data: mockAnnouncements,
+        status: 200
+      });
+
+      // Act
+      const { container } = render(<Announcement />);
+
+      // Assert
+      await waitFor(() => {
+        expect(container.querySelector('.priority-high')).toBeInTheDocument();
+        expect(container.querySelector('.priority-low')).toBeInTheDocument();
+      });
+    });
   });
 
-  // TC-002: Announcement component integration - Error path
-  describe('TC-002: Announcement component integration - Error path', () => {
+  // TC-002: Frontend component rendering tests - Error path
+  describe('TC-002: Frontend component rendering tests - Error path', () => {
     test('should display error message when API call fails', async () => {
       // Arrange
       const mockError = new Error('Failed to fetch announcements');
@@ -168,6 +234,57 @@ describe('Announcement Component', () => {
       });
 
       expect(getAnnouncements).toHaveBeenCalledTimes(2);
+    });
+
+    test('should handle malformed API response gracefully', async () => {
+      // Arrange
+      getAnnouncements.mockResolvedValue({
+        data: [
+          {
+            id: 1,
+            // Missing required fields
+            priority: 'high'
+          }
+        ],
+        status: 200
+      });
+
+      // Act
+      render(<Announcement />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText(/error rendering announcements/i)).toBeInTheDocument();
+      });
+    });
+
+    test('should handle component crash and display fallback UI', async () => {
+      // Arrange
+      const mockAnnouncements = [
+        {
+          id: null, // Invalid data that might cause rendering issues
+          title: null,
+          content: 'This might cause issues',
+          priority: 'invalid_priority',
+          createdAt: 'invalid_date'
+        }
+      ];
+
+      getAnnouncements.mockResolvedValue({
+        data: mockAnnouncements,
+        status: 200
+      });
+
+      // Act
+      render(<Announcement />);
+
+      // Assert
+      await waitFor(() => {
+        // Should either show error boundary or handle gracefully
+        const errorElement = screen.queryByText(/something went wrong/i) || 
+                           screen.queryByText(/error rendering/i);
+        expect(errorElement).toBeInTheDocument();
+      });
     });
   });
 });

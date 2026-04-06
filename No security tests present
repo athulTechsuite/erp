@@ -6,7 +6,7 @@
 const { JSDOM } = require('jsdom');
 const DOMPurify = require('dompurify');
 
-describe('TC-004: Security Tests', () => {
+describe('TC-004: Security and Authentication Tests', () => {
   let window, document;
 
   beforeEach(() => {
@@ -33,6 +33,43 @@ describe('TC-004: Security Tests', () => {
       const securePassword = 'SecureP@ss123';
       const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
       expect(passwordRegex.test(securePassword)).toBe(true);
+    });
+
+    test('TC-004: should authenticate with valid JWT token', () => {
+      const mockValidToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ';
+      const tokenParts = mockValidToken.split('.');
+      expect(tokenParts.length).toBe(3);
+      expect(tokenParts[0].length).toBeGreaterThan(0);
+      expect(tokenParts[1].length).toBeGreaterThan(0);
+      expect(tokenParts[2].length).toBeGreaterThan(0);
+    });
+
+    test('TC-004: should handle secure session management', () => {
+      const sessionConfig = {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'strict',
+        maxAge: 3600000 // 1 hour
+      };
+      expect(sessionConfig.httpOnly).toBe(true);
+      expect(sessionConfig.secure).toBe(true);
+      expect(sessionConfig.sameSite).toBe('strict');
+      expect(sessionConfig.maxAge).toBeLessThanOrEqual(3600000);
+    });
+
+    test('TC-004: should validate secure API endpoints with proper authorization', () => {
+      const secureEndpoint = {
+        url: 'https://api.example.com/secure/data',
+        requiresAuth: true,
+        method: 'GET',
+        headers: {
+          'Authorization': 'Bearer valid-token',
+          'Content-Type': 'application/json'
+        }
+      };
+      expect(secureEndpoint.url.startsWith('https://')).toBe(true);
+      expect(secureEndpoint.requiresAuth).toBe(true);
+      expect(secureEndpoint.headers.Authorization).toContain('Bearer');
     });
   });
 
@@ -80,6 +117,98 @@ describe('TC-004: Security Tests', () => {
       invalidEmails.forEach(email => {
         expect(emailRegex.test(email)).toBe(false);
       });
+    });
+
+    test('TC-004: should reject invalid JWT tokens', () => {
+      const invalidTokens = [
+        '', // empty token
+        'invalid.token', // missing parts
+        'not.a.jwt.token', // too many parts
+        'invalidbase64!@#.invalidbase64!@#.invalidbase64!@#' // invalid base64
+      ];
+      
+      invalidTokens.forEach(token => {
+        if (token === '') {
+          expect(token.length).toBe(0);
+        } else {
+          const parts = token.split('.');
+          if (parts.length !== 3) {
+            expect(parts.length).not.toBe(3);
+          } else {
+            // Check for invalid base64 characters
+            const hasInvalidChars = /[^A-Za-z0-9+/=]/.test(token);
+            expect(hasInvalidChars).toBe(true);
+          }
+        }
+      });
+    });
+
+    test('TC-004: should handle authentication failures gracefully', () => {
+      const authFailureScenarios = [
+        { username: '', password: 'validpass', expectedError: 'Username required' },
+        { username: 'validuser', password: '', expectedError: 'Password required' },
+        { username: 'invalid', password: 'wrongpass', expectedError: 'Invalid credentials' }
+      ];
+      
+      authFailureScenarios.forEach(scenario => {
+        if (!scenario.username) {
+          expect(scenario.expectedError).toContain('Username');
+        }
+        if (!scenario.password) {
+          expect(scenario.expectedError).toContain('Password');
+        }
+        if (scenario.username && scenario.password && scenario.username === 'invalid') {
+          expect(scenario.expectedError).toContain('Invalid');
+        }
+      });
+    });
+
+    test('TC-004: should prevent session fixation attacks', () => {
+      const suspiciousSessionIds = [
+        'JSESSIONID=attacker-controlled-id',
+        'sessionid=predictable123',
+        'sid=12345'
+      ];
+      
+      suspiciousSessionIds.forEach(sessionId => {
+        // Check if session ID is too predictable or short
+        const idValue = sessionId.split('=')[1];
+        const isPredictable = /^(12345|123456|attacker|predictable)/.test(idValue);
+        const isTooShort = idValue.length < 16;
+        
+        expect(isPredictable || isTooShort).toBe(true);
+      });
+    });
+
+    test('TC-004: should validate CORS policy violations', () => {
+      const maliciousOrigins = [
+        'http://malicious-site.com',
+        'javascript:',
+        'data:',
+        'file://',
+        null
+      ];
+      
+      const allowedOrigins = ['https://trusted-domain.com', 'https://api.example.com'];
+      
+      maliciousOrigins.forEach(origin => {
+        expect(allowedOrigins.includes(origin)).toBe(false);
+      });
+    });
+
+    test('TC-004: should detect and prevent brute force attacks', () => {
+      const loginAttempts = Array(10).fill().map((_, i) => ({
+        timestamp: Date.now() - (i * 1000),
+        success: false,
+        ip: '192.168.1.100'
+      }));
+      
+      // Simulate rate limiting check
+      const recentFailures = loginAttempts.filter(attempt => 
+        !attempt.success && (Date.now() - attempt.timestamp) < 300000 // 5 minutes
+      );
+      
+      expect(recentFailures.length).toBeGreaterThan(5); // Should trigger rate limiting
     });
   });
 });

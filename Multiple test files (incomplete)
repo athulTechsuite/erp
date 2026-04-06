@@ -1,0 +1,171 @@
+// TC-005: Authentication and Authorization Test Suite
+const request = require('supertest');
+const app = require('../src/app');
+const { generateToken, verifyToken } = require('../src/utils/auth');
+const User = require('../src/models/User');
+
+describe('TC-005: Authentication and Authorization', () => {
+  let validUser;
+  let validToken;
+  let expiredToken;
+  let invalidToken;
+
+  beforeEach(async () => {
+    validUser = {
+      id: 1,
+      username: 'testuser',
+      email: 'test@example.com',
+      role: 'user'
+    };
+    validToken = generateToken(validUser);
+    expiredToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwidXNlcm5hbWUiOiJ0ZXN0dXNlciIsImV4cCI6MTYwOTQ1OTIwMH0.invalid';
+    invalidToken = 'invalid.token.format';
+  });
+
+  describe('Happy Path - Authentication Success', () => {
+    it('should authenticate user with valid credentials', async () => {
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send({
+          username: 'testuser',
+          password: 'validpassword'
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('token');
+      expect(response.body).toHaveProperty('user');
+      expect(response.body.user.username).toBe('testuser');
+    });
+
+    it('should allow access to protected resource with valid token', async () => {
+      const response = await request(app)
+        .get('/api/protected/profile')
+        .set('Authorization', `Bearer ${validToken}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('user');
+    });
+
+    it('should verify token successfully for authorized user', () => {
+      const decoded = verifyToken(validToken);
+      expect(decoded).toHaveProperty('id');
+      expect(decoded).toHaveProperty('username');
+      expect(decoded.username).toBe('testuser');
+    });
+
+    it('should allow admin access to admin-only resources', async () => {
+      const adminUser = { ...validUser, role: 'admin' };
+      const adminToken = generateToken(adminUser);
+
+      const response = await request(app)
+        .get('/api/admin/users')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(response.status).toBe(200);
+    });
+  });
+
+  describe('Error Path - Authentication Failures', () => {
+    it('should reject login with invalid credentials', async () => {
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send({
+          username: 'testuser',
+          password: 'wrongpassword'
+        });
+
+      expect(response.status).toBe(401);
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toBe('Invalid credentials');
+    });
+
+    it('should reject login with missing credentials', async () => {
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toBe('Username and password required');
+    });
+
+    it('should deny access without authentication token', async () => {
+      const response = await request(app)
+        .get('/api/protected/profile');
+
+      expect(response.status).toBe(401);
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toBe('Access token required');
+    });
+
+    it('should deny access with invalid token format', async () => {
+      const response = await request(app)
+        .get('/api/protected/profile')
+        .set('Authorization', `Bearer ${invalidToken}`);
+
+      expect(response.status).toBe(401);
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toBe('Invalid token');
+    });
+
+    it('should deny access with expired token', async () => {
+      const response = await request(app)
+        .get('/api/protected/profile')
+        .set('Authorization', `Bearer ${expiredToken}`);
+
+      expect(response.status).toBe(401);
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toBe('Token expired');
+    });
+
+    it('should deny access to admin resources for non-admin users', async () => {
+      const response = await request(app)
+        .get('/api/admin/users')
+        .set('Authorization', `Bearer ${validToken}`);
+
+      expect(response.status).toBe(403);
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toBe('Insufficient permissions');
+    });
+
+    it('should handle malformed authorization header', async () => {
+      const response = await request(app)
+        .get('/api/protected/profile')
+        .set('Authorization', 'InvalidFormat');
+
+      expect(response.status).toBe(401);
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toBe('Invalid authorization header format');
+    });
+
+    it('should reject token verification for tampered tokens', () => {
+      const tamperedToken = validToken.slice(0, -10) + 'tampered123';
+      
+      expect(() => {
+        verifyToken(tamperedToken);
+      }).toThrow('Invalid token signature');
+    });
+  });
+
+  describe('Edge Cases - Authorization Scenarios', () => {
+    it('should handle user role changes during active session', async () => {
+      // Simulate role change in database
+      await User.updateRole(validUser.id, 'banned');
+      
+      const response = await request(app)
+        .get('/api/protected/profile')
+        .set('Authorization', `Bearer ${validToken}`);
+
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe('User account suspended');
+    });
+
+    it('should validate token payload integrity', () => {
+      const decoded = verifyToken(validToken);
+      
+      expect(decoded).toHaveProperty('iat');
+      expect(decoded).toHaveProperty('exp');
+      expect(decoded.exp).toBeGreaterThan(decoded.iat);
+    });
+  });
+});

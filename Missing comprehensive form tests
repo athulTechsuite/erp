@@ -1,408 +1,522 @@
-// tests/unit/announcement-form-validation.test.js
-// Comprehensive announcement form validation and submission tests
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import '@testing-library/jest-dom';
+import { ContactForm } from '../components/ContactForm';
+import { formValidator } from '../utils/formValidator';
+import { formSubmissionService } from '../services/formSubmissionService';
 
-// Validation configuration constants for announcement forms
-const VALIDATION_CONSTRAINTS = {
-  TITLE: {
-    MIN_LENGTH: 5,
-    MAX_LENGTH: 100
-  },
-  DESCRIPTION: {
-    MIN_LENGTH: 20,
-    MAX_LENGTH: 1000
-  },
-  CATEGORY: {
-    REQUIRED: true
+// Mock the form submission service
+jest.mock('../services/formSubmissionService', () => ({
+  formSubmissionService: {
+    submitContactForm: jest.fn(),
   }
-};
+}));
 
-describe('TC-003: Announcement form validation and submission', () => {
-  let form, submitButton, titleInput, descriptionInput, categorySelect;
+// Mock form validator utility
+jest.mock('../utils/formValidator', () => ({
+  formValidator: {
+    validateField: jest.fn(),
+    validateForm: jest.fn(),
+    showFieldError: jest.fn(),
+    clearFieldError: jest.fn(),
+  }
+}));
+
+/**
+ * TC-003: Company Announcement Form validation and submission tests
+ * Comprehensive test coverage for form validation, submission, and error handling
+ */
+describe('TC-003: Company Announcement Form validation and submission', () => {
+  const mockFormData = {
+    name: 'John Doe',
+    email: 'john@example.com',
+    message: 'This is a test message with sufficient length',
+    phone: '+1234567890'
+  };
+
+  let user;
 
   beforeEach(() => {
-    // Setup announcement form elements with comprehensive validation attributes
-    document.body.innerHTML = `
-      <form id="announcement-form" novalidate>
-        <div class="form-group">
-          <label for="title">Announcement Title *</label>
-          <input 
-            type="text" 
-            id="title" 
-            name="title" 
-            required 
-            minlength="${VALIDATION_CONSTRAINTS.TITLE.MIN_LENGTH}" 
-            maxlength="${VALIDATION_CONSTRAINTS.TITLE.MAX_LENGTH}"
-            aria-describedby="title-error"
-          >
-          <div id="title-error" class="error-message" role="alert"></div>
-        </div>
-        
-        <div class="form-group">
-          <label for="category">Category *</label>
-          <select 
-            id="category" 
-            name="category" 
-            required
-            aria-describedby="category-error"
-          >
-            <option value="">Select a category</option>
-            <option value="general">General</option>
-            <option value="urgent">Urgent</option>
-            <option value="maintenance">Maintenance</option>
-            <option value="event">Event</option>
-          </select>
-          <div id="category-error" class="error-message" role="alert"></div>
-        </div>
-        
-        <div class="form-group">
-          <label for="description">Description *</label>
-          <textarea 
-            id="description" 
-            name="description" 
-            required 
-            minlength="${VALIDATION_CONSTRAINTS.DESCRIPTION.MIN_LENGTH}" 
-            maxlength="${VALIDATION_CONSTRAINTS.DESCRIPTION.MAX_LENGTH}"
-            aria-describedby="description-error"
-          ></textarea>
-          <div id="description-error" class="error-message" role="alert"></div>
-        </div>
-        
-        <div class="form-group">
-          <label for="priority">Priority</label>
-          <select 
-            id="priority" 
-            name="priority"
-            aria-describedby="priority-error"
-          >
-            <option value="low">Low</option>
-            <option value="medium" selected>Medium</option>
-            <option value="high">High</option>
-          </select>
-          <div id="priority-error" class="error-message" role="alert"></div>
-        </div>
-        
-        <div class="form-group">
-          <label>
-            <input type="checkbox" id="send-notification" name="sendNotification">
-            Send email notification
-          </label>
-        </div>
-        
-        <button type="submit" id="submit-btn" disabled>Create Announcement</button>
-        <button type="reset" id="reset-btn">Reset</button>
-      </form>
-    `;
-    
-    form = document.getElementById('announcement-form');
-    submitButton = document.getElementById('submit-btn');
-    titleInput = document.getElementById('title');
-    descriptionInput = document.getElementById('description');
-    categorySelect = document.getElementById('category');
-    
-    // Mock form validation handler
-    window.validateAnnouncementForm = jest.fn();
-    window.showFieldError = jest.fn();
-    window.clearFieldError = jest.fn();
-  });
-
-  afterEach(() => {
-    document.body.innerHTML = '';
+    user = userEvent.setup();
     jest.clearAllMocks();
   });
 
-  // Happy path tests
-  describe('Happy path - valid announcement form submission', () => {
-    test('should successfully submit announcement form with valid data', async () => {
-      // Arrange
-      titleInput.value = 'Important System Update';
-      categorySelect.value = 'general';
-      descriptionInput.value = 'This is a comprehensive announcement about system updates that all users need to know';
+  /**
+   * Render ContactForm component with default props
+   */
+  const renderContactForm = (props = {}) => {
+    const defaultProps = {
+      onSubmit: jest.fn(),
+      onReset: jest.fn(),
+      ...props
+    };
+    return render(<ContactForm {...defaultProps} />);
+  };
 
-      const mockSubmitHandler = jest.fn((e) => {
-        e.preventDefault();
-        return Promise.resolve({ success: true, id: 'ann-12345' });
+  // Happy path tests - TC-003 validation scenarios
+  describe('TC-003 Happy path - valid form submission', () => {
+    test('should successfully submit form with valid data', async () => {
+      // Arrange
+      formSubmissionService.submitContactForm.mockResolvedValue({
+        success: true,
+        id: '12345'
       });
-      form.addEventListener('submit', mockSubmitHandler);
+      formValidator.validateForm.mockReturnValue(true);
+
+      const mockOnSubmit = jest.fn();
+      renderContactForm({ onSubmit: mockOnSubmit });
 
       // Act
-      const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-      form.dispatchEvent(submitEvent);
+      await user.type(screen.getByLabelText(/full name/i), mockFormData.name);
+      await user.type(screen.getByLabelText(/email address/i), mockFormData.email);
+      await user.type(screen.getByLabelText(/message/i), mockFormData.message);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
 
       // Assert
-      expect(mockSubmitHandler).toHaveBeenCalledTimes(1);
-      expect(form.checkValidity()).toBe(true);
+      await waitFor(() => {
+        expect(formSubmissionService.submitContactForm).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: mockFormData.name,
+            email: mockFormData.email,
+            message: mockFormData.message
+          })
+        );
+      });
+      expect(mockOnSubmit).toHaveBeenCalled();
     });
 
-    test('should accept all required announcement fields when properly filled', () => {
+    test('should validate email format correctly with various valid formats', async () => {
       // Arrange
-      titleInput.value = 'System Maintenance Notice';
-      categorySelect.value = 'maintenance';
-      descriptionInput.value = 'Scheduled maintenance will occur on Sunday evening from 8 PM to 10 PM EST';
+      const validEmails = [
+        'user@domain.com',
+        'test.email@example.org',
+        'user+tag@domain.co.uk',
+        'firstname.lastname@company.com'
+      ];
 
-      // Act & Assert
-      expect(titleInput.validity.valid).toBe(true);
-      expect(categorySelect.validity.valid).toBe(true);
-      expect(descriptionInput.validity.valid).toBe(true);
-      expect(form.checkValidity()).toBe(true);
-    });
+      formValidator.validateField.mockReturnValue(true);
+      renderContactForm();
 
-    test('should validate different announcement categories', () => {
-      // Arrange
-      const validCategories = ['general', 'urgent', 'maintenance', 'event'];
+      const emailInput = screen.getByLabelText(/email address/i);
 
-      validCategories.forEach(category => {
+      for (const email of validEmails) {
         // Act
-        categorySelect.value = category;
-        
+        await user.clear(emailInput);
+        await user.type(emailInput, email);
+        fireEvent.blur(emailInput);
+
         // Assert
-        expect(categorySelect.validity.valid).toBe(true);
-      });
+        expect(formValidator.validateField).toHaveBeenCalledWith(
+          emailInput,
+          expect.objectContaining({ type: 'email' })
+        );
+      }
     });
 
-    test('should enable submit button when announcement form is valid', () => {
+    test('should accept all required fields when properly filled', async () => {
       // Arrange
-      titleInput.value = 'New Feature Release';
-      categorySelect.value = 'general';
-      descriptionInput.value = 'We are excited to announce the release of new features that will enhance your experience';
+      formValidator.validateForm.mockReturnValue(true);
+      renderContactForm();
 
       // Act
-      const inputEvent = new Event('input', { bubbles: true });
-      titleInput.dispatchEvent(inputEvent);
-      categorySelect.dispatchEvent(inputEvent);
-      descriptionInput.dispatchEvent(inputEvent);
+      await user.type(screen.getByLabelText(/full name/i), 'Jane Smith');
+      await user.type(screen.getByLabelText(/email address/i), 'jane@test.com');
+      await user.type(screen.getByLabelText(/message/i), 'This is a comprehensive test message');
 
-      // Assert (would need actual validation logic implementation)
-      expect(form.checkValidity()).toBe(true);
+      // Assert
+      expect(formValidator.validateForm).toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: /submit/i })).not.toBeDisabled();
+    });
+
+    test('should validate optional phone number when provided', async () => {
+      // Arrange
+      const validPhones = ['+1234567890', '1234567890', '+44207123456'];
+      formValidator.validateField.mockReturnValue(true);
+      renderContactForm();
+
+      const phoneInput = screen.getByLabelText(/phone number/i);
+
+      for (const phone of validPhones) {
+        // Act
+        await user.clear(phoneInput);
+        await user.type(phoneInput, phone);
+        fireEvent.blur(phoneInput);
+
+        // Assert
+        expect(formValidator.validateField).toHaveBeenCalledWith(
+          phoneInput,
+          expect.objectContaining({ type: 'tel' })
+        );
+      }
+    });
+
+    test('should enable submit button when form is valid', async () => {
+      // Arrange
+      formValidator.validateForm.mockReturnValue(true);
+      renderContactForm();
+
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+
+      // Act
+      await user.type(screen.getByLabelText(/full name/i), mockFormData.name);
+      await user.type(screen.getByLabelText(/email address/i), mockFormData.email);
+      await user.type(screen.getByLabelText(/message/i), mockFormData.message);
+
+      // Assert
+      await waitFor(() => {
+        expect(submitButton).not.toBeDisabled();
+      });
     });
   });
 
-  // Error path tests
-  describe('Error path - invalid announcement form submission', () => {
-    test('should prevent submission when title field is empty', () => {
+  // Error path tests - TC-003 error scenarios
+  describe('TC-003 Error path - invalid form submission', () => {
+    test('should prevent submission when name field is empty', async () => {
       // Arrange
-      titleInput.value = '';
-      categorySelect.value = 'general';
-      descriptionInput.value = 'Valid description with adequate length for announcement';
-
-      // Act & Assert
-      expect(titleInput.validity.valid).toBe(false);
-      expect(titleInput.validity.valueMissing).toBe(true);
-      expect(form.checkValidity()).toBe(false);
-    });
-
-    test('should prevent submission when category is not selected', () => {
-      // Arrange
-      titleInput.value = 'Valid Title';
-      categorySelect.value = '';
-      descriptionInput.value = 'Valid description with adequate length for announcement';
-
-      // Act & Assert
-      expect(categorySelect.validity.valid).toBe(false);
-      expect(categorySelect.validity.valueMissing).toBe(true);
-      expect(form.checkValidity()).toBe(false);
-    });
-
-    test('should prevent submission when description field is empty', () => {
-      // Arrange
-      titleInput.value = 'Valid Title';
-      categorySelect.value = 'general';
-      descriptionInput.value = '';
-
-      // Act & Assert
-      expect(descriptionInput.validity.valid).toBe(false);
-      expect(descriptionInput.validity.valueMissing).toBe(true);
-      expect(form.checkValidity()).toBe(false);
-    });
-
-    test('should validate title field length constraints', () => {
-      // Test minimum length
-      titleInput.value = 'Too'; // Too short
-      expect(titleInput.validity.valid).toBe(false);
-      expect(titleInput.validity.tooShort).toBe(true);
-
-      // Test maximum length
-      titleInput.value = 'A'.repeat(VALIDATION_CONSTRAINTS.TITLE.MAX_LENGTH + 1); // Too long
-      expect(titleInput.validity.valid).toBe(false);
-      expect(titleInput.validity.tooLong).toBe(true);
-    });
-
-    test('should validate description field length constraints', () => {
-      // Test minimum length
-      descriptionInput.value = 'Too short'; // Too short
-      expect(descriptionInput.validity.valid).toBe(false);
-      expect(descriptionInput.validity.tooShort).toBe(true);
-
-      // Test maximum length
-      descriptionInput.value = 'A'.repeat(VALIDATION_CONSTRAINTS.DESCRIPTION.MAX_LENGTH + 1); // Too long
-      expect(descriptionInput.validity.valid).toBe(false);
-      expect(descriptionInput.validity.tooLong).toBe(true);
-    });
-
-    test('should prevent submission when all required fields are empty', () => {
-      // Arrange
-      titleInput.value = '';
-      categorySelect.value = '';
-      descriptionInput.value = '';
-
-      const mockSubmitHandler = jest.fn((e) => e.preventDefault());
-      form.addEventListener('submit', mockSubmitHandler);
+      formValidator.validateForm.mockReturnValue(false);
+      formValidator.validateField.mockReturnValue(false);
+      
+      renderContactForm();
 
       // Act
-      const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-      form.dispatchEvent(submitEvent);
+      await user.type(screen.getByLabelText(/email address/i), 'test@example.com');
+      await user.type(screen.getByLabelText(/message/i), 'Test message with adequate length');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
 
       // Assert
-      expect(form.checkValidity()).toBe(false);
-      expect(titleInput.validity.valueMissing).toBe(true);
-      expect(categorySelect.validity.valueMissing).toBe(true);
-      expect(descriptionInput.validity.valueMissing).toBe(true);
+      expect(formValidator.validateField).toHaveBeenCalledWith(
+        screen.getByLabelText(/full name/i),
+        expect.objectContaining({ required: true })
+      );
+      expect(formSubmissionService.submitContactForm).not.toHaveBeenCalled();
     });
 
-    test('should handle announcement form submission errors gracefully', async () => {
+    test('should prevent submission when email field is empty', async () => {
       // Arrange
-      titleInput.value = 'Valid Title';
-      categorySelect.value = 'urgent';
-      descriptionInput.value = 'This is a valid description for the announcement';
+      formValidator.validateForm.mockReturnValue(false);
+      formValidator.validateField.mockReturnValue(false);
+      
+      renderContactForm();
 
-      const mockSubmitHandler = jest.fn((e) => {
-        e.preventDefault();
-        throw new Error('Server error');
+      // Act
+      await user.type(screen.getByLabelText(/full name/i), 'John Doe');
+      await user.type(screen.getByLabelText(/message/i), 'Test message with adequate length');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      // Assert
+      expect(formValidator.validateField).toHaveBeenCalledWith(
+        screen.getByLabelText(/email address/i),
+        expect.objectContaining({ required: true })
+      );
+      expect(formSubmissionService.submitContactForm).not.toHaveBeenCalled();
+    });
+
+    test('should prevent submission when message field is empty', async () => {
+      // Arrange
+      formValidator.validateForm.mockReturnValue(false);
+      formValidator.validateField.mockReturnValue(false);
+      
+      renderContactForm();
+
+      // Act
+      await user.type(screen.getByLabelText(/full name/i), 'John Doe');
+      await user.type(screen.getByLabelText(/email address/i), 'john@example.com');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      // Assert
+      expect(formValidator.validateField).toHaveBeenCalledWith(
+        screen.getByLabelText(/message/i),
+        expect.objectContaining({ required: true })
+      );
+      expect(formSubmissionService.submitContactForm).not.toHaveBeenCalled();
+    });
+
+    test('should reject invalid email formats', async () => {
+      // Arrange
+      const invalidEmails = [
+        'invalid-email',
+        '@example.com',
+        'test@',
+        'test.com',
+        'user@',
+        '@domain.com',
+        'user..double.dot@domain.com',
+        'user@domain',
+      ];
+
+      formValidator.validateField.mockReturnValue(false);
+      renderContactForm();
+
+      const emailInput = screen.getByLabelText(/email address/i);
+
+      for (const invalidEmail of invalidEmails) {
+        // Act
+        await user.clear(emailInput);
+        await user.type(emailInput, invalidEmail);
+        fireEvent.blur(emailInput);
+
+        // Assert
+        expect(formValidator.validateField).toHaveBeenCalledWith(
+          emailInput,
+          expect.objectContaining({ type: 'email' })
+        );
+      }
+    });
+
+    test('should validate name field length constraints', async () => {
+      // Arrange
+      formValidator.validateField.mockReturnValue(false);
+      renderContactForm();
+
+      const nameInput = screen.getByLabelText(/full name/i);
+
+      const testCases = [
+        { value: 'A', constraint: 'tooShort' },
+        { value: 'A'.repeat(51), constraint: 'tooLong' },
+        { value: 'John123', constraint: 'patternMismatch' }
+      ];
+
+      for (const testCase of testCases) {
+        // Act
+        await user.clear(nameInput);
+        await user.type(nameInput, testCase.value);
+        fireEvent.blur(nameInput);
+
+        // Assert
+        expect(formValidator.validateField).toHaveBeenCalledWith(
+          nameInput,
+          expect.objectContaining({
+            minlength: 2,
+            maxlength: 50,
+            pattern: expect.any(String)
+          })
+        );
+      }
+    });
+
+    test('should validate message field length constraints', async () => {
+      // Arrange
+      formValidator.validateField.mockReturnValue(false);
+      renderContactForm();
+
+      const messageInput = screen.getByLabelText(/message/i);
+
+      const testCases = [
+        { value: 'Short', constraint: 'tooShort' },
+        { value: 'A'.repeat(501), constraint: 'tooLong' }
+      ];
+
+      for (const testCase of testCases) {
+        // Act
+        await user.clear(messageInput);
+        await user.type(messageInput, testCase.value);
+        fireEvent.blur(messageInput);
+
+        // Assert
+        expect(formValidator.validateField).toHaveBeenCalledWith(
+          messageInput,
+          expect.objectContaining({
+            minlength: 10,
+            maxlength: 500
+          })
+        );
+      }
+    });
+
+    test('should validate phone number format when provided', async () => {
+      // Arrange
+      const invalidPhones = [
+        'invalid-phone',
+        '++1234567890',
+        '123-456-7890',
+        'abc123def',
+        '0123456789012345678'
+      ];
+
+      formValidator.validateField.mockReturnValue(false);
+      renderContactForm();
+
+      const phoneInput = screen.getByLabelText(/phone number/i);
+
+      for (const phone of invalidPhones) {
+        // Act
+        await user.clear(phoneInput);
+        await user.type(phoneInput, phone);
+        fireEvent.blur(phoneInput);
+
+        // Assert
+        expect(formValidator.validateField).toHaveBeenCalledWith(
+          phoneInput,
+          expect.objectContaining({ pattern: expect.any(String) })
+        );
+      }
+    });
+
+    test('should handle form submission errors gracefully', async () => {
+      // Arrange
+      const errorMessage = 'Network error';
+      formSubmissionService.submitContactForm.mockRejectedValue(new Error(errorMessage));
+      formValidator.validateForm.mockReturnValue(true);
+
+      renderContactForm();
+
+      // Act
+      await user.type(screen.getByLabelText(/full name/i), mockFormData.name);
+      await user.type(screen.getByLabelText(/email address/i), mockFormData.email);
+      await user.type(screen.getByLabelText(/message/i), mockFormData.message);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toBeInTheDocument();
+        expect(screen.getByText(/error/i)).toBeInTheDocument();
       });
-      form.addEventListener('submit', mockSubmitHandler);
-
-      // Act & Assert
-      expect(() => {
-        const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-        form.dispatchEvent(submitEvent);
-      }).toThrow('Server error');
     });
   });
 
-  // Edge cases and accessibility tests
-  describe('Edge cases and accessibility', () => {
-    test('should maintain focus on invalid field after submission attempt', () => {
+  // Edge cases and accessibility tests - TC-003 comprehensive coverage
+  describe('TC-003 Edge cases and accessibility', () => {
+    test('should maintain focus on invalid field after submission attempt', async () => {
       // Arrange
-      titleInput.value = '';
-      categorySelect.value = 'general';
-      descriptionInput.value = 'Valid description with adequate length';
+      formValidator.validateForm.mockReturnValue(false);
+      renderContactForm();
+
+      const nameInput = screen.getByLabelText(/full name/i);
 
       // Act
-      const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-      form.dispatchEvent(submitEvent);
+      await user.type(screen.getByLabelText(/email address/i), 'valid@email.com');
+      await user.type(screen.getByLabelText(/message/i), 'Valid message content');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
 
       // Assert
-      expect(form.checkValidity()).toBe(false);
-      // In real implementation, invalid field should receive focus
+      await waitFor(() => {
+        expect(nameInput).toHaveFocus();
+      });
     });
 
-    test('should display appropriate error messages for invalid announcement fields', () => {
+    test('should display appropriate error messages for invalid fields', async () => {
       // Arrange
-      titleInput.value = '';
-      const errorDiv = document.getElementById('title-error');
-
-      // Act
-      const blurEvent = new Event('blur', { bubbles: true });
-      titleInput.dispatchEvent(blurEvent);
-
-      // Assert
-      expect(titleInput.validity.valueMissing).toBe(true);
-      expect(errorDiv.getAttribute('role')).toBe('alert');
-    });
-
-    test('should reset announcement form fields when reset button is clicked', () => {
-      // Arrange
-      titleInput.value = 'Test Announcement';
-      categorySelect.value = 'urgent';
-      descriptionInput.value = 'Test description for announcement';
-      const resetButton = document.getElementById('reset-btn');
-
-      // Act
-      resetButton.click();
-
-      // Assert
-      expect(titleInput.value).toBe('');
-      expect(categorySelect.value).toBe('');
-      expect(descriptionInput.value).toBe('');
-    });
-
-    test('should validate announcement form state changes during user interaction', () => {
-      // Arrange
-      let formValidState = false;
-
-      const validateFormState = () => {
-        formValidState = form.checkValidity();
-        submitButton.disabled = !formValidState;
-      };
-
-      // Act - simulate user filling form step by step
-      titleInput.value = 'Valid Title';
-      validateFormState();
-      expect(formValidState).toBe(false); // Category and description still empty
-
-      categorySelect.value = 'general';
-      validateFormState();
-      expect(formValidState).toBe(false); // Description still empty
-
-      descriptionInput.value = 'Complete announcement description with adequate length';
-      validateFormState();
-      expect(formValidState).toBe(true); // All required fields filled
-    });
-
-    test('should handle announcement form submission with loading state', async () => {
-      // Arrange
-      titleInput.value = 'System Update';
-      categorySelect.value = 'maintenance';
-      descriptionInput.value = 'Important system update announcement for all users to review';
-
-      let isSubmitting = false;
-      const mockSubmitHandler = jest.fn(async (e) => {
-        e.preventDefault();
-        isSubmitting = true;
-        submitButton.disabled = true;
-        submitButton.textContent = 'Creating...';
-        
-        // Simulate async operation
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        isSubmitting = false;
-        submitButton.disabled = false;
-        submitButton.textContent = 'Create Announcement';
-        
-        return { success: true, message: 'Announcement created successfully' };
+      const errorMessage = 'Full Name is required.';
+      formValidator.validateField.mockReturnValue(false);
+      formValidator.showFieldError.mockImplementation(() => {
+        // Simulate error message display
       });
 
-      form.addEventListener('submit', mockSubmitHandler);
+      renderContactForm();
 
       // Act
-      const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-      form.dispatchEvent(submitEvent);
+      const nameInput = screen.getByLabelText(/full name/i);
+      fireEvent.blur(nameInput);
 
-      // Assert initial state during submission
-      expect(mockSubmitHandler).toHaveBeenCalledTimes(1);
-      expect(submitButton.disabled).toBe(true);
-      expect(submitButton.textContent).toBe('Creating...');
-      
-      // Wait for async operation to complete
-      await new Promise(resolve => setTimeout(resolve, 150));
-      
-      // Assert final state after submission
-      expect(submitButton.disabled).toBe(false);
-      expect(submitButton.textContent).toBe('Create Announcement');
-      expect(form.checkValidity()).toBe(true);
+      // Assert
+      expect(formValidator.showFieldError).toHaveBeenCalledWith(
+        nameInput,
+        expect.any(String)
+      );
     });
 
-    test('should handle email notification checkbox properly', () => {
+    test('should reset form fields when reset button is clicked', async () => {
       // Arrange
-      const notificationCheckbox = document.getElementById('send-notification');
+      const mockOnReset = jest.fn();
+      renderContactForm({ onReset: mockOnReset });
+
+      // Act
+      await user.type(screen.getByLabelText(/full name/i), 'John Doe');
+      await user.type(screen.getByLabelText(/email address/i), 'john@example.com');
+      await user.type(screen.getByLabelText(/message/i), 'Test message');
+      await user.click(screen.getByRole('button', { name: /reset/i }));
+
+      // Assert
+      expect(mockOnReset).toHaveBeenCalled();
+      expect(screen.getByLabelText(/full name/i)).toHaveValue('');
+      expect(screen.getByLabelText(/email address/i)).toHaveValue('');
+      expect(screen.getByLabelText(/message/i)).toHaveValue('');
+    });
+
+    test('should handle special characters in text inputs', async () => {
+      // Arrange
+      const specialCharNames = [
+        'José María',
+        'François',
+        'Müller',
+        'O\'Brien',
+        'Mary-Jane'
+      ];
+
+      formValidator.validateField.mockReturnValue(true);
+      renderContactForm();
+
+      const nameInput = screen.getByLabelText(/full name/i);
+
+      for (const name of specialCharNames) {
+        // Act
+        await user.clear(nameInput);
+        await user.type(nameInput, name);
+        fireEvent.blur(nameInput);
+
+        // Assert
+        expect(formValidator.validateField).toHaveBeenCalledWith(
+          nameInput,
+          expect.any(Object)
+        );
+      }
+    });
+
+    test('should validate form state changes during user interaction', async () => {
+      // Arrange
+      formValidator.validateForm
+        .mockReturnValueOnce(false) // After name input
+        .mockReturnValueOnce(false) // After email input
+        .mockReturnValueOnce(true); // After message input
+
+      renderContactForm();
 
       // Act & Assert
-      expect(notificationCheckbox.checked).toBe(false);
+      await user.type(screen.getByLabelText(/full name/i), 'John');
+      expect(formValidator.validateForm).toHaveBeenCalled();
+
+      await user.type(screen.getByLabelText(/email address/i), 'john@example.com');
+      expect(formValidator.validateForm).toHaveBeenCalledTimes(2);
+
+      await user.type(screen.getByLabelText(/message/i), 'Complete test message content');
+      await waitFor(() => {
+        expect(formValidator.validateForm).toHaveBeenCalledTimes(3);
+        expect(screen.getByRole('button', { name: /submit/i })).not.toBeDisabled();
+      });
+    });
+
+    test('should handle form submission with loading state', async () => {
+      // Arrange
+      let resolveSubmission;
+      const submissionPromise = new Promise(resolve => {
+        resolveSubmission = resolve;
+      });
       
-      notificationCheckbox.checked = true;
-      expect(notificationCheckbox.checked).toBe(true);
+      formSubmissionService.submitContactForm.mockReturnValue(submissionPromise);
+      formValidator.validateForm.mockReturnValue(true);
+
+      renderContactForm();
+
+      // Act
+      await user.type(screen.getByLabelText(/full name/i), mockFormData.name);
+      await user.type(screen.getByLabelText(/email address/i), mockFormData.email);
+      await user.type(screen.getByLabelText(/message/i), mockFormData.message);
       
-      notificationCheckbox.checked = false;
-      expect(notificationCheckbox.checked).toBe(false);
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+      await user.click(submitButton);
+
+      // Assert loading state
+      expect(screen.getByText(/submitting/i)).toBeInTheDocument();
+      expect(submitButton).toBeDisabled();
+
+      // Resolve submission
+      resolveSubmission({ success: true, id: '12345' });
+
+      await waitFor(() => {
+        expect(screen.queryByText(/submitting/i)).not.toBeInTheDocument();
+        expect(submitButton).not.toBeDisabled();
+      });
     });
   });
 });

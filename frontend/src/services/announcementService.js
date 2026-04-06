@@ -1,12 +1,22 @@
 import api from './api';
 
+// API endpoints configuration - can be overridden by environment variables
+const API_ENDPOINTS = {
+  ANNOUNCEMENTS: process.env.REACT_APP_ANNOUNCEMENTS_ENDPOINT || '/announcements',
+  ADMIN_ANNOUNCEMENTS: process.env.REACT_APP_ADMIN_ANNOUNCEMENTS_ENDPOINT || '/admin/announcements',
+  ADMIN_ANNOUNCEMENTS_STATS: process.env.REACT_APP_ADMIN_ANNOUNCEMENTS_STATS_ENDPOINT || '/admin/announcements/stats',
+  ADMIN_ANNOUNCEMENTS_SEARCH: process.env.REACT_APP_ADMIN_ANNOUNCEMENTS_SEARCH_ENDPOINT || '/admin/announcements/search',
+  ADMIN_ANNOUNCEMENTS_BULK_DELETE: process.env.REACT_APP_ADMIN_ANNOUNCEMENTS_BULK_DELETE_ENDPOINT || '/admin/announcements/bulk-delete',
+  ADMIN_ANNOUNCEMENTS_CHECK_PERMISSION: process.env.REACT_APP_ADMIN_ANNOUNCEMENTS_CHECK_PERMISSION_ENDPOINT || '/admin/announcements/check-permission'
+};
+
 class AnnouncementService {
   /**
    * Get all announcements (for employees to view on dashboard)
    */
   async getAllAnnouncements() {
     try {
-      const response = await api.get('/announcements');
+      const response = await api.get(API_ENDPOINTS.ANNOUNCEMENTS);
       return response.data;
     } catch (error) {
       console.error('Error fetching announcements:', error);
@@ -19,7 +29,7 @@ class AnnouncementService {
    */
   async getAnnouncementsForAdmin() {
     try {
-      const response = await api.get('/admin/announcements');
+      const response = await api.get(API_ENDPOINTS.ADMIN_ANNOUNCEMENTS);
       return response.data;
     } catch (error) {
       console.error('Error fetching admin announcements:', error);
@@ -32,7 +42,7 @@ class AnnouncementService {
    */
   async getAnnouncementById(id) {
     try {
-      const response = await api.get(`/announcements/${id}`);
+      const response = await api.get(`${API_ENDPOINTS.ANNOUNCEMENTS}/${id}`);
       return response.data;
     } catch (error) {
       console.error('Error fetching announcement:', error);
@@ -45,7 +55,7 @@ class AnnouncementService {
    */
   async createAnnouncement(announcementData) {
     try {
-      const response = await api.post('/admin/announcements', announcementData);
+      const response = await api.post(API_ENDPOINTS.ADMIN_ANNOUNCEMENTS, announcementData);
       return response.data;
     } catch (error) {
       console.error('Error creating announcement:', error);
@@ -58,7 +68,7 @@ class AnnouncementService {
    */
   async updateAnnouncement(id, announcementData) {
     try {
-      const response = await api.put(`/admin/announcements/${id}`, announcementData);
+      const response = await api.put(`${API_ENDPOINTS.ADMIN_ANNOUNCEMENTS}/${id}`, announcementData);
       return response.data;
     } catch (error) {
       console.error('Error updating announcement:', error);
@@ -71,7 +81,7 @@ class AnnouncementService {
    */
   async deleteAnnouncement(id) {
     try {
-      const response = await api.delete(`/admin/announcements/${id}`);
+      const response = await api.delete(`${API_ENDPOINTS.ADMIN_ANNOUNCEMENTS}/${id}`);
       return response.data;
     } catch (error) {
       console.error('Error deleting announcement:', error);
@@ -84,7 +94,7 @@ class AnnouncementService {
    */
   async toggleAnnouncementStatus(id) {
     try {
-      const response = await api.patch(`/admin/announcements/${id}/toggle-status`);
+      const response = await api.patch(`${API_ENDPOINTS.ADMIN_ANNOUNCEMENTS}/${id}/toggle-status`);
       return response.data;
     } catch (error) {
       console.error('Error toggling announcement status:', error);
@@ -97,7 +107,7 @@ class AnnouncementService {
    */
   async getAnnouncementStats() {
     try {
-      const response = await api.get('/admin/announcements/stats');
+      const response = await api.get(API_ENDPOINTS.ADMIN_ANNOUNCEMENTS_STATS);
       return response.data;
     } catch (error) {
       console.error('Error fetching announcement stats:', error);
@@ -114,7 +124,7 @@ class AnnouncementService {
         q: query,
         ...filters
       });
-      const response = await api.get(`/admin/announcements/search?${params}`);
+      const response = await api.get(`${API_ENDPOINTS.ADMIN_ANNOUNCEMENTS_SEARCH}?${params}`);
       return response.data;
     } catch (error) {
       console.error('Error searching announcements:', error);
@@ -127,7 +137,7 @@ class AnnouncementService {
    */
   async bulkDeleteAnnouncements(announcementIds) {
     try {
-      const response = await api.post('/admin/announcements/bulk-delete', {
+      const response = await api.post(API_ENDPOINTS.ADMIN_ANNOUNCEMENTS_BULK_DELETE, {
         ids: announcementIds
       });
       return response.data;
@@ -189,7 +199,7 @@ class AnnouncementService {
    */
   async checkManagementPermission() {
     try {
-      const response = await api.get('/admin/announcements/check-permission');
+      const response = await api.get(API_ENDPOINTS.ADMIN_ANNOUNCEMENTS_CHECK_PERMISSION);
       return response.data.hasPermission;
     } catch (error) {
       console.error('Error checking announcement permission:', error);

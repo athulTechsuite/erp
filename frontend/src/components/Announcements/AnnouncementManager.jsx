@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import './AnnouncementManager.css';
 
 const AnnouncementManager = () => {
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
     content: '',
@@ -12,76 +13,16 @@ const AnnouncementManager = () => {
   });
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [userPermissions, setUserPermissions] = useState({
-    canCreate: false,
-    canEdit: false,
-    canDelete: false,
-    isAdmin: false
-  });
   const requestQueueRef = useRef([]);
   const isProcessingRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    fetchAnnouncements();
-    fetchUserPermissions();
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
-
-  // Fetch user permissions from backend
-  const fetchUserPermissions = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/user/permissions', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const permissions = await response.json();
-        setUserPermissions(permissions);
-      }
-    } catch (error) {
-      console.error('Failed to fetch user permissions:', error);
-    }
-  };
-
-  // Check if user can edit specific announcement
-  const canEditAnnouncement = (announcement) => {
-    if (!announcement) return false;
-    
-    // Admin can edit all announcements
-    if (userPermissions.isAdmin) return true;
-    
-    // Users can only edit their own announcements if they have edit permission
-    return userPermissions.canEdit && announcement.createdBy?.id === getCurrentUserId();
-  };
-
-  // Check if user can delete specific announcement
-  const canDeleteAnnouncement = (announcement) => {
-    if (!announcement) return false;
-    
-    // Admin can delete all announcements
-    if (userPermissions.isAdmin) return true;
-    
-    // Users can only delete their own announcements if they have delete permission
-    return userPermissions.canDelete && announcement.createdBy?.id === getCurrentUserId();
-  };
-
-  // Get current user ID from token or user context
-  const getCurrentUserId = () => {
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) return null;
-      
-      // Decode JWT token to get user ID (assuming standard JWT structure)
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      return payload.userId || payload.id;
-    } catch (error) {
-      console.error('Failed to get current user ID:', error);
-      return null;
-    }
-  };
 
   // Input sanitization utility
   const sanitizeInput = (input) => {
@@ -95,8 +36,15 @@ const AnnouncementManager = () => {
       .slice(0, input === formData.title ? 200 : 2000); // Enforce length limits
   };
 
+  // Safe state update utility
+  const safeSetState = useCallback((setter, value) => {
+    if (isMountedRef.current) {
+      setter(value);
+    }
+  }, []);
+
   // Request queue processor to handle race conditions
-  const processRequestQueue = async () => {
+  const processRequestQueue = useCallback(async () => {
     if (isProcessingRef.current || requestQueueRef.current.length === 0) {
       return;
     }
@@ -109,14 +57,17 @@ const AnnouncementManager = () => {
         await request();
       } catch (error) {
         console.error('Request failed:', error);
+        if (isMountedRef.current) {
+          toast.error('Operation failed. Please try again.');
+        }
       }
     }
     
     isProcessingRef.current = false;
-  };
+  }, []);
 
   // Add request to queue
-  const queueRequest = (requestFn) => {
+  const queueRequest = useCallback((requestFn) => {
     return new Promise((resolve, reject) => {
       requestQueueRef.current.push(async () => {
         try {
@@ -128,11 +79,13 @@ const AnnouncementManager = () => {
       });
       processRequestQueue();
     });
-  };
+  }, [processRequestQueue]);
 
-  const fetchAnnouncements = async () => {
+  const fetchAnnouncements = useCallback(async () => {
+    if (!isMountedRef.current) return;
+    
     try {
-      setLoading(true);
+      safeSetState(setLoading, true);
       // TODO: Consider using httpOnly cookies for token storage to prevent XSS attacks
       const token = localStorage.getItem('token');
       const response = await fetch('/api/announcements/admin', {
@@ -144,20 +97,33 @@ const AnnouncementManager = () => {
 
       if (!response.ok) {
         if (response.status === 403) {
-          toast.error('Access denied. Admin privileges required.');
+          if (isMountedRef.current) {
+            toast.error('Access denied. Admin privileges required.');
+          }
           return;
         }
         throw new Error('Failed to fetch announcements');
       }
 
       const data = await response.json();
-      setAnnouncements(data);
+      if (isMountedRef.current) {
+        setAnnouncements(data);
+      }
     } catch (error) {
-      toast.error('Error loading announcements: ' + error.message);
+      if (isMountedRef.current) {
+        toast.error('Error loading announcements: ' + error.message);
+        setAnnouncements([]);
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        safeSetState(setLoading, false);
+      }
     }
-  };
+  }, [safeSetState]);
+
+  useEffect(() => {
+    fetchAnnouncements();
+  }, [fetchAnnouncements]);
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -170,17 +136,7 @@ const AnnouncementManager = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Authorization check for editing
-    if (editingId) {
-      const announcement = announcements.find(ann => ann.id === editingId);
-      if (!canEditAnnouncement(announcement)) {
-        toast.error('You do not have permission to edit this announcement');
-        return;
-      }
-    } else if (!userPermissions.canCreate) {
-      toast.error('You do not have permission to create announcements');
-      return;
-    }
+    if (submitting || !isMountedRef.current) return;
     
     // Sanitize inputs
     const sanitizedTitle = sanitizeInput(formData.title);
@@ -209,59 +165,66 @@ const AnnouncementManager = () => {
     };
 
     const submitRequest = async () => {
-      setLoading(true);
-      const token = localStorage.getItem('token');
-      const url = editingId 
-        ? `/api/announcements/${editingId}` 
-        : '/api/announcements';
+      if (!isMountedRef.current) return;
       
-      const method = editingId ? 'PUT' : 'POST';
+      safeSetState(setSubmitting, true);
+      try {
+        const token = localStorage.getItem('token');
+        const url = editingId 
+          ? `/api/announcements/${editingId}` 
+          : '/api/announcements';
+        
+        const method = editingId ? 'PUT' : 'POST';
 
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(sanitizedFormData)
-      });
+        const response = await fetch(url, {
+          method,
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(sanitizedFormData)
+        });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to save announcement');
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to save announcement');
+        }
+
+        const savedAnnouncement = await response.json();
+        
+        if (!isMountedRef.current) return;
+        
+        if (editingId) {
+          setAnnouncements(prev => 
+            prev.map(ann => ann.id === editingId ? savedAnnouncement : ann)
+          );
+          toast.success('Announcement updated successfully');
+        } else {
+          setAnnouncements(prev => [savedAnnouncement, ...prev]);
+          toast.success('Announcement created successfully');
+        }
+
+        resetForm();
+      } finally {
+        if (isMountedRef.current) {
+          safeSetState(setSubmitting, false);
+        }
       }
-
-      const savedAnnouncement = await response.json();
-      
-      if (editingId) {
-        setAnnouncements(prev => 
-          prev.map(ann => ann.id === editingId ? savedAnnouncement : ann)
-        );
-        toast.success('Announcement updated successfully');
-      } else {
-        setAnnouncements(prev => [savedAnnouncement, ...prev]);
-        toast.success('Announcement created successfully');
-      }
-
-      resetForm();
-      setLoading(false);
     };
 
     try {
       await queueRequest(submitRequest);
     } catch (error) {
-      toast.error(error.message);
-      setLoading(false);
+      if (isMountedRef.current) {
+        toast.error(error.message);
+        safeSetState(setSubmitting, false);
+      }
     }
   };
 
   const handleEdit = (announcement) => {
-    // Authorization check before allowing edit
-    if (!canEditAnnouncement(announcement)) {
-      toast.error('You do not have permission to edit this announcement');
-      return;
-    }
-
+    if (submitting) return;
+    
     setFormData({
       title: announcement.title,
       content: announcement.content,
@@ -272,81 +235,94 @@ const AnnouncementManager = () => {
   };
 
   const handleDelete = async (id) => {
-    const announcement = announcements.find(ann => ann.id === id);
+    if (submitting || !isMountedRef.current) return;
     
-    // Authorization check before allowing delete
-    if (!canDeleteAnnouncement(announcement)) {
-      toast.error('You do not have permission to delete this announcement');
-      return;
-    }
-
     if (!window.confirm('Are you sure you want to delete this announcement?')) {
       return;
     }
 
     const deleteRequest = async () => {
-      setLoading(true);
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/announcements/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
+      if (!isMountedRef.current) return;
+      
+      safeSetState(setSubmitting, true);
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`/api/announcements/${id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to delete announcement');
         }
-      });
 
-      if (!response.ok) {
-        throw new Error('Failed to delete announcement');
+        if (isMountedRef.current) {
+          setAnnouncements(prev => prev.filter(ann => ann.id !== id));
+          toast.success('Announcement deleted successfully');
+        }
+      } finally {
+        if (isMountedRef.current) {
+          safeSetState(setSubmitting, false);
+        }
       }
-
-      setAnnouncements(prev => prev.filter(ann => ann.id !== id));
-      toast.success('Announcement deleted successfully');
-      setLoading(false);
     };
 
     try {
       await queueRequest(deleteRequest);
     } catch (error) {
-      toast.error(error.message);
-      setLoading(false);
+      if (isMountedRef.current) {
+        toast.error(error.message);
+        safeSetState(setSubmitting, false);
+      }
     }
   };
 
   const toggleStatus = async (id, currentStatus) => {
-    const announcement = announcements.find(ann => ann.id === id);
+    if (submitting || !isMountedRef.current) return;
     
-    // Authorization check before allowing status toggle
-    if (!canEditAnnouncement(announcement)) {
-      toast.error('You do not have permission to modify this announcement');
-      return;
-    }
-
     const toggleRequest = async () => {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/announcements/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ isActive: !currentStatus })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update announcement status');
-      }
-
-      const updatedAnnouncement = await response.json();
-      setAnnouncements(prev => 
-        prev.map(ann => ann.id === id ? updatedAnnouncement : ann)
-      );
+      if (!isMountedRef.current) return;
       
-      toast.success(`Announcement ${!currentStatus ? 'activated' : 'deactivated'}`);
+      safeSetState(setSubmitting, true);
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`/api/announcements/${id}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ isActive: !currentStatus })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to update announcement status');
+        }
+
+        const updatedAnnouncement = await response.json();
+        
+        if (isMountedRef.current) {
+          setAnnouncements(prev => 
+            prev.map(ann => ann.id === id ? updatedAnnouncement : ann)
+          );
+          toast.success(`Announcement ${!currentStatus ? 'activated' : 'deactivated'}`);
+        }
+      } finally {
+        if (isMountedRef.current) {
+          safeSetState(setSubmitting, false);
+        }
+      }
     };
 
     try {
       await queueRequest(toggleRequest);
     } catch (error) {
-      toast.error(error.message);
+      if (isMountedRef.current) {
+        toast.error(error.message);
+        safeSetState(setSubmitting, false);
+      }
     }
   };
 
@@ -364,22 +340,22 @@ const AnnouncementManager = () => {
     return new Date(dateString).toLocaleString();
   };
 
+  const isFormDisabled = loading || submitting;
+
   return (
     <div className="announcement-manager">
       <div className="announcement-manager-header">
         <h2>Manage Announcements</h2>
-        {userPermissions.canCreate && (
-          <button
-            className="btn btn-primary"
-            onClick={() => setShowForm(!showForm)}
-            disabled={loading}
-          >
-            {showForm ? 'Cancel' : 'Create New Announcement'}
-          </button>
-        )}
+        <button
+          className="btn btn-primary"
+          onClick={() => setShowForm(!showForm)}
+          disabled={isFormDisabled}
+        >
+          {showForm ? 'Cancel' : 'Create New Announcement'}
+        </button>
       </div>
 
-      {showForm && userPermissions.canCreate && (
+      {showForm && (
         <div className="announcement-form-container">
           <h3>{editingId ? 'Edit Announcement' : 'Create New Announcement'}</h3>
           <form onSubmit={handleSubmit} className="announcement-form">
@@ -394,6 +370,7 @@ const AnnouncementManager = () => {
                 required
                 maxLength="200"
                 placeholder="Enter announcement title"
+                disabled={isFormDisabled}
               />
             </div>
 
@@ -408,6 +385,7 @@ const AnnouncementManager = () => {
                 rows="6"
                 maxLength="2000"
                 placeholder="Enter announcement content"
+                disabled={isFormDisabled}
               />
             </div>
 
@@ -418,6 +396,7 @@ const AnnouncementManager = () => {
                   name="isActive"
                   checked={formData.isActive}
                   onChange={handleInputChange}
+                  disabled={isFormDisabled}
                 />
                 <span>Publish immediately</span>
               </label>
@@ -427,15 +406,15 @@ const AnnouncementManager = () => {
               <button
                 type="submit"
                 className="btn btn-primary"
-                disabled={loading}
+                disabled={isFormDisabled}
               >
-                {loading ? 'Saving...' : editingId ? 'Update' : 'Publish'}
+                {submitting ? 'Saving...' : editingId ? 'Update' : 'Publish'}
               </button>
               <button
                 type="button"
                 className="btn btn-secondary"
                 onClick={resetForm}
-                disabled={loading}
+                disabled={isFormDisabled}
               >
                 Cancel
               </button>
@@ -480,33 +459,27 @@ const AnnouncementManager = () => {
             </div>
 
             <div className="announcement-actions">
-              {canEditAnnouncement(announcement) && (
-                <button
-                  className="btn btn-sm btn-secondary"
-                  onClick={() => handleEdit(announcement)}
-                  disabled={loading}
-                >
-                  Edit
-                </button>
-              )}
-              {canEditAnnouncement(announcement) && (
-                <button
-                  className={`btn btn-sm ${announcement.isActive ? 'btn-warning' : 'btn-success'}`}
-                  onClick={() => toggleStatus(announcement.id, announcement.isActive)}
-                  disabled={loading}
-                >
-                  {announcement.isActive ? 'Deactivate' : 'Activate'}
-                </button>
-              )}
-              {canDeleteAnnouncement(announcement) && (
-                <button
-                  className="btn btn-sm btn-danger"
-                  onClick={() => handleDelete(announcement.id)}
-                  disabled={loading}
-                >
-                  Delete
-                </button>
-              )}
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={() => handleEdit(announcement)}
+                disabled={isFormDisabled}
+              >
+                Edit
+              </button>
+              <button
+                className={`btn btn-sm ${announcement.isActive ? 'btn-warning' : 'btn-success'}`}
+                onClick={() => toggleStatus(announcement.id, announcement.isActive)}
+                disabled={isFormDisabled}
+              >
+                {announcement.isActive ? 'Deactivate' : 'Activate'}
+              </button>
+              <button
+                className="btn btn-sm btn-danger"
+                onClick={() => handleDelete(announcement.id)}
+                disabled={isFormDisabled}
+              >
+                Delete
+              </button>
             </div>
           </div>
         ))}

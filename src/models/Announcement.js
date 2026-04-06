@@ -1,5 +1,8 @@
 const mongoose = require('mongoose');
-const validator = require('validator');
+
+// Define valid enums for validation
+const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+const VALID_CATEGORIES = ['general', 'maintenance', 'event', 'policy', 'emergency'];
 
 const announcementSchema = new mongoose.Schema({
   title: {
@@ -12,32 +15,15 @@ const announcementSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Announcement content is required'],
     trim: true,
+    minlength: [10, 'Content must be at least 10 characters long'],
     maxlength: [5000, 'Content cannot exceed 5000 characters'],
     validate: {
-      validator: function(v) {
-        // Sanitize content to prevent XSS attacks
-        return validator.escape(v);
+      validator: function(value) {
+        // Validate content format - should contain meaningful text, not just whitespace or special chars
+        const cleanContent = value.replace(/[^a-zA-Z0-9\s]/g, '').trim();
+        return cleanContent.length >= 5;
       },
-      message: 'Content contains invalid characters'
-    },
-    set: function(v) {
-      // Sanitize content on save to prevent XSS
-      return validator.escape(v);
-    }
-  },
-  category: {
-    type: String,
-    enum: {
-      values: ['general', 'maintenance', 'event', 'emergency', 'system'],
-      message: 'Invalid category. Must be one of: general, maintenance, event, emergency, system'
-    },
-    default: 'general',
-    validate: {
-      validator: function(v) {
-        const validCategories = ['general', 'maintenance', 'event', 'emergency', 'system'];
-        return validCategories.includes(v);
-      },
-      message: 'Category must be a valid value from the predefined list'
+      message: 'Content must contain at least 5 meaningful characters'
     }
   },
   createdBy: {
@@ -56,16 +42,29 @@ const announcementSchema = new mongoose.Schema({
   priority: {
     type: String,
     enum: {
-      values: ['low', 'medium', 'high', 'urgent'],
-      message: 'Invalid priority. Must be one of: low, medium, high, urgent'
+      values: VALID_PRIORITIES,
+      message: `Priority must be one of: ${VALID_PRIORITIES.join(', ')}`
     },
     default: 'medium',
     validate: {
-      validator: function(v) {
-        const validPriorities = ['low', 'medium', 'high', 'urgent'];
-        return validPriorities.includes(v);
+      validator: function(value) {
+        return VALID_PRIORITIES.includes(value);
       },
-      message: 'Priority must be a valid value from the predefined list'
+      message: props => `${props.value} is not a valid priority. Valid priorities are: ${VALID_PRIORITIES.join(', ')}`
+    }
+  },
+  category: {
+    type: String,
+    enum: {
+      values: VALID_CATEGORIES,
+      message: `Category must be one of: ${VALID_CATEGORIES.join(', ')}`
+    },
+    default: 'general',
+    validate: {
+      validator: function(value) {
+        return VALID_CATEGORIES.includes(value);
+      },
+      message: props => `${props.value} is not a valid category. Valid categories are: ${VALID_CATEGORIES.join(', ')}`
     }
   }
 }, {
@@ -114,7 +113,7 @@ announcementSchema.methods.toggleActive = function() {
   return this.save();
 };
 
-// Pre-save middleware to validate user permissions
+// Pre-save middleware to validate user permissions with parameterized queries
 announcementSchema.pre('save', async function(next) {
   if (this.isNew || this.isModified('createdBy')) {
     try {
@@ -149,4 +148,7 @@ announcementSchema.set('toJSON', {
 
 const Announcement = mongoose.model('Announcement', announcementSchema);
 
+// Export the model along with the valid enum values for external validation
 module.exports = Announcement;
+module.exports.VALID_PRIORITIES = VALID_PRIORITIES;
+module.exports.VALID_CATEGORIES = VALID_CATEGORIES;

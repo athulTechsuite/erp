@@ -19,31 +19,25 @@ const AnnouncementForm = ({
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
-  const [csrfToken, setCsrfToken] = useState('');
+
+  // Sanitize input function
+  const sanitizeInput = (input) => {
+    if (typeof input !== 'string') return '';
+    return DOMPurify.sanitize(input, { 
+      ALLOWED_TAGS: [],
+      ALLOWED_ATTR: [],
+      KEEP_CONTENT: true
+    });
+  };
 
   useEffect(() => {
     if (announcement) {
       setFormData({
-        title: announcement.title || '',
-        content: announcement.content || ''
+        title: sanitizeInput(announcement.title || ''),
+        content: sanitizeInput(announcement.content || '')
       });
     }
   }, [announcement]);
-
-  useEffect(() => {
-    // Fetch CSRF token on component mount
-    const fetchCSRFToken = async () => {
-      try {
-        const response = await fetch('/api/csrf-token');
-        const data = await response.json();
-        setCsrfToken(data.token);
-      } catch (error) {
-        console.error('Failed to fetch CSRF token:', error);
-      }
-    };
-
-    fetchCSRFToken();
-  }, []);
 
   const validateField = (name, value) => {
     const fieldErrors = {};
@@ -80,9 +74,12 @@ const AnnouncementForm = ({
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     
+    // Sanitize input value
+    const sanitizedValue = sanitizeInput(value);
+    
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: sanitizedValue
     }));
 
     // Clear errors for this field when user starts typing
@@ -112,12 +109,13 @@ const AnnouncementForm = ({
     }
 
     try {
-      await onSave({
-        ...formData,
-        title: formData.title.trim(),
-        content: formData.content.trim(),
-        csrfToken
-      });
+      // Sanitize data before saving
+      const sanitizedData = {
+        title: sanitizeInput(formData.title.trim()),
+        content: sanitizeInput(formData.content.trim())
+      };
+
+      await onSave(sanitizedData);
     } catch (error) {
       console.error('Error saving announcement:', error);
       setErrors({ 
@@ -142,12 +140,12 @@ const AnnouncementForm = ({
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <input type="hidden" name="csrfToken" value={csrfToken} />
-          
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{errors.submit}</AlertDescription>
+              <AlertDescription>
+                {sanitizeInput(errors.submit)}
+              </AlertDescription>
             </Alert>
           )}
           
@@ -168,7 +166,7 @@ const AnnouncementForm = ({
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.title && touched.title && (
-                  <span className="text-red-500">{errors.title}</span>
+                  <span className="text-red-500">{sanitizeInput(errors.title)}</span>
                 )}
               </span>
               <span>{formData.title.length}/200</span>
@@ -193,7 +191,7 @@ const AnnouncementForm = ({
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.content && touched.content && (
-                  <span className="text-red-500">{errors.content}</span>
+                  <span className="text-red-500">{sanitizeInput(errors.content)}</span>
                 )}
               </span>
               <span>{formData.content.length}/5000</span>

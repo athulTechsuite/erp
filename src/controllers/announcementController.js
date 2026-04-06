@@ -10,15 +10,44 @@ const sanitizeInput = (input) => {
   return DOMPurify.sanitize(input, { ALLOWED_TAGS: [] });
 };
 
-// Middleware to check if user is authenticated
-const requireAuth = (req, res, next) => {
-  if (!req.user) {
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication required.'
-    });
+// Enhanced parameterized query helper for MongoDB operations
+const executeSecureQuery = async (model, operation, params = {}) => {
+  try {
+    // Validate all ObjectId parameters to prevent injection
+    for (const [key, value] of Object.entries(params)) {
+      if (key.includes('Id') || key === '_id' || key === 'id') {
+        if (!mongoose.Types.ObjectId.isValid(value)) {
+          throw new Error(`Invalid ObjectId format for parameter: ${key}`);
+        }
+        // Convert to proper ObjectId to ensure parameterized query
+        params[key] = new mongoose.Types.ObjectId(value);
+      }
+    }
+
+    // Execute operation with validated parameters
+    switch (operation) {
+      case 'find':
+        return await model.find(params.filter || {}, params.select || null, params.options || {});
+      case 'findById':
+        return await model.findById(params.id, params.select || null);
+      case 'findOne':
+        return await model.findOne(params.filter || {}, params.select || null);
+      case 'create':
+        return await model.create(params.data);
+      case 'findByIdAndUpdate':
+        return await model.findByIdAndUpdate(params.id, params.update, params.options || {});
+      case 'findByIdAndDelete':
+        return await model.findByIdAndDelete(params.id);
+      case 'updateOne':
+        return await model.updateOne(params.filter, params.update, params.options || {});
+      case 'deleteOne':
+        return await model.deleteOne(params.filter);
+      default:
+        throw new Error(`Unsupported database operation: ${operation}`);
+    }
+  } catch (error) {
+    throw error;
   }
-  next();
 };
 
 // Middleware to check if user is admin
@@ -35,9 +64,11 @@ const requireAdmin = (req, res, next) => {
 // Get all announcements (public - for dashboard display)
 const getAllAnnouncements = async (req, res) => {
   try {
-    const announcements = await Announcement.find({ isActive: true })
-      .sort({ createdAt: -1 })
-      .select('title content createdAt updatedAt');
+    const announcements = await executeSecureQuery(Announcement, 'find', {
+      filter: { isActive: true },
+      select: 'title content createdAt updatedAt',
+      options: { sort: { createdAt: -1 } }
+    });
 
     res.json({
       success: true,
@@ -55,8 +86,10 @@ const getAllAnnouncements = async (req, res) => {
 // Get all announcements for admin management
 const getAnnouncementsForAdmin = async (req, res) => {
   try {
-    const announcements = await Announcement.find()
-      .sort({ createdAt: -1 });
+    const announcements = await executeSecureQuery(Announcement, 'find', {
+      filter: {},
+      options: { sort: { createdAt: -1 } }
+    });
 
     res.json({
       success: true,
@@ -90,16 +123,26 @@ const createAnnouncement = async (req, res) => {
     const sanitizedTitle = sanitizeInput(title);
     const sanitizedContent = sanitizeInput(content);
 
-    const announcement = new Announcement({
+    // Validate createdBy user ID
+    if (!mongoose.Types.ObjectId.isValid(req.user._id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format'
+      });
+    }
+
+    const announcementData = {
       title: sanitizedTitle,
       content: sanitizedContent,
       isActive,
-      createdBy: req.user._id
+      createdBy: new mongoose.Types.ObjectId(req.user._id)
+    };
+
+    const announcement = await executeSecureQuery(Announcement, 'create', {
+      data: announcementData
     });
 
-    await announcement.save();
-
-    // Populate creator info for response
+    // Populate creator info for response using secure query
     await announcement.populate('createdBy', 'name email');
 
     res.status(201).json({
@@ -121,16 +164,10 @@ const getAnnouncementById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID format'
-      });
-    }
-
-    const announcement = await Announcement.findById(id)
-      .populate('createdBy', 'name email');
+    // Use secure query which validates ObjectId
+    const announcement = await executeSecureQuery(Announcement, 'findById', {
+      id: id
+    });
 
     if (!announcement) {
       return res.status(404).json({
@@ -140,12 +177,14 @@ const getAnnouncementById = async (req, res) => {
     }
 
     // Non-admin users can only see active announcements
-    if (req.user && req.user.role !== 'admin' && !announcement.isActive) {
+    if (req.user.role !== 'admin' && !announcement.isActive) {
       return res.status(404).json({
         success: false,
         message: 'Announcement not found'
       });
     }
+
+    await announcement.populate('createdBy', 'name email');
 
     res.json({
       success: true,
@@ -176,15 +215,9 @@ const updateAnnouncement = async (req, res) => {
     const { id } = req.params;
     const { title, content, isActive } = req.body;
 
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID format'
-      });
-    }
-
-    const announcement = await Announcement.findById(id);
+    const announcement = await executeSecureQuery(Announcement, 'findById', {
+      id: id
+    });
 
     if (!announcement) {
       return res.status(404).json({
@@ -193,21 +226,26 @@ const updateAnnouncement = async (req, res) => {
       });
     }
 
-    // Update fields with sanitization
-    if (title !== undefined) announcement.title = sanitizeInput(title);
-    if (content !== undefined) announcement.content = sanitizeInput(content);
-    if (isActive !== undefined) announcement.isActive = isActive;
+    // Prepare update data with sanitization
+    const updateData = {};
+    if (title !== undefined) updateData.title = sanitizeInput(title);
+    if (content !== undefined) updateData.content = sanitizeInput(content);
+    if (isActive !== undefined) updateData.isActive = isActive;
+    updateData.updatedAt = new Date();
 
-    announcement.updatedAt = new Date();
-    await announcement.save();
+    const updatedAnnouncement = await executeSecureQuery(Announcement, 'findByIdAndUpdate', {
+      id: id,
+      update: updateData,
+      options: { new: true }
+    });
 
     // Populate creator info for response
-    await announcement.populate('createdBy', 'name email');
+    await updatedAnnouncement.populate('createdBy', 'name email');
 
     res.json({
       success: true,
       message: 'Announcement updated successfully',
-      data: announcement
+      data: updatedAnnouncement
     });
   } catch (error) {
     res.status(500).json({
@@ -223,15 +261,9 @@ const deleteAnnouncement = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID format'
-      });
-    }
-
-    const announcement = await Announcement.findById(id);
+    const announcement = await executeSecureQuery(Announcement, 'findById', {
+      id: id
+    });
 
     if (!announcement) {
       return res.status(404).json({
@@ -240,7 +272,9 @@ const deleteAnnouncement = async (req, res) => {
       });
     }
 
-    await Announcement.findByIdAndDelete(id);
+    await executeSecureQuery(Announcement, 'findByIdAndDelete', {
+      id: id
+    });
 
     res.json({
       success: true,
@@ -260,15 +294,9 @@ const toggleAnnouncementStatus = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID format'
-      });
-    }
-
-    const announcement = await Announcement.findById(id);
+    const announcement = await executeSecureQuery(Announcement, 'findById', {
+      id: id
+    });
 
     if (!announcement) {
       return res.status(404).json({
@@ -277,16 +305,23 @@ const toggleAnnouncementStatus = async (req, res) => {
       });
     }
 
-    announcement.isActive = !announcement.isActive;
-    announcement.updatedAt = new Date();
-    await announcement.save();
+    const updateData = {
+      isActive: !announcement.isActive,
+      updatedAt: new Date()
+    };
 
-    await announcement.populate('createdBy', 'name email');
+    const updatedAnnouncement = await executeSecureQuery(Announcement, 'findByIdAndUpdate', {
+      id: id,
+      update: updateData,
+      options: { new: true }
+    });
+
+    await updatedAnnouncement.populate('createdBy', 'name email');
 
     res.json({
       success: true,
-      message: `Announcement ${announcement.isActive ? 'activated' : 'deactivated'} successfully`,
-      data: announcement
+      message: `Announcement ${updatedAnnouncement.isActive ? 'activated' : 'deactivated'} successfully`,
+      data: updatedAnnouncement
     });
   } catch (error) {
     res.status(500).json({
@@ -298,7 +333,6 @@ const toggleAnnouncementStatus = async (req, res) => {
 };
 
 module.exports = {
-  requireAuth,
   requireAdmin,
   getAllAnnouncements,
   getAnnouncementsForAdmin,

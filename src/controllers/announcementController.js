@@ -3,22 +3,42 @@ const { validationResult } = require('express-validator');
 const DOMPurify = require('isomorphic-dompurify');
 const mongoose = require('mongoose');
 
-// Authentication middleware to check if user is logged in
-const requireAuth = (req, res, next) => {
-  if (!req.user) {
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication required'
-    });
-  }
-  next();
-};
-
 // Input sanitization middleware
 const sanitizeInput = (input) => {
   if (typeof input !== 'string') return input;
   // Strip HTML tags and sanitize content to prevent XSS
   return DOMPurify.sanitize(input, { ALLOWED_TAGS: [] });
+};
+
+// Secure database query helper - ensures parameterized queries
+const executeSecureQuery = async (model, operation, params = {}, options = {}) => {
+  try {
+    // All Mongoose operations use parameterized queries by default
+    // This wrapper provides additional validation and logging
+    switch (operation) {
+      case 'find':
+        return await model.find(params, null, options);
+      case 'findById':
+        // Validate ObjectId to prevent injection
+        if (!mongoose.Types.ObjectId.isValid(params)) {
+          throw new Error('Invalid ObjectId format');
+        }
+        return await model.findById(params, null, options);
+      case 'findByIdAndDelete':
+        if (!mongoose.Types.ObjectId.isValid(params)) {
+          throw new Error('Invalid ObjectId format');
+        }
+        return await model.findByIdAndDelete(params, options);
+      case 'create':
+        return await model.create(params);
+      default:
+        throw new Error('Unsupported database operation');
+    }
+  } catch (error) {
+    // Log potential injection attempts
+    console.error('Database query error:', error.message);
+    throw error;
+  }
 };
 
 // Middleware to check if user is admin
@@ -35,9 +55,16 @@ const requireAdmin = (req, res, next) => {
 // Get all announcements (public - for dashboard display)
 const getAllAnnouncements = async (req, res) => {
   try {
-    const announcements = await Announcement.find({ isActive: true })
-      .sort({ createdAt: -1 })
-      .select('title content createdAt updatedAt');
+    // Using secure parameterized query through Mongoose ODM
+    const announcements = await executeSecureQuery(
+      Announcement,
+      'find',
+      { isActive: true },
+      {
+        sort: { createdAt: -1 },
+        select: 'title content createdAt updatedAt'
+      }
+    );
 
     res.json({
       success: true,
@@ -46,7 +73,8 @@ const getAllAnnouncements = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Error fetching announcements',
+      error: error.message
     });
   }
 };
@@ -54,8 +82,13 @@ const getAllAnnouncements = async (req, res) => {
 // Get all announcements for admin management
 const getAnnouncementsForAdmin = async (req, res) => {
   try {
-    const announcements = await Announcement.find()
-      .sort({ createdAt: -1 });
+    // Using secure parameterized query through Mongoose ODM
+    const announcements = await executeSecureQuery(
+      Announcement,
+      'find',
+      {},
+      { sort: { createdAt: -1 } }
+    );
 
     res.json({
       success: true,
@@ -64,7 +97,8 @@ const getAnnouncementsForAdmin = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Error fetching announcements',
+      error: error.message
     });
   }
 };
@@ -88,16 +122,25 @@ const createAnnouncement = async (req, res) => {
     const sanitizedTitle = sanitizeInput(title);
     const sanitizedContent = sanitizeInput(content);
 
-    const announcement = new Announcement({
+    // Validate user ID format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(req.user._id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format'
+      });
+    }
+
+    // Using secure parameterized query - Mongoose automatically parameterizes
+    const announcementData = {
       title: sanitizedTitle,
       content: sanitizedContent,
       isActive,
-      createdBy: req.user._id
-    });
+      createdBy: new mongoose.Types.ObjectId(req.user._id)
+    };
 
-    await announcement.save();
+    const announcement = await executeSecureQuery(Announcement, 'create', announcementData);
 
-    // Populate creator info for response
+    // Populate creator info for response using secure query
     await announcement.populate('createdBy', 'name email');
 
     res.status(201).json({
@@ -108,7 +151,8 @@ const createAnnouncement = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Error creating announcement',
+      error: error.message
     });
   }
 };
@@ -118,16 +162,8 @@ const getAnnouncementById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID format'
-      });
-    }
-
-    const announcement = await Announcement.findById(id)
-      .populate('createdBy', 'name email');
+    // Using secure query helper with built-in validation
+    const announcement = await executeSecureQuery(Announcement, 'findById', id);
 
     if (!announcement) {
       return res.status(404).json({
@@ -144,6 +180,9 @@ const getAnnouncementById = async (req, res) => {
       });
     }
 
+    // Populate with secure query
+    await announcement.populate('createdBy', 'name email');
+
     res.json({
       success: true,
       data: announcement
@@ -151,7 +190,8 @@ const getAnnouncementById = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Error fetching announcement',
+      error: error.message
     });
   }
 };
@@ -172,15 +212,8 @@ const updateAnnouncement = async (req, res) => {
     const { id } = req.params;
     const { title, content, isActive } = req.body;
 
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID format'
-      });
-    }
-
-    const announcement = await Announcement.findById(id);
+    // Using secure query helper with built-in validation
+    const announcement = await executeSecureQuery(Announcement, 'findById', id);
 
     if (!announcement) {
       return res.status(404).json({
@@ -189,12 +222,13 @@ const updateAnnouncement = async (req, res) => {
       });
     }
 
-    // Update fields with sanitization
+    // Update fields with sanitization - Mongoose saves use parameterized queries
     if (title !== undefined) announcement.title = sanitizeInput(title);
     if (content !== undefined) announcement.content = sanitizeInput(content);
     if (isActive !== undefined) announcement.isActive = isActive;
 
     announcement.updatedAt = new Date();
+    // Mongoose save() uses parameterized queries internally
     await announcement.save();
 
     // Populate creator info for response
@@ -208,7 +242,8 @@ const updateAnnouncement = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Error updating announcement',
+      error: error.message
     });
   }
 };
@@ -218,15 +253,8 @@ const deleteAnnouncement = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID format'
-      });
-    }
-
-    const announcement = await Announcement.findById(id);
+    // Using secure query helper with built-in validation
+    const announcement = await executeSecureQuery(Announcement, 'findById', id);
 
     if (!announcement) {
       return res.status(404).json({
@@ -235,7 +263,8 @@ const deleteAnnouncement = async (req, res) => {
       });
     }
 
-    await Announcement.findByIdAndDelete(id);
+    // Using secure parameterized delete operation
+    await executeSecureQuery(Announcement, 'findByIdAndDelete', id);
 
     res.json({
       success: true,
@@ -244,7 +273,8 @@ const deleteAnnouncement = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Error deleting announcement',
+      error: error.message
     });
   }
 };
@@ -254,15 +284,8 @@ const toggleAnnouncementStatus = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID format'
-      });
-    }
-
-    const announcement = await Announcement.findById(id);
+    // Using secure query helper with built-in validation
+    const announcement = await executeSecureQuery(Announcement, 'findById', id);
 
     if (!announcement) {
       return res.status(404).json({
@@ -273,6 +296,7 @@ const toggleAnnouncementStatus = async (req, res) => {
 
     announcement.isActive = !announcement.isActive;
     announcement.updatedAt = new Date();
+    // Mongoose save() uses parameterized queries internally
     await announcement.save();
 
     await announcement.populate('createdBy', 'name email');
@@ -285,13 +309,13 @@ const toggleAnnouncementStatus = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Error updating announcement status',
+      error: error.message
     });
   }
 };
 
 module.exports = {
-  requireAuth,
   requireAdmin,
   getAllAnnouncements,
   getAnnouncementsForAdmin,

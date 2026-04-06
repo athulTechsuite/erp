@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -19,48 +20,23 @@ const AnnouncementForm = ({
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
 
+  // Sanitize input function
   const sanitizeInput = (input) => {
-    if (typeof input !== 'string') {
-      return '';
-    }
-    // Remove HTML tags and escape special characters to prevent XSS
-    return input.replace(/<[^>]*>/g, '').replace(/[<>&"']/g, (match) => {
-      const htmlEntities = {
-        '<': '&lt;',
-        '>': '&gt;',
-        '&': '&amp;',
-        '"': '&quot;',
-        "'": '&#x27;'
-      };
-      return htmlEntities[match];
+    return DOMPurify.sanitize(input, { 
+      ALLOWED_TAGS: [],
+      ALLOWED_ATTR: [],
+      KEEP_CONTENT: true
     });
   };
 
   useEffect(() => {
     if (announcement) {
       setFormData({
-        title: sanitizeInput(announcement.title) || '',
-        content: sanitizeInput(announcement.content) || ''
+        title: sanitizeInput(announcement.title || ''),
+        content: sanitizeInput(announcement.content || '')
       });
     }
   }, [announcement]);
-
-  const sanitizeErrorMessage = (message) => {
-    if (typeof message !== 'string') {
-      return 'An error occurred. Please try again.';
-    }
-    // Remove HTML tags and escape special characters
-    return message.replace(/<[^>]*>/g, '').replace(/[<>&"']/g, (match) => {
-      const htmlEntities = {
-        '<': '&lt;',
-        '>': '&gt;',
-        '&': '&amp;',
-        '"': '&quot;',
-        "'": '&#x27;'
-      };
-      return htmlEntities[match];
-    });
-  };
 
   const validateField = (name, value) => {
     const fieldErrors = {};
@@ -96,6 +72,8 @@ const AnnouncementForm = ({
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    
+    // Sanitize input value
     const sanitizedValue = sanitizeInput(value);
     
     setFormData(prev => ({
@@ -130,16 +108,17 @@ const AnnouncementForm = ({
     }
 
     try {
-      await onSave({
-        ...formData,
-        title: formData.title.trim(),
-        content: formData.content.trim()
-      });
+      // Sanitize data before saving
+      const sanitizedData = {
+        title: sanitizeInput(formData.title.trim()),
+        content: sanitizeInput(formData.content.trim())
+      };
+
+      await onSave(sanitizedData);
     } catch (error) {
       console.error('Error saving announcement:', error);
-      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to save announcement. Please try again.';
       setErrors({ 
-        submit: sanitizeErrorMessage(errorMessage)
+        submit: 'Failed to save announcement. Please try again.' 
       });
     }
   };

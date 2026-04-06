@@ -1,12 +1,12 @@
 /**
  * Security Test Suite
- * Tests for XSS protection and SQL injection prevention
+ * Tests for XSS protection, backend validation, SQL injection, and authorization
  */
 
 const { JSDOM } = require('jsdom');
 const DOMPurify = require('dompurify');
 
-describe('TC-006: Security (XSS, SQL injection)', () => {
+describe('TC-005: XSS Protection Tests', () => {
   let window, document, purify;
 
   beforeEach(() => {
@@ -16,160 +16,390 @@ describe('TC-006: Security (XSS, SQL injection)', () => {
     purify = DOMPurify(window);
   });
 
-  describe('XSS Protection Tests', () => {
-    describe('Happy Path - Safe Content', () => {
-      test('TC-006: should allow safe HTML content', () => {
-        const safeHtml = '<p>Hello World</p>';
-        const sanitized = purify.sanitize(safeHtml);
-        expect(sanitized).toBe('<p>Hello World</p>');
-      });
-
-      test('TC-006: should preserve safe formatting tags', () => {
-        const safeHtml = '<strong>Bold</strong> and <em>italic</em> text';
-        const sanitized = purify.sanitize(safeHtml);
-        expect(sanitized).toBe('<strong>Bold</strong> and <em>italic</em> text');
-      });
-
-      test('TC-006: should handle plain text without modification', () => {
-        const plainText = 'Just plain text';
-        const sanitized = purify.sanitize(plainText);
-        expect(sanitized).toBe('Just plain text');
-      });
+  describe('Happy Path - Safe Content', () => {
+    test('TC-005: should allow safe HTML content', () => {
+      const safeHtml = '<p>Hello World</p>';
+      const sanitized = purify.sanitize(safeHtml);
+      expect(sanitized).toBe('<p>Hello World</p>');
     });
 
-    describe('Error Path - XSS Attacks', () => {
-      test('TC-006: should block script tag injection', () => {
-        const maliciousHtml = '<script>alert("XSS")</script>';
-        const sanitized = purify.sanitize(maliciousHtml);
-        expect(sanitized).toBe('');
-        expect(sanitized).not.toContain('<script>');
-      });
+    test('TC-005: should preserve safe formatting tags', () => {
+      const safeHtml = '<strong>Bold</strong> and <em>italic</em> text';
+      const sanitized = purify.sanitize(safeHtml);
+      expect(sanitized).toBe('<strong>Bold</strong> and <em>italic</em> text');
+    });
 
-      test('TC-006: should block javascript: protocol in links', () => {
-        const maliciousHtml = '<a href="javascript:alert(\'XSS\')">Click me</a>';
-        const sanitized = purify.sanitize(maliciousHtml);
-        expect(sanitized).not.toContain('javascript:');
-        expect(sanitized).toBe('<a>Click me</a>');
-      });
-
-      test('TC-006: should block onload event handlers', () => {
-        const maliciousHtml = '<img src="x" onload="alert(\'XSS\')">';
-        const sanitized = purify.sanitize(maliciousHtml);
-        expect(sanitized).not.toContain('onload');
-        expect(sanitized).toBe('<img src="x">');
-      });
-
-      test('TC-006: should block data: protocol with javascript', () => {
-        const maliciousHtml = '<iframe src="data:text/html,<script>alert(\'XSS\')</script>"></iframe>';
-        const sanitized = purify.sanitize(maliciousHtml);
-        expect(sanitized).toBe('');
-      });
-
-      test('TC-006: should block style injection attacks', () => {
-        const maliciousHtml = '<div style="background-image: url(javascript:alert(\'XSS\'))">Content</div>';
-        const sanitized = purify.sanitize(maliciousHtml);
-        expect(sanitized).not.toContain('javascript:');
-        expect(sanitized).toBe('<div>Content</div>');
-      });
-
-      test('TC-006: should block nested script attempts', () => {
-        const maliciousHtml = '<div><script>alert("nested")</script><p>Content</p></div>';
-        const sanitized = purify.sanitize(maliciousHtml);
-        expect(sanitized).toBe('<div><p>Content</p></div>');
-        expect(sanitized).not.toContain('<script>');
-      });
+    test('TC-005: should handle plain text without modification', () => {
+      const plainText = 'Just plain text';
+      const sanitized = purify.sanitize(plainText);
+      expect(sanitized).toBe('Just plain text');
     });
   });
 
-  describe('SQL Injection Protection Tests', () => {
-    // Mock database query function for testing
-    const mockEscapeString = (input) => {
-      return input.replace(/'/g, "''").replace(/;/g, '\\;');
-    };
-
-    const mockParameterizedQuery = (sql, params) => {
-      // Simulate parameterized query behavior
-      return { sql, params, isParameterized: true };
-    };
-
-    describe('Happy Path - Safe Database Queries', () => {
-      test('TC-006: should handle safe user input in parameterized queries', () => {
-        const userInput = 'john.doe@example.com';
-        const query = mockParameterizedQuery('SELECT * FROM users WHERE email = ?', [userInput]);
-        
-        expect(query.isParameterized).toBe(true);
-        expect(query.params).toContain(userInput);
-        expect(query.sql).not.toContain(userInput);
-      });
-
-      test('TC-006: should properly escape safe strings', () => {
-        const safeInput = 'normaltext123';
-        const escaped = mockEscapeString(safeInput);
-        expect(escaped).toBe('normaltext123');
-      });
-
-      test('TC-006: should handle numeric inputs safely', () => {
-        const numericInput = 12345;
-        const query = mockParameterizedQuery('SELECT * FROM products WHERE id = ?', [numericInput]);
-        
-        expect(query.isParameterized).toBe(true);
-        expect(query.params[0]).toBe(12345);
-      });
+  describe('Error Path - Malicious Content', () => {
+    test('TC-005: should block script tag injection', () => {
+      const maliciousHtml = '<script>alert("XSS")</script>';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).toBe('');
+      expect(sanitized).not.toContain('<script>');
     });
 
-    describe('Error Path - SQL Injection Attempts', () => {
-      test('TC-006: should prevent basic SQL injection with quotes', () => {
-        const maliciousInput = "'; DROP TABLE users; --";
-        const escaped = mockEscapeString(maliciousInput);
-        
-        expect(escaped).not.toBe(maliciousInput);
-        expect(escaped).toBe("''; DROP TABLE users\\; --");
-        expect(escaped).not.toContain("'; DROP"));
-      });
+    test('TC-005: should block javascript: protocol in links', () => {
+      const maliciousHtml = '<a href="javascript:alert(\'XSS\')">Click me</a>';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).not.toContain('javascript:');
+      expect(sanitized).toBe('<a>Click me</a>');
+    });
 
-      test('TC-006: should prevent union-based SQL injection', () => {
-        const maliciousInput = "' UNION SELECT password FROM admin --";
-        const query = mockParameterizedQuery('SELECT * FROM users WHERE name = ?', [maliciousInput]);
-        
-        expect(query.isParameterized).toBe(true);
-        expect(query.sql).not.toContain('UNION');
-        expect(query.params[0]).toBe(maliciousInput);
-      });
+    test('TC-005: should block onload event handlers', () => {
+      const maliciousHtml = '<img src="x" onload="alert(\'XSS\')">';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).not.toContain('onload');
+      expect(sanitized).toBe('<img src="x">');
+    });
 
-      test('TC-006: should prevent boolean-based blind SQL injection', () => {
-        const maliciousInput = "' OR '1'='1";
-        const escaped = mockEscapeString(maliciousInput);
-        
-        expect(escaped).toBe("'' OR ''1''=''1");
-        expect(escaped).not.toContain("' OR '1'='1"));
-      });
+    test('TC-005: should block data: protocol with javascript', () => {
+      const maliciousHtml = '<iframe src="data:text/html,<script>alert(\'XSS\')</script>"></iframe>';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).toBe('');
+    });
 
-      test('TC-006: should prevent time-based SQL injection', () => {
-        const maliciousInput = "'; WAITFOR DELAY '00:00:05' --";
-        const query = mockParameterizedQuery('SELECT * FROM users WHERE id = ?', [maliciousInput]);
-        
-        expect(query.isParameterized).toBe(true);
-        expect(query.sql).not.toContain('WAITFOR');
-        expect(query.params[0]).toBe(maliciousInput);
-      });
+    test('TC-005: should block style injection attacks', () => {
+      const maliciousHtml = '<div style="background-image: url(javascript:alert(\'XSS\'))">Content</div>';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).not.toContain('javascript:');
+      expect(sanitized).toBe('<div>Content</div>');
+    });
 
-      test('TC-006: should prevent stacked queries injection', () => {
-        const maliciousInput = "1; INSERT INTO admin (user, pass) VALUES ('hacker', 'pass')";
-        const escaped = mockEscapeString(maliciousInput);
-        
-        expect(escaped).toBe("1\\; INSERT INTO admin (user, pass) VALUES (''hacker'', ''pass'')");
-        expect(escaped).not.toContain("; INSERT"));
-      });
+    test('TC-005: should block nested script attempts', () => {
+      const maliciousHtml = '<div><script>alert("nested")</script><p>Content</p></div>';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).toBe('<div><p>Content</p></div>');
+      expect(sanitized).not.toContain('<script>');
+    });
+  });
+});
 
-      test('TC-006: should prevent comment-based injection', () => {
-        const maliciousInput = "admin'/**/OR/**/1=1/**/--";
-        const query = mockParameterizedQuery('SELECT * FROM users WHERE username = ?', [maliciousInput]);
-        
-        expect(query.isParameterized).toBe(true);
-        expect(query.sql).not.toContain('OR');
-        expect(query.sql).not.toContain('/**/');
-        expect(query.params[0]).toBe(maliciousInput);
-      });
+describe('TC-006: Backend Input Validation Tests', () => {
+  // Mock validation functions
+  const validateAnnouncementInput = (data) => {
+    const errors = [];
+    
+    if (!data.title || typeof data.title !== 'string') {
+      errors.push('Title is required and must be a string');
+    }
+    
+    if (data.title && data.title.length > 255) {
+      errors.push('Title must not exceed 255 characters');
+    }
+    
+    if (!data.content || typeof data.content !== 'string') {
+      errors.push('Content is required and must be a string');
+    }
+    
+    if (data.content && data.content.length > 10000) {
+      errors.push('Content must not exceed 10000 characters');
+    }
+    
+    if (data.priority && !['low', 'medium', 'high', 'urgent'].includes(data.priority)) {
+      errors.push('Priority must be one of: low, medium, high, urgent');
+    }
+    
+    return errors;
+  };
+
+  describe('Valid Input Validation', () => {
+    test('TC-006: should accept valid announcement data', () => {
+      const validData = {
+        title: 'Valid Announcement',
+        content: 'This is valid content',
+        priority: 'medium'
+      };
+      
+      const errors = validateAnnouncementInput(validData);
+      expect(errors).toHaveLength(0);
+    });
+
+    test('TC-006: should accept announcement without optional priority', () => {
+      const validData = {
+        title: 'Valid Announcement',
+        content: 'This is valid content'
+      };
+      
+      const errors = validateAnnouncementInput(validData);
+      expect(errors).toHaveLength(0);
+    });
+  });
+
+  describe('Invalid Input Validation', () => {
+    test('TC-006: should reject missing title', () => {
+      const invalidData = {
+        content: 'Content without title'
+      };
+      
+      const errors = validateAnnouncementInput(invalidData);
+      expect(errors).toContain('Title is required and must be a string');
+    });
+
+    test('TC-006: should reject missing content', () => {
+      const invalidData = {
+        title: 'Title without content'
+      };
+      
+      const errors = validateAnnouncementInput(invalidData);
+      expect(errors).toContain('Content is required and must be a string');
+    });
+
+    test('TC-006: should reject title exceeding length limit', () => {
+      const invalidData = {
+        title: 'A'.repeat(256),
+        content: 'Valid content'
+      };
+      
+      const errors = validateAnnouncementInput(invalidData);
+      expect(errors).toContain('Title must not exceed 255 characters');
+    });
+
+    test('TC-006: should reject content exceeding length limit', () => {
+      const invalidData = {
+        title: 'Valid title',
+        content: 'A'.repeat(10001)
+      };
+      
+      const errors = validateAnnouncementInput(invalidData);
+      expect(errors).toContain('Content must not exceed 10000 characters');
+    });
+
+    test('TC-006: should reject invalid priority value', () => {
+      const invalidData = {
+        title: 'Valid title',
+        content: 'Valid content',
+        priority: 'invalid'
+      };
+      
+      const errors = validateAnnouncementInput(invalidData);
+      expect(errors).toContain('Priority must be one of: low, medium, high, urgent');
+    });
+
+    test('TC-006: should reject non-string title', () => {
+      const invalidData = {
+        title: 123,
+        content: 'Valid content'
+      };
+      
+      const errors = validateAnnouncementInput(invalidData);
+      expect(errors).toContain('Title is required and must be a string');
+    });
+  });
+});
+
+describe('TC-007: SQL Injection Protection Tests', () => {
+  // Mock parameterized query function
+  const buildParameterizedQuery = (operation, params) => {
+    const queries = {
+      select: 'SELECT * FROM announcements WHERE id = ?',
+      insert: 'INSERT INTO announcements (title, content, priority) VALUES (?, ?, ?)',
+      update: 'UPDATE announcements SET title = ?, content = ?, priority = ? WHERE id = ?',
+      delete: 'DELETE FROM announcements WHERE id = ?'
+    };
+    
+    return {
+      query: queries[operation],
+      params: params,
+      isParameterized: true
+    };
+  };
+
+  const detectSQLInjection = (input) => {
+    const sqlKeywords = [
+      'UNION', 'SELECT', 'DROP', 'DELETE', 'INSERT', 'UPDATE',
+      'OR 1=1', 'EXEC', 'EXECUTE', '--', ';'
+    ];
+    
+    return sqlKeywords.some(keyword => 
+      input.toUpperCase().includes(keyword.toUpperCase())
+    );
+  };
+
+  describe('Parameterized Query Tests', () => {
+    test('TC-007: should use parameterized query for SELECT operations', () => {
+      const result = buildParameterizedQuery('select', [1]);
+      
+      expect(result.query).toBe('SELECT * FROM announcements WHERE id = ?');
+      expect(result.params).toEqual([1]);
+      expect(result.isParameterized).toBe(true);
+    });
+
+    test('TC-007: should use parameterized query for INSERT operations', () => {
+      const result = buildParameterizedQuery('insert', ['Title', 'Content', 'medium']);
+      
+      expect(result.query).toBe('INSERT INTO announcements (title, content, priority) VALUES (?, ?, ?)');
+      expect(result.params).toEqual(['Title', 'Content', 'medium']);
+      expect(result.isParameterized).toBe(true);
+    });
+
+    test('TC-007: should use parameterized query for UPDATE operations', () => {
+      const result = buildParameterizedQuery('update', ['New Title', 'New Content', 'high', 1]);
+      
+      expect(result.query).toBe('UPDATE announcements SET title = ?, content = ?, priority = ? WHERE id = ?');
+      expect(result.params).toEqual(['New Title', 'New Content', 'high', 1]);
+      expect(result.isParameterized).toBe(true);
+    });
+
+    test('TC-007: should use parameterized query for DELETE operations', () => {
+      const result = buildParameterizedQuery('delete', [1]);
+      
+      expect(result.query).toBe('DELETE FROM announcements WHERE id = ?');
+      expect(result.params).toEqual([1]);
+      expect(result.isParameterized).toBe(true);
+    });
+  });
+
+  describe('SQL Injection Detection Tests', () => {
+    test('TC-007: should detect UNION-based injection attempts', () => {
+      const maliciousInput = "1' UNION SELECT * FROM users--";
+      expect(detectSQLInjection(maliciousInput)).toBe(true);
+    });
+
+    test('TC-007: should detect OR-based injection attempts', () => {
+      const maliciousInput = "admin' OR '1'='1";
+      expect(detectSQLInjection(maliciousInput)).toBe(true);
+    });
+
+    test('TC-007: should detect DROP table attempts', () => {
+      const maliciousInput = "'; DROP TABLE announcements; --";
+      expect(detectSQLInjection(maliciousInput)).toBe(true);
+    });
+
+    test('TC-007: should detect comment-based injection', () => {
+      const maliciousInput = "test'; --";
+      expect(detectSQLInjection(maliciousInput)).toBe(true);
+    });
+
+    test('TC-007: should allow safe input', () => {
+      const safeInput = "Regular announcement title";
+      expect(detectSQLInjection(safeInput)).toBe(false);
+    });
+  });
+});
+
+describe('TC-008: Authorization Tests', () => {
+  // Mock user roles and permissions
+  const USER_ROLES = {
+    ADMIN: 'admin',
+    MODERATOR: 'moderator',
+    USER: 'user',
+    GUEST: 'guest'
+  };
+
+  const PERMISSIONS = {
+    CREATE_ANNOUNCEMENT: 'create_announcement',
+    READ_ANNOUNCEMENT: 'read_announcement',
+    UPDATE_ANNOUNCEMENT: 'update_announcement',
+    DELETE_ANNOUNCEMENT: 'delete_announcement'
+  };
+
+  const checkPermission = (userRole, permission) => {
+    const rolePermissions = {
+      [USER_ROLES.ADMIN]: [
+        PERMISSIONS.CREATE_ANNOUNCEMENT,
+        PERMISSIONS.READ_ANNOUNCEMENT,
+        PERMISSIONS.UPDATE_ANNOUNCEMENT,
+        PERMISSIONS.DELETE_ANNOUNCEMENT
+      ],
+      [USER_ROLES.MODERATOR]: [
+        PERMISSIONS.CREATE_ANNOUNCEMENT,
+        PERMISSIONS.READ_ANNOUNCEMENT,
+        PERMISSIONS.UPDATE_ANNOUNCEMENT
+      ],
+      [USER_ROLES.USER]: [
+        PERMISSIONS.READ_ANNOUNCEMENT
+      ],
+      [USER_ROLES.GUEST]: []
+    };
+
+    return rolePermissions[userRole]?.includes(permission) || false;
+  };
+
+  describe('Admin Authorization Tests', () => {
+    test('TC-008: admin should have CREATE permission', () => {
+      expect(checkPermission(USER_ROLES.ADMIN, PERMISSIONS.CREATE_ANNOUNCEMENT)).toBe(true);
+    });
+
+    test('TC-008: admin should have READ permission', () => {
+      expect(checkPermission(USER_ROLES.ADMIN, PERMISSIONS.READ_ANNOUNCEMENT)).toBe(true);
+    });
+
+    test('TC-008: admin should have UPDATE permission', () => {
+      expect(checkPermission(USER_ROLES.ADMIN, PERMISSIONS.UPDATE_ANNOUNCEMENT)).toBe(true);
+    });
+
+    test('TC-008: admin should have DELETE permission', () => {
+      expect(checkPermission(USER_ROLES.ADMIN, PERMISSIONS.DELETE_ANNOUNCEMENT)).toBe(true);
+    });
+  });
+
+  describe('Moderator Authorization Tests', () => {
+    test('TC-008: moderator should have CREATE permission', () => {
+      expect(checkPermission(USER_ROLES.MODERATOR, PERMISSIONS.CREATE_ANNOUNCEMENT)).toBe(true);
+    });
+
+    test('TC-008: moderator should have READ permission', () => {
+      expect(checkPermission(USER_ROLES.MODERATOR, PERMISSIONS.READ_ANNOUNCEMENT)).toBe(true);
+    });
+
+    test('TC-008: moderator should have UPDATE permission', () => {
+      expect(checkPermission(USER_ROLES.MODERATOR, PERMISSIONS.UPDATE_ANNOUNCEMENT)).toBe(true);
+    });
+
+    test('TC-008: moderator should NOT have DELETE permission', () => {
+      expect(checkPermission(USER_ROLES.MODERATOR, PERMISSIONS.DELETE_ANNOUNCEMENT)).toBe(false);
+    });
+  });
+
+  describe('User Authorization Tests', () => {
+    test('TC-008: user should NOT have CREATE permission', () => {
+      expect(checkPermission(USER_ROLES.USER, PERMISSIONS.CREATE_ANNOUNCEMENT)).toBe(false);
+    });
+
+    test('TC-008: user should have READ permission', () => {
+      expect(checkPermission(USER_ROLES.USER, PERMISSIONS.READ_ANNOUNCEMENT)).toBe(true);
+    });
+
+    test('TC-008: user should NOT have UPDATE permission', () => {
+      expect(checkPermission(USER_ROLES.USER, PERMISSIONS.UPDATE_ANNOUNCEMENT)).toBe(false);
+    });
+
+    test('TC-008: user should NOT have DELETE permission', () => {
+      expect(checkPermission(USER_ROLES.USER, PERMISSIONS.DELETE_ANNOUNCEMENT)).toBe(false);
+    });
+  });
+
+  describe('Guest Authorization Tests', () => {
+    test('TC-008: guest should NOT have CREATE permission', () => {
+      expect(checkPermission(USER_ROLES.GUEST, PERMISSIONS.CREATE_ANNOUNCEMENT)).toBe(false);
+    });
+
+    test('TC-008: guest should NOT have READ permission', () => {
+      expect(checkPermission(USER_ROLES.GUEST, PERMISSIONS.READ_ANNOUNCEMENT)).toBe(false);
+    });
+
+    test('TC-008: guest should NOT have UPDATE permission', () => {
+      expect(checkPermission(USER_ROLES.GUEST, PERMISSIONS.UPDATE_ANNOUNCEMENT)).toBe(false);
+    });
+
+    test('TC-008: guest should NOT have DELETE permission', () => {
+      expect(checkPermission(USER_ROLES.GUEST, PERMISSIONS.DELETE_ANNOUNCEMENT)).toBe(false);
+    });
+  });
+
+  describe('Invalid Role Tests', () => {
+    test('TC-008: undefined role should have no permissions', () => {
+      expect(checkPermission(undefined, PERMISSIONS.READ_ANNOUNCEMENT)).toBe(false);
+    });
+
+    test('TC-008: invalid role should have no permissions', () => {
+      expect(checkPermission('invalid_role', PERMISSIONS.READ_ANNOUNCEMENT)).toBe(false);
     });
   });
 });

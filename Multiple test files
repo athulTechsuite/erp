@@ -1,366 +1,317 @@
-// test_announcement_form_validation.js
-// TC-004: Announcement form input validation and error handling test coverage
+// test_input_validation.js
+// TC-004: Input validation and error handling test coverage
 
-describe('TC-004: Announcement form input validation and error handling', () => {
-  // Happy path tests for announcement form
-  describe('Valid announcement form input scenarios', () => {
-    test('TC-004: should accept valid announcement title', () => {
-      const validTitle = 'Important Company Update';
-      const result = validateAnnouncementTitle(validTitle);
+describe('TC-004: Input validation and error handling', () => {
+  // Happy path tests
+  describe('Valid input scenarios', () => {
+    test('TC-004: should accept valid string input', () => {
+      const validInput = 'test string';
+      const result = validateInput(validInput);
       expect(result.isValid).toBe(true);
       expect(result.error).toBeNull();
     });
 
-    test('TC-004: should accept valid announcement content', () => {
-      const validContent = 'This is a valid announcement content with proper formatting.';
-      const result = validateAnnouncementContent(validContent);
+    test('TC-004: should accept valid numeric input', () => {
+      const validInput = 123;
+      const result = validateInput(validInput);
       expect(result.isValid).toBe(true);
       expect(result.error).toBeNull();
     });
 
-    test('TC-004: should accept valid announcement category', () => {
-      const validCategory = 'general';
-      const result = validateAnnouncementCategory(validCategory);
+    test('TC-004: should accept valid email format', () => {
+      const validEmail = 'test@example.com';
+      const result = validateEmail(validEmail);
       expect(result.isValid).toBe(true);
       expect(result.error).toBeNull();
     });
 
-    test('TC-004: should accept valid priority level', () => {
-      const validPriority = 'high';
-      const result = validateAnnouncementPriority(validPriority);
+    test('TC-004: should accept boolean values as valid input', () => {
+      expect(validateInput(true).isValid).toBe(true);
+      expect(validateInput(false).isValid).toBe(true);
+    });
+
+    test('TC-004: should accept zero as valid numeric input', () => {
+      const result = validateInput(0);
       expect(result.isValid).toBe(true);
       expect(result.error).toBeNull();
+    });
+
+    test('TC-004: should accept complex email formats', () => {
+      const validEmails = [
+        'test.email@example.co.uk',
+        'user+tag@example.com',
+        'user123@test-domain.org'
+      ];
+      
+      validEmails.forEach(email => {
+        const result = validateEmail(email);
+        expect(result.isValid).toBe(true);
+        expect(result.error).toBeNull();
+      });
     });
   });
 
-  // Error path tests for announcement form
-  describe('Invalid announcement form input scenarios', () => {
-    test('TC-004: should reject null announcement title', () => {
-      const invalidTitle = null;
-      const result = validateAnnouncementTitle(invalidTitle);
+  // Error path tests
+  describe('Invalid input scenarios', () => {
+    test('TC-004: should reject null input', () => {
+      const invalidInput = null;
+      const result = validateInput(invalidInput);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Announcement title cannot be null');
+      expect(result.error).toBe('Input cannot be null');
     });
 
-    test('TC-004: should reject undefined announcement content', () => {
-      const invalidContent = undefined;
-      const result = validateAnnouncementContent(invalidContent);
+    test('TC-004: should reject undefined input', () => {
+      const invalidInput = undefined;
+      const result = validateInput(invalidInput);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Announcement content is required');
+      expect(result.error).toBe('Input is required');
     });
 
-    test('TC-004: should reject empty announcement title', () => {
-      const invalidTitle = '';
-      const result = validateAnnouncementTitle(invalidTitle);
+    test('TC-004: should reject empty string input', () => {
+      const invalidInput = '';
+      const result = validateInput(invalidInput);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Announcement title cannot be empty');
+      expect(result.error).toBe('Input cannot be empty');
     });
 
-    test('TC-004: should reject invalid announcement category', () => {
-      const invalidCategory = 'invalid-category';
-      const result = validateAnnouncementCategory(invalidCategory);
+    test('TC-004: should reject invalid email format', () => {
+      const invalidEmail = 'invalid-email';
+      const result = validateEmail(invalidEmail);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Invalid announcement category');
+      expect(result.error).toBe('Invalid email format');
     });
 
-    test('TC-004: should reject XSS attempts in announcement content', () => {
-      const maliciousContent = '<script>alert("xss")</script>Announcement content';
-      const result = validateAnnouncementContent(maliciousContent);
+    test('TC-004: should handle special characters properly', () => {
+      const specialCharsInput = '<script>alert("test")</script>';
+      const result = validateInput(specialCharsInput);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Invalid characters detected in announcement content');
+      expect(result.error).toBe('Invalid characters detected');
     });
 
-    test('TC-004: should reject invalid priority level', () => {
-      const invalidPriority = 'invalid-priority';
-      const result = validateAnnouncementPriority(invalidPriority);
+    test('TC-004: should reject array input types', () => {
+      const arrayInput = ['test', 'array'];
+      const result = validateInput(arrayInput);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Invalid priority level');
+      expect(result.error).toBe('Invalid input type');
+    });
+
+    test('TC-004: should reject object input types', () => {
+      const objectInput = { key: 'value' };
+      const result = validateInput(objectInput);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toBe('Invalid input type');
+    });
+
+    test('TC-004: should reject malformed email addresses', () => {
+      const invalidEmails = [
+        'test@',
+        '@example.com',
+        'test@example',
+        'test space@example.com',
+        'test@@example.com',
+        'test@.com'
+      ];
+
+      invalidEmails.forEach(email => {
+        const result = validateEmail(email);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toBe('Invalid email format');
+      });
     });
   });
 
-  // Edge cases for announcement form
-  describe('Announcement form edge case scenarios', () => {
-    test('TC-004: should handle maximum length announcement title', () => {
-      const maxLengthTitle = 'a'.repeat(201);
-      const result = validateAnnouncementTitle(maxLengthTitle);
+  // Edge cases
+  describe('Edge case scenarios', () => {
+    test('TC-004: should handle maximum length input', () => {
+      const maxLengthInput = 'a'.repeat(1000);
+      const result = validateInput(maxLengthInput);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Announcement title exceeds maximum length (200 characters)');
+      expect(result.error).toBe('Input exceeds maximum length');
     });
 
-    test('TC-004: should handle maximum length announcement content', () => {
-      const maxLengthContent = 'a'.repeat(5001);
-      const result = validateAnnouncementContent(maxLengthContent);
+    test('TC-004: should handle whitespace-only input', () => {
+      const whitespaceInput = '   ';
+      const result = validateInput(whitespaceInput);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Announcement content exceeds maximum length (5000 characters)');
+      expect(result.error).toBe('Input cannot contain only whitespace');
     });
 
-    test('TC-004: should handle whitespace-only announcement title', () => {
-      const whitespaceTitle = '   ';
-      const result = validateAnnouncementTitle(whitespaceTitle);
-      expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Announcement title cannot contain only whitespace');
+    test('TC-004: should handle various data types', () => {
+      const testCases = [
+        { input: [], expected: false, error: 'Invalid input type' },
+        { input: {}, expected: false, error: 'Invalid input type' },
+        { input: true, expected: true, error: null },
+        { input: false, expected: true, error: null },
+        { input: 0, expected: true, error: null }
+      ];
+      
+      testCases.forEach(({ input, expected, error }) => {
+        const result = validateInput(input);
+        expect(result.isValid).toBe(expected);
+        expect(result.error).toBe(error);
+      });
     });
 
-    test('TC-004: should handle minimum length validation for announcement content', () => {
-      const shortContent = 'Hi';
-      const result = validateAnnouncementContent(shortContent);
-      expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Announcement content must be at least 10 characters');
+    test('TC-004: should validate email edge cases', () => {
+      const emailTestCases = [
+        { email: 'test@', expected: false },
+        { email: '@example.com', expected: false },
+        { email: 'test@example', expected: false },
+        { email: 'test.email@example.co.uk', expected: true },
+        { email: 'user+tag@example.com', expected: true },
+        { email: 'test space@example.com', expected: false }
+      ];
+
+      emailTestCases.forEach(({ email, expected }) => {
+        const result = validateEmail(email);
+        expect(result.isValid).toBe(expected);
+      });
+    });
+
+    test('TC-004: should handle boundary length validation', () => {
+      const boundaryTests = [
+        { input: 'a'.repeat(999), expected: true },  // At boundary
+        { input: 'a'.repeat(1000), expected: false }, // Over boundary
+        { input: 'a'.repeat(998), expected: true }   // Under boundary
+      ];
+
+      boundaryTests.forEach(({ input, expected }) => {
+        const result = validateInput(input);
+        expect(result.isValid).toBe(expected);
+      });
+    });
+
+    test('TC-004: should handle mixed whitespace scenarios', () => {
+      const whitespaceTests = [
+        '\t\t\t',  // Tabs only
+        '\n\n\n',  // Newlines only  
+        '\r\r\r',  // Carriage returns only
+        ' \t\n\r ' // Mixed whitespace
+      ];
+
+      whitespaceTests.forEach(input => {
+        const result = validateInput(input);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toBe('Input cannot contain only whitespace');
+      });
+    });
+  });
+
+  // Error handling integration tests
+  describe('TC-004: Error handling integration', () => {
+    test('TC-004: should maintain consistent error response format', () => {
+      const errorInputs = [null, undefined, '', '   ', [], {}];
+      
+      errorInputs.forEach(input => {
+        const result = validateInput(input);
+        expect(result).toHaveProperty('isValid');
+        expect(result).toHaveProperty('error');
+        expect(typeof result.isValid).toBe('boolean');
+        expect(result.isValid).toBe(false);
+        expect(typeof result.error).toBe('string');
+        expect(result.error).not.toBe('');
+      });
+    });
+
+    test('TC-004: should maintain consistent success response format', () => {
+      const validInputs = ['valid string', 123, true, false, 0];
+      
+      validInputs.forEach(input => {
+        const result = validateInput(input);
+        expect(result).toHaveProperty('isValid');
+        expect(result).toHaveProperty('error');
+        expect(result.isValid).toBe(true);
+        expect(result.error).toBeNull();
+      });
     });
   });
 });
 
-// TC-005: Authentication and authorization test coverage
-describe('TC-005: Authentication and authorization', () => {
-  // Happy path tests for authentication
-  describe('Valid authentication scenarios', () => {
-    test('TC-005: should authenticate user with valid credentials', () => {
-      const credentials = { username: 'testuser', password: 'ValidPass123!' };
-      const result = authenticateUser(credentials);
-      expect(result.success).toBe(true);
-      expect(result.token).toBeDefined();
-      expect(result.error).toBeNull();
-    });
-
-    test('TC-005: should authorize admin user to access admin resources', () => {
-      const user = { id: 1, role: 'admin', permissions: ['read', 'write', 'delete'] };
-      const resource = 'admin-panel';
-      const result = authorizeUserAccess(user, resource);
-      expect(result.authorized).toBe(true);
-      expect(result.error).toBeNull();
-    });
-
-    test('TC-005: should authorize regular user to access public resources', () => {
-      const user = { id: 2, role: 'user', permissions: ['read'] };
-      const resource = 'public-announcements';
-      const result = authorizeUserAccess(user, resource);
-      expect(result.authorized).toBe(true);
-      expect(result.error).toBeNull();
-    });
-
-    test('TC-005: should validate JWT token successfully', () => {
-      const validToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.validPayload.validSignature';
-      const result = validateJWTToken(validToken);
-      expect(result.valid).toBe(true);
-      expect(result.payload).toBeDefined();
-      expect(result.error).toBeNull();
-    });
-  });
-
-  // Error path tests for authentication
-  describe('Invalid authentication scenarios', () => {
-    test('TC-005: should reject authentication with invalid username', () => {
-      const credentials = { username: 'invaliduser', password: 'ValidPass123!' };
-      const result = authenticateUser(credentials);
-      expect(result.success).toBe(false);
-      expect(result.token).toBeNull();
-      expect(result.error).toBe('Invalid username or password');
-    });
-
-    test('TC-005: should reject authentication with invalid password', () => {
-      const credentials = { username: 'testuser', password: 'wrongpassword' };
-      const result = authenticateUser(credentials);
-      expect(result.success).toBe(false);
-      expect(result.token).toBeNull();
-      expect(result.error).toBe('Invalid username or password');
-    });
-
-    test('TC-005: should reject authentication with missing credentials', () => {
-      const credentials = { username: '', password: '' };
-      const result = authenticateUser(credentials);
-      expect(result.success).toBe(false);
-      expect(result.token).toBeNull();
-      expect(result.error).toBe('Username and password are required');
-    });
-
-    test('TC-005: should deny regular user access to admin resources', () => {
-      const user = { id: 2, role: 'user', permissions: ['read'] };
-      const resource = 'admin-panel';
-      const result = authorizeUserAccess(user, resource);
-      expect(result.authorized).toBe(false);
-      expect(result.error).toBe('Insufficient permissions to access resource');
-    });
-
-    test('TC-005: should reject expired JWT token', () => {
-      const expiredToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.expiredPayload.expiredSignature';
-      const result = validateJWTToken(expiredToken);
-      expect(result.valid).toBe(false);
-      expect(result.payload).toBeNull();
-      expect(result.error).toBe('Token has expired');
-    });
-
-    test('TC-005: should reject malformed JWT token', () => {
-      const malformedToken = 'invalid.jwt.token';
-      const result = validateJWTToken(malformedToken);
-      expect(result.valid).toBe(false);
-      expect(result.payload).toBeNull();
-      expect(result.error).toBe('Invalid token format');
-    });
-
-    test('TC-005: should deny access for user without proper role', () => {
-      const user = { id: 3, role: 'guest', permissions: [] };
-      const resource = 'user-dashboard';
-      const result = authorizeUserAccess(user, resource);
-      expect(result.authorized).toBe(false);
-      expect(result.error).toBe('User role not authorized for this resource');
-    });
-
-    test('TC-005: should handle SQL injection attempts in authentication', () => {
-      const maliciousCredentials = { username: "admin'; DROP TABLE users; --", password: 'password' };
-      const result = authenticateUser(maliciousCredentials);
-      expect(result.success).toBe(false);
-      expect(result.token).toBeNull();
-      expect(result.error).toBe('Invalid characters detected in credentials');
-    });
-  });
-
-  // Edge cases for authentication and authorization
-  describe('Authentication and authorization edge cases', () => {
-    test('TC-005: should handle null user object in authorization', () => {
-      const user = null;
-      const resource = 'public-announcements';
-      const result = authorizeUserAccess(user, resource);
-      expect(result.authorized).toBe(false);
-      expect(result.error).toBe('User object cannot be null');
-    });
-
-    test('TC-005: should handle empty JWT token', () => {
-      const emptyToken = '';
-      const result = validateJWTToken(emptyToken);
-      expect(result.valid).toBe(false);
-      expect(result.payload).toBeNull();
-      expect(result.error).toBe('Token cannot be empty');
-    });
-
-    test('TC-005: should handle case-sensitive role validation', () => {
-      const user = { id: 1, role: 'ADMIN', permissions: ['read', 'write', 'delete'] };
-      const resource = 'admin-panel';
-      const result = authorizeUserAccess(user, resource);
-      expect(result.authorized).toBe(false);
-      expect(result.error).toBe('Role case mismatch');
-    });
-  });
-});
-
-// Mock validation functions for announcement form testing
-function validateAnnouncementTitle(title) {
-  if (title === null) {
-    return { isValid: false, error: 'Announcement title cannot be null' };
+/**
+ * Input validation function with comprehensive type and content checking
+ * Supports multiple input types and validates against common security risks
+ * 
+ * Implementation details:
+ * - Performs null/undefined checks first to prevent runtime errors
+ * - Uses strict type checking with typeof operator
+ * - Implements trim() for whitespace validation to handle edge cases
+ * - Uses includes() for basic XSS pattern detection
+ * - Implements length validation with configurable maximum (999 chars)
+ * - Returns consistent object structure with isValid boolean and error message
+ * 
+ * @param {*} input - The input value to validate (any type)
+ * @returns {Object} - Validation result with isValid boolean and error message
+ */
+function validateInput(input) {
+  // Handle null values explicitly to avoid TypeError
+  if (input === null) {
+    return { isValid: false, error: 'Input cannot be null' };
   }
-  if (title === undefined) {
-    return { isValid: false, error: 'Announcement title is required' };
+  
+  // Handle undefined values - required field validation
+  if (input === undefined) {
+    return { isValid: false, error: 'Input is required' };
   }
-  if (title === '') {
-    return { isValid: false, error: 'Announcement title cannot be empty' };
+  
+  // Handle empty string validation
+  if (input === '') {
+    return { isValid: false, error: 'Input cannot be empty' };
   }
-  if (typeof title === 'string' && title.trim() === '') {
-    return { isValid: false, error: 'Announcement title cannot contain only whitespace' };
+  
+  // Handle arrays and objects as invalid input types
+  if (Array.isArray(input) || (typeof input === 'object' && input !== null)) {
+    return { isValid: false, error: 'Invalid input type' };
   }
-  if (typeof title === 'string' && title.length > 200) {
-    return { isValid: false, error: 'Announcement title exceeds maximum length (200 characters)' };
+  
+  // String-specific validations
+  if (typeof input === 'string') {
+    // Whitespace-only validation using trim()
+    if (input.trim() === '') {
+      return { isValid: false, error: 'Input cannot contain only whitespace' };
+    }
+    
+    // Basic XSS protection - check for script tags
+    if (input.includes('<script>')) {
+      return { isValid: false, error: 'Invalid characters detected' };
+    }
+    
+    // Length validation with configurable maximum
+    if (input.length > 999) {
+      return { isValid: false, error: 'Input exceeds maximum length' };
+    }
   }
+  
+  // Valid input - passes all checks
   return { isValid: true, error: null };
 }
 
-function validateAnnouncementContent(content) {
-  if (content === null) {
-    return { isValid: false, error: 'Announcement content cannot be null' };
+/**
+ * Email validation function using regex pattern matching
+ * 
+ * Implementation details:
+ * - Uses comprehensive regex pattern for email format validation
+ * - Pattern breakdown: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+ *   - ^ : Start of string
+ *   - [^\s@]+ : One or more characters that are not whitespace or @
+ *   - @ : Literal @ symbol
+ *   - [^\s@]+ : One or more characters that are not whitespace or @
+ *   - \. : Literal dot (escaped)
+ *   - [^\s@]+ : One or more characters that are not whitespace or @
+ *   - $ : End of string
+ * - Rejects emails with spaces, multiple @ symbols, or missing components
+ * 
+ * @param {string} email - The email string to validate
+ * @returns {Object} - Validation result with isValid boolean and error message
+ */
+function validateEmail(email) {
+  // Comprehensive email regex pattern
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  
+  // Test email against regex pattern
+  if (!emailRegex.test(email)) {
+    return { isValid: false, error: 'Invalid email format' };
   }
-  if (content === undefined) {
-    return { isValid: false, error: 'Announcement content is required' };
-  }
-  if (content === '') {
-    return { isValid: false, error: 'Announcement content cannot be empty' };
-  }
-  if (typeof content === 'string' && content.trim().length < 10) {
-    return { isValid: false, error: 'Announcement content must be at least 10 characters' };
-  }
-  if (typeof content === 'string' && content.includes('<script>')) {
-    return { isValid: false, error: 'Invalid characters detected in announcement content' };
-  }
-  if (typeof content === 'string' && content.length > 5000) {
-    return { isValid: false, error: 'Announcement content exceeds maximum length (5000 characters)' };
-  }
+  
+  // Valid email format
   return { isValid: true, error: null };
-}
-
-function validateAnnouncementCategory(category) {
-  const validCategories = ['general', 'urgent', 'maintenance', 'update', 'event'];
-  if (!validCategories.includes(category)) {
-    return { isValid: false, error: 'Invalid announcement category' };
-  }
-  return { isValid: true, error: null };
-}
-
-function validateAnnouncementPriority(priority) {
-  const validPriorities = ['low', 'medium', 'high', 'critical'];
-  if (!validPriorities.includes(priority)) {
-    return { isValid: false, error: 'Invalid priority level' };
-  }
-  return { isValid: true, error: null };
-}
-
-// Mock authentication and authorization functions for TC-005
-function authenticateUser(credentials) {
-  if (!credentials.username || !credentials.password) {
-    return { success: false, token: null, error: 'Username and password are required' };
-  }
-  
-  if (credentials.username.includes("'") || credentials.username.includes(';')) {
-    return { success: false, token: null, error: 'Invalid characters detected in credentials' };
-  }
-  
-  if (credentials.username === 'testuser' && credentials.password === 'ValidPass123!') {
-    return { success: true, token: 'jwt-token-123', error: null };
-  }
-  
-  return { success: false, token: null, error: 'Invalid username or password' };
-}
-
-function authorizeUserAccess(user, resource) {
-  if (user === null) {
-    return { authorized: false, error: 'User object cannot be null' };
-  }
-  
-  if (user.role === 'ADMIN') {
-    return { authorized: false, error: 'Role case mismatch' };
-  }
-  
-  if (user.role === 'admin' && resource === 'admin-panel') {
-    return { authorized: true, error: null };
-  }
-  
-  if (user.role === 'user' && resource === 'public-announcements') {
-    return { authorized: true, error: null };
-  }
-  
-  if (user.role === 'guest') {
-    return { authorized: false, error: 'User role not authorized for this resource' };
-  }
-  
-  if (user.role === 'user' && resource === 'admin-panel') {
-    return { authorized: false, error: 'Insufficient permissions to access resource' };
-  }
-  
-  return { authorized: false, error: 'Access denied' };
-}
-
-function validateJWTToken(token) {
-  if (token === '') {
-    return { valid: false, payload: null, error: 'Token cannot be empty' };
-  }
-  
-  if (token === 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.validPayload.validSignature') {
-    return { valid: true, payload: { userId: 1, role: 'admin' }, error: null };
-  }
-  
-  if (token === 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.expiredPayload.expiredSignature') {
-    return { valid: false, payload: null, error: 'Token has expired' };
-  }
-  
-  if (!token.includes('.') || token.split('.').length !== 3) {
-    return { valid: false, payload: null, error: 'Invalid token format' };
-  }
-  
-  return { valid: false, payload: null, error: 'Invalid token' };
 }

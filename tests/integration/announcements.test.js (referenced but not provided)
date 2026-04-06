@@ -1,0 +1,232 @@
+const request = require('supertest');
+const app = require('../../app');
+const { sequelize } = require('../../models');
+const { Announcement } = require('../../models');
+
+describe('TC-001: Announcement CRUD Operations', () => {
+  let testAnnouncementId;
+
+  beforeAll(async () => {
+    await sequelize.sync({ force: true });
+  });
+
+  afterAll(async () => {
+    await sequelize.close();
+  });
+
+  beforeEach(async () => {
+    await Announcement.destroy({ where: {}, truncate: true });
+  });
+
+  // Happy Path Tests
+  describe('Happy Path - CRUD Operations', () => {
+    it('TC-001-CREATE: should create a new announcement successfully', async () => {
+      const announcementData = {
+        title: 'Test Announcement',
+        content: 'This is a test announcement content',
+        priority: 'high',
+        isActive: true
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(announcementData)
+        .expect(201);
+
+      expect(response.body).toHaveProperty('id');
+      expect(response.body.title).toBe(announcementData.title);
+      expect(response.body.content).toBe(announcementData.content);
+      expect(response.body.priority).toBe(announcementData.priority);
+      expect(response.body.isActive).toBe(announcementData.isActive);
+
+      testAnnouncementId = response.body.id;
+    });
+
+    it('TC-001-READ: should retrieve an announcement by ID successfully', async () => {
+      const announcement = await Announcement.create({
+        title: 'Test Announcement',
+        content: 'Test content',
+        priority: 'medium',
+        isActive: true
+      });
+
+      const response = await request(app)
+        .get(`/api/announcements/${announcement.id}`)
+        .expect(200);
+
+      expect(response.body.id).toBe(announcement.id);
+      expect(response.body.title).toBe(announcement.title);
+      expect(response.body.content).toBe(announcement.content);
+    });
+
+    it('TC-001-READ-ALL: should retrieve all announcements successfully', async () => {
+      await Announcement.bulkCreate([
+        { title: 'Announcement 1', content: 'Content 1', priority: 'high', isActive: true },
+        { title: 'Announcement 2', content: 'Content 2', priority: 'low', isActive: false }
+      ]);
+
+      const response = await request(app)
+        .get('/api/announcements')
+        .expect(200);
+
+      expect(Array.isArray(response.body)).toBe(true);
+      expect(response.body).toHaveLength(2);
+      expect(response.body[0]).toHaveProperty('title');
+      expect(response.body[0]).toHaveProperty('content');
+    });
+
+    it('TC-001-UPDATE: should update an announcement successfully', async () => {
+      const announcement = await Announcement.create({
+        title: 'Original Title',
+        content: 'Original content',
+        priority: 'low',
+        isActive: false
+      });
+
+      const updateData = {
+        title: 'Updated Title',
+        content: 'Updated content',
+        priority: 'high',
+        isActive: true
+      };
+
+      const response = await request(app)
+        .put(`/api/announcements/${announcement.id}`)
+        .send(updateData)
+        .expect(200);
+
+      expect(response.body.title).toBe(updateData.title);
+      expect(response.body.content).toBe(updateData.content);
+      expect(response.body.priority).toBe(updateData.priority);
+      expect(response.body.isActive).toBe(updateData.isActive);
+    });
+
+    it('TC-001-DELETE: should delete an announcement successfully', async () => {
+      const announcement = await Announcement.create({
+        title: 'To Be Deleted',
+        content: 'This will be deleted',
+        priority: 'medium',
+        isActive: true
+      });
+
+      await request(app)
+        .delete(`/api/announcements/${announcement.id}`)
+        .expect(204);
+
+      // Verify the announcement was deleted
+      const deletedAnnouncement = await Announcement.findByPk(announcement.id);
+      expect(deletedAnnouncement).toBeNull();
+    });
+  });
+
+  // Error Path Tests
+  describe('Error Path - CRUD Operations', () => {
+    it('TC-001-CREATE-ERROR: should return 400 when creating announcement with missing required fields', async () => {
+      const invalidData = {
+        content: 'Missing title'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(invalidData)
+        .expect(400);
+
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toContain('title');
+    });
+
+    it('TC-001-CREATE-ERROR: should return 400 when creating announcement with invalid priority', async () => {
+      const invalidData = {
+        title: 'Test Title',
+        content: 'Test content',
+        priority: 'invalid_priority'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(invalidData)
+        .expect(400);
+
+      expect(response.body).toHaveProperty('error');
+    });
+
+    it('TC-001-READ-ERROR: should return 404 when retrieving non-existent announcement', async () => {
+      const nonExistentId = 99999;
+
+      const response = await request(app)
+        .get(`/api/announcements/${nonExistentId}`)
+        .expect(404);
+
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toContain('not found');
+    });
+
+    it('TC-001-READ-ERROR: should return 400 when retrieving announcement with invalid ID format', async () => {
+      const invalidId = 'invalid-id';
+
+      const response = await request(app)
+        .get(`/api/announcements/${invalidId}`)
+        .expect(400);
+
+      expect(response.body).toHaveProperty('error');
+    });
+
+    it('TC-001-UPDATE-ERROR: should return 404 when updating non-existent announcement', async () => {
+      const nonExistentId = 99999;
+      const updateData = {
+        title: 'Updated Title',
+        content: 'Updated content'
+      };
+
+      const response = await request(app)
+        .put(`/api/announcements/${nonExistentId}`)
+        .send(updateData)
+        .expect(404);
+
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toContain('not found');
+    });
+
+    it('TC-001-UPDATE-ERROR: should return 400 when updating with invalid data', async () => {
+      const announcement = await Announcement.create({
+        title: 'Test Title',
+        content: 'Test content',
+        priority: 'medium',
+        isActive: true
+      });
+
+      const invalidUpdateData = {
+        title: '', // Empty title should be invalid
+        priority: 'invalid_priority'
+      };
+
+      const response = await request(app)
+        .put(`/api/announcements/${announcement.id}`)
+        .send(invalidUpdateData)
+        .expect(400);
+
+      expect(response.body).toHaveProperty('error');
+    });
+
+    it('TC-001-DELETE-ERROR: should return 404 when deleting non-existent announcement', async () => {
+      const nonExistentId = 99999;
+
+      const response = await request(app)
+        .delete(`/api/announcements/${nonExistentId}`)
+        .expect(404);
+
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toContain('not found');
+    });
+
+    it('TC-001-DELETE-ERROR: should return 400 when deleting with invalid ID format', async () => {
+      const invalidId = 'invalid-id';
+
+      const response = await request(app)
+        .delete(`/api/announcements/${invalidId}`)
+        .expect(400);
+
+      expect(response.body).toHaveProperty('error');
+    });
+  });
+});

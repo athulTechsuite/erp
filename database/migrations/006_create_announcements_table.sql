@@ -15,7 +15,7 @@ CREATE TABLE announcements (
     CONSTRAINT fk_announcements_created_by 
         FOREIGN KEY (created_by) 
         REFERENCES users(id) 
-        ON DELETE CASCADE
+        ON DELETE RESTRICT
 );
 
 -- Create indexes for better query performance

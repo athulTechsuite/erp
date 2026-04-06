@@ -103,7 +103,7 @@ const AnnouncementForm = ({
     } catch (error) {
       console.error('Error saving announcement:', error);
       setErrors({ 
-        submit: error.response?.data?.error || 'Failed to save announcement' 
+        submit: 'Failed to save announcement. Please try again.' 
       });
     }
   };

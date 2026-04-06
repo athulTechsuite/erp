@@ -1,0 +1,350 @@
+const { expect } = require('chai');
+const sinon = require('sinon');
+const AnnouncementManager = require('../src/AnnouncementManager');
+const AnnouncementForm = require('../src/AnnouncementForm');
+const DatabaseMigration = require('../src/DatabaseMigration');
+
+describe('Announcement System Tests', () => {
+  
+  // TC-002: AnnouncementManager CRUD operations
+  describe('TC-002: AnnouncementManager CRUD operations', () => {
+    let announcementManager;
+    let mockDb;
+
+    beforeEach(() => {
+      mockDb = {
+        create: sinon.stub(),
+        findById: sinon.stub(),
+        update: sinon.stub(),
+        delete: sinon.stub(),
+        findAll: sinon.stub()
+      };
+      announcementManager = new AnnouncementManager(mockDb);
+    });
+
+    describe('Happy Path', () => {
+      it('should create announcement successfully', async () => {
+        const announcementData = {
+          title: 'Test Announcement',
+          content: 'This is a test announcement',
+          priority: 'high'
+        };
+        const expectedResult = { id: 1, ...announcementData };
+        
+        mockDb.create.resolves(expectedResult);
+        
+        const result = await announcementManager.createAnnouncement(announcementData);
+        
+        expect(result).to.deep.equal(expectedResult);
+        expect(mockDb.create.calledOnceWith(announcementData)).to.be.true;
+      });
+
+      it('should read announcement successfully', async () => {
+        const announcementId = 1;
+        const expectedAnnouncement = {
+          id: 1,
+          title: 'Test Announcement',
+          content: 'Content',
+          priority: 'medium'
+        };
+        
+        mockDb.findById.resolves(expectedAnnouncement);
+        
+        const result = await announcementManager.getAnnouncement(announcementId);
+        
+        expect(result).to.deep.equal(expectedAnnouncement);
+        expect(mockDb.findById.calledOnceWith(announcementId)).to.be.true;
+      });
+
+      it('should update announcement successfully', async () => {
+        const announcementId = 1;
+        const updateData = { title: 'Updated Title' };
+        const expectedResult = { id: 1, title: 'Updated Title', content: 'Content' };
+        
+        mockDb.update.resolves(expectedResult);
+        
+        const result = await announcementManager.updateAnnouncement(announcementId, updateData);
+        
+        expect(result).to.deep.equal(expectedResult);
+        expect(mockDb.update.calledOnceWith(announcementId, updateData)).to.be.true;
+      });
+
+      it('should delete announcement successfully', async () => {
+        const announcementId = 1;
+        
+        mockDb.delete.resolves(true);
+        
+        const result = await announcementManager.deleteAnnouncement(announcementId);
+        
+        expect(result).to.be.true;
+        expect(mockDb.delete.calledOnceWith(announcementId)).to.be.true;
+      });
+    });
+
+    describe('Error Path', () => {
+      it('should handle create announcement database error', async () => {
+        const announcementData = { title: 'Test' };
+        const dbError = new Error('Database connection failed');
+        
+        mockDb.create.rejects(dbError);
+        
+        await expect(announcementManager.createAnnouncement(announcementData))
+          .to.be.rejectedWith('Database connection failed');
+      });
+
+      it('should handle read announcement not found', async () => {
+        const announcementId = 999;
+        
+        mockDb.findById.resolves(null);
+        
+        const result = await announcementManager.getAnnouncement(announcementId);
+        
+        expect(result).to.be.null;
+      });
+
+      it('should handle update announcement validation error', async () => {
+        const announcementId = 1;
+        const invalidData = { title: '' };
+        const validationError = new Error('Title cannot be empty');
+        
+        mockDb.update.rejects(validationError);
+        
+        await expect(announcementManager.updateAnnouncement(announcementId, invalidData))
+          .to.be.rejectedWith('Title cannot be empty');
+      });
+
+      it('should handle delete announcement not found', async () => {
+        const announcementId = 999;
+        
+        mockDb.delete.resolves(false);
+        
+        const result = await announcementManager.deleteAnnouncement(announcementId);
+        
+        expect(result).to.be.false;
+      });
+    });
+  });
+
+  // TC-003: AnnouncementForm validation
+  describe('TC-003: AnnouncementForm validation', () => {
+    let announcementForm;
+
+    beforeEach(() => {
+      announcementForm = new AnnouncementForm();
+    });
+
+    describe('Happy Path', () => {
+      it('should validate valid announcement form data', () => {
+        const validData = {
+          title: 'Valid Title',
+          content: 'This is valid content with sufficient length',
+          priority: 'medium',
+          category: 'general',
+          publishDate: new Date().toISOString()
+        };
+
+        const result = announcementForm.validate(validData);
+
+        expect(result.isValid).to.be.true;
+        expect(result.errors).to.be.empty;
+      });
+
+      it('should validate minimum required fields', () => {
+        const minimalData = {
+          title: 'Minimum Title',
+          content: 'Minimum content',
+          priority: 'low'
+        };
+
+        const result = announcementForm.validate(minimalData);
+
+        expect(result.isValid).to.be.true;
+        expect(result.errors).to.be.empty;
+      });
+    });
+
+    describe('Error Path', () => {
+      it('should reject empty title', () => {
+        const invalidData = {
+          title: '',
+          content: 'Valid content',
+          priority: 'medium'
+        };
+
+        const result = announcementForm.validate(invalidData);
+
+        expect(result.isValid).to.be.false;
+        expect(result.errors).to.include('Title is required');
+      });
+
+      it('should reject title exceeding maximum length', () => {
+        const invalidData = {
+          title: 'x'.repeat(256),
+          content: 'Valid content',
+          priority: 'medium'
+        };
+
+        const result = announcementForm.validate(invalidData);
+
+        expect(result.isValid).to.be.false;
+        expect(result.errors).to.include('Title must be less than 255 characters');
+      });
+
+      it('should reject empty content', () => {
+        const invalidData = {
+          title: 'Valid Title',
+          content: '',
+          priority: 'medium'
+        };
+
+        const result = announcementForm.validate(invalidData);
+
+        expect(result.isValid).to.be.false;
+        expect(result.errors).to.include('Content is required');
+      });
+
+      it('should reject invalid priority value', () => {
+        const invalidData = {
+          title: 'Valid Title',
+          content: 'Valid content',
+          priority: 'invalid'
+        };
+
+        const result = announcementForm.validate(invalidData);
+
+        expect(result.isValid).to.be.false;
+        expect(result.errors).to.include('Priority must be one of: low, medium, high, critical');
+      });
+
+      it('should reject invalid date format', () => {
+        const invalidData = {
+          title: 'Valid Title',
+          content: 'Valid content',
+          priority: 'medium',
+          publishDate: 'invalid-date'
+        };
+
+        const result = announcementForm.validate(invalidData);
+
+        expect(result.isValid).to.be.false;
+        expect(result.errors).to.include('Publish date must be a valid ISO date string');
+      });
+    });
+  });
+
+  // TC-005: Database migration
+  describe('TC-005: Database migration', () => {
+    let databaseMigration;
+    let mockConnection;
+
+    beforeEach(() => {
+      mockConnection = {
+        query: sinon.stub(),
+        beginTransaction: sinon.stub(),
+        commit: sinon.stub(),
+        rollback: sinon.stub()
+      };
+      databaseMigration = new DatabaseMigration(mockConnection);
+    });
+
+    describe('Happy Path', () => {
+      it('should execute migration successfully', async () => {
+        mockConnection.beginTransaction.resolves();
+        mockConnection.query.onFirstCall().resolves();
+        mockConnection.query.onSecondCall().resolves();
+        mockConnection.commit.resolves();
+
+        const result = await databaseMigration.migrate();
+
+        expect(result.success).to.be.true;
+        expect(mockConnection.beginTransaction.calledOnce).to.be.true;
+        expect(mockConnection.commit.calledOnce).to.be.true;
+      });
+
+      it('should create announcements table correctly', async () => {
+        mockConnection.query.resolves();
+        
+        await databaseMigration.createAnnouncementsTable();
+        
+        const expectedSQL = `
+          CREATE TABLE IF NOT EXISTS announcements (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            title VARCHAR(255) NOT NULL,
+            content TEXT NOT NULL,
+            priority ENUM('low', 'medium', 'high', 'critical') DEFAULT 'medium',
+            category VARCHAR(100),
+            publish_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+          )
+        `;
+        
+        expect(mockConnection.query.calledWith(expectedSQL.trim())).to.be.true;
+      });
+
+      it('should create indexes successfully', async () => {
+        mockConnection.query.resolves();
+        
+        await databaseMigration.createIndexes();
+        
+        expect(mockConnection.query.callCount).to.equal(3);
+        expect(mockConnection.query.calledWith('CREATE INDEX idx_announcements_priority ON announcements(priority)')).to.be.true;
+        expect(mockConnection.query.calledWith('CREATE INDEX idx_announcements_category ON announcements(category)')).to.be.true;
+        expect(mockConnection.query.calledWith('CREATE INDEX idx_announcements_publish_date ON announcements(publish_date)')).to.be.true;
+      });
+    });
+
+    describe('Error Path', () => {
+      it('should rollback transaction on migration failure', async () => {
+        const migrationError = new Error('Table creation failed');
+        
+        mockConnection.beginTransaction.resolves();
+        mockConnection.query.rejects(migrationError);
+        mockConnection.rollback.resolves();
+
+        const result = await databaseMigration.migrate();
+
+        expect(result.success).to.be.false;
+        expect(result.error).to.equal('Table creation failed');
+        expect(mockConnection.rollback.calledOnce).to.be.true;
+        expect(mockConnection.commit.called).to.be.false;
+      });
+
+      it('should handle connection error during transaction start', async () => {
+        const connectionError = new Error('Connection timeout');
+        
+        mockConnection.beginTransaction.rejects(connectionError);
+
+        const result = await databaseMigration.migrate();
+
+        expect(result.success).to.be.false;
+        expect(result.error).to.equal('Connection timeout');
+        expect(mockConnection.rollback.called).to.be.false;
+        expect(mockConnection.commit.called).to.be.false;
+      });
+
+      it('should handle constraint violation during table creation', async () => {
+        const constraintError = new Error('Duplicate column name');
+        
+        mockConnection.beginTransaction.resolves();
+        mockConnection.query.rejects(constraintError);
+        mockConnection.rollback.resolves();
+
+        await expect(databaseMigration.createAnnouncementsTable())
+          .to.be.rejectedWith('Duplicate column name');
+      });
+
+      it('should handle index creation failure gracefully', async () => {
+        const indexError = new Error('Index already exists');
+        
+        mockConnection.query.onFirstCall().resolves();
+        mockConnection.query.onSecondCall().rejects(indexError);
+
+        const result = await databaseMigration.createIndexes();
+
+        expect(result.partialSuccess).to.be.true;
+        expect(result.errors).to.include('Index already exists');
+      });
+    });
+  });
+});

@@ -25,6 +25,21 @@ const announcementSchema = new mongoose.Schema({
       return validator.escape(v);
     }
   },
+  category: {
+    type: String,
+    enum: {
+      values: ['general', 'maintenance', 'event', 'emergency', 'system'],
+      message: 'Invalid category. Must be one of: general, maintenance, event, emergency, system'
+    },
+    default: 'general',
+    validate: {
+      validator: function(v) {
+        const validCategories = ['general', 'maintenance', 'event', 'emergency', 'system'];
+        return validCategories.includes(v);
+      },
+      message: 'Category must be a valid value from the predefined list'
+    }
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -40,8 +55,18 @@ const announcementSchema = new mongoose.Schema({
   },
   priority: {
     type: String,
-    enum: ['low', 'medium', 'high', 'urgent'],
-    default: 'medium'
+    enum: {
+      values: ['low', 'medium', 'high', 'urgent'],
+      message: 'Invalid priority. Must be one of: low, medium, high, urgent'
+    },
+    default: 'medium',
+    validate: {
+      validator: function(v) {
+        const validPriorities = ['low', 'medium', 'high', 'urgent'];
+        return validPriorities.includes(v);
+      },
+      message: 'Priority must be a valid value from the predefined list'
+    }
   }
 }, {
   timestamps: true

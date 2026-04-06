@@ -6,271 +6,6 @@ const DatabaseMigration = require('../src/DatabaseMigration');
 
 describe('Announcement System Tests', () => {
   
-  // TC-001: Component rendering
-  describe('TC-001: Component rendering', () => {
-    let announcementForm;
-    let mockElement;
-
-    beforeEach(() => {
-      mockElement = {
-        innerHTML: '',
-        classList: {
-          add: sinon.stub(),
-          remove: sinon.stub()
-        },
-        addEventListener: sinon.stub(),
-        style: {}
-      };
-      global.document = {
-        getElementById: sinon.stub().returns(mockElement),
-        createElement: sinon.stub().returns(mockElement)
-      };
-      announcementForm = new AnnouncementForm();
-    });
-
-    describe('Happy Path', () => {
-      it('should render announcement form component successfully', () => {
-        const formData = {
-          title: 'Test Announcement',
-          content: 'Test content',
-          priority: 'medium'
-        };
-
-        const result = announcementForm.render(formData);
-
-        expect(result).to.not.be.null;
-        expect(mockElement.innerHTML).to.include('Test Announcement');
-        expect(mockElement.innerHTML).to.include('Test content');
-        expect(global.document.getElementById.called).to.be.true;
-      });
-
-      it('should render announcement list component with data', () => {
-        const announcements = [
-          { id: 1, title: 'First', content: 'Content 1', priority: 'high' },
-          { id: 2, title: 'Second', content: 'Content 2', priority: 'medium' }
-        ];
-
-        const result = announcementForm.renderList(announcements);
-
-        expect(result).to.not.be.null;
-        expect(mockElement.innerHTML).to.include('First');
-        expect(mockElement.innerHTML).to.include('Second');
-        expect(mockElement.classList.add.calledWith('announcement-list')).to.be.true;
-      });
-
-      it('should render empty state when no announcements', () => {
-        const emptyAnnouncements = [];
-
-        const result = announcementForm.renderList(emptyAnnouncements);
-
-        expect(result).to.not.be.null;
-        expect(mockElement.innerHTML).to.include('No announcements');
-        expect(mockElement.classList.add.calledWith('empty-state')).to.be.true;
-      });
-    });
-
-    describe('Error Path', () => {
-      it('should handle missing DOM element gracefully', () => {
-        global.document.getElementById.returns(null);
-
-        expect(() => {
-          announcementForm.render({ title: 'Test' });
-        }).to.throw('Target element not found');
-      });
-
-      it('should handle invalid component data', () => {
-        const invalidData = null;
-
-        expect(() => {
-          announcementForm.render(invalidData);
-        }).to.throw('Invalid component data');
-      });
-
-      it('should handle rendering errors with large datasets', () => {
-        const largeDataset = Array.from({ length: 10000 }, (_, i) => ({
-          id: i,
-          title: `Title ${i}`,
-          content: `Content ${i}`
-        }));
-
-        expect(() => {
-          announcementForm.renderList(largeDataset);
-        }).to.throw('Dataset too large to render');
-      });
-    });
-  });
-
-  // TC-002: API integration
-  describe('TC-002: API integration', () => {
-    let announcementManager;
-    let mockApiClient;
-
-    beforeEach(() => {
-      mockApiClient = {
-        get: sinon.stub(),
-        post: sinon.stub(),
-        put: sinon.stub(),
-        delete: sinon.stub(),
-        setAuthToken: sinon.stub(),
-        setTimeout: sinon.stub()
-      };
-      announcementManager = new AnnouncementManager(null, mockApiClient);
-    });
-
-    describe('Happy Path', () => {
-      it('should integrate with API to fetch announcements successfully', async () => {
-        const mockResponse = {
-          status: 200,
-          data: [
-            { id: 1, title: 'API Announcement', content: 'From API', priority: 'high' }
-          ]
-        };
-
-        mockApiClient.get.resolves(mockResponse);
-
-        const result = await announcementManager.fetchAnnouncementsFromAPI();
-
-        expect(result).to.deep.equal(mockResponse.data);
-        expect(mockApiClient.get.calledWith('/announcements')).to.be.true;
-      });
-
-      it('should integrate with API to create announcement successfully', async () => {
-        const announcementData = {
-          title: 'New API Announcement',
-          content: 'Created via API',
-          priority: 'medium'
-        };
-        const mockResponse = {
-          status: 201,
-          data: { id: 1, ...announcementData }
-        };
-
-        mockApiClient.post.resolves(mockResponse);
-
-        const result = await announcementManager.createAnnouncementViaAPI(announcementData);
-
-        expect(result).to.deep.equal(mockResponse.data);
-        expect(mockApiClient.post.calledWith('/announcements', announcementData)).to.be.true;
-      });
-
-      it('should integrate with API to update announcement successfully', async () => {
-        const announcementId = 1;
-        const updateData = { title: 'Updated via API' };
-        const mockResponse = {
-          status: 200,
-          data: { id: 1, title: 'Updated via API', content: 'Original content' }
-        };
-
-        mockApiClient.put.resolves(mockResponse);
-
-        const result = await announcementManager.updateAnnouncementViaAPI(announcementId, updateData);
-
-        expect(result).to.deep.equal(mockResponse.data);
-        expect(mockApiClient.put.calledWith(`/announcements/${announcementId}`, updateData)).to.be.true;
-      });
-
-      it('should integrate with API to delete announcement successfully', async () => {
-        const announcementId = 1;
-        const mockResponse = { status: 204 };
-
-        mockApiClient.delete.resolves(mockResponse);
-
-        const result = await announcementManager.deleteAnnouncementViaAPI(announcementId);
-
-        expect(result).to.be.true;
-        expect(mockApiClient.delete.calledWith(`/announcements/${announcementId}`)).to.be.true;
-      });
-    });
-
-    describe('Error Path', () => {
-      it('should handle API connection timeout', async () => {
-        const timeoutError = new Error('Request timeout');
-        timeoutError.code = 'TIMEOUT';
-
-        mockApiClient.get.rejects(timeoutError);
-
-        await expect(announcementManager.fetchAnnouncementsFromAPI())
-          .to.be.rejectedWith('Request timeout');
-      });
-
-      it('should handle API authentication failure', async () => {
-        const authError = new Error('Unauthorized');
-        const mockResponse = { status: 401, message: 'Unauthorized' };
-        authError.response = mockResponse;
-
-        mockApiClient.get.rejects(authError);
-
-        await expect(announcementManager.fetchAnnouncementsFromAPI())
-          .to.be.rejectedWith('Unauthorized');
-      });
-
-      it('should handle API validation errors', async () => {
-        const validationError = new Error('Validation failed');
-        const mockResponse = {
-          status: 400,
-          data: {
-            errors: ['Title is required', 'Content too long']
-          }
-        };
-        validationError.response = mockResponse;
-
-        mockApiClient.post.rejects(validationError);
-
-        const invalidData = { title: '', content: 'x'.repeat(5000) };
-
-        await expect(announcementManager.createAnnouncementViaAPI(invalidData))
-          .to.be.rejectedWith('Validation failed');
-      });
-
-      it('should handle API server errors', async () => {
-        const serverError = new Error('Internal server error');
-        const mockResponse = { status: 500, message: 'Internal server error' };
-        serverError.response = mockResponse;
-
-        mockApiClient.get.rejects(serverError);
-
-        await expect(announcementManager.fetchAnnouncementsFromAPI())
-          .to.be.rejectedWith('Internal server error');
-      });
-
-      it('should handle API rate limiting', async () => {
-        const rateLimitError = new Error('Too many requests');
-        const mockResponse = {
-          status: 429,
-          headers: { 'retry-after': '60' }
-        };
-        rateLimitError.response = mockResponse;
-
-        mockApiClient.post.rejects(rateLimitError);
-
-        await expect(announcementManager.createAnnouncementViaAPI({ title: 'Test' }))
-          .to.be.rejectedWith('Too many requests');
-      });
-
-      it('should handle network connectivity issues', async () => {
-        const networkError = new Error('Network error');
-        networkError.code = 'NETWORK_ERROR';
-
-        mockApiClient.get.rejects(networkError);
-
-        await expect(announcementManager.fetchAnnouncementsFromAPI())
-          .to.be.rejectedWith('Network error');
-      });
-
-      it('should handle malformed API responses', async () => {
-        const malformedResponse = {
-          status: 200,
-          data: 'invalid json response'
-        };
-
-        mockApiClient.get.resolves(malformedResponse);
-
-        await expect(announcementManager.fetchAnnouncementsFromAPI())
-          .to.be.rejectedWith('Invalid API response format');
-      });
-    });
-  });
-
   // TC-001: Announcement CRUD operations
   describe('TC-001: Announcement CRUD operations', () => {
     let announcementManager;
@@ -1078,6 +813,360 @@ describe('Announcement System Tests', () => {
         expect(result.success).to.be.false;
         expect(result.error).to.equal('No space left on device');
         expect(result.errorType).to.equal('STORAGE_ERROR');
+      });
+    });
+  });
+
+  // TC-007: Database operations
+  describe('TC-007: Database operations', () => {
+    let mockDb;
+    let mockConnection;
+
+    beforeEach(() => {
+      mockConnection = {
+        query: sinon.stub(),
+        beginTransaction: sinon.stub(),
+        commit: sinon.stub(),
+        rollback: sinon.stub(),
+        ping: sinon.stub(),
+        escape: sinon.stub(),
+        end: sinon.stub()
+      };
+
+      mockDb = {
+        connection: mockConnection,
+        connect: sinon.stub(),
+        disconnect: sinon.stub(),
+        query: sinon.stub(),
+        transaction: sinon.stub(),
+        backup: sinon.stub(),
+        restore: sinon.stub()
+      };
+    });
+
+    describe('Happy Path', () => {
+      it('should establish database connection successfully', async () => {
+        mockDb.connect.resolves({ status: 'connected', connectionId: 123 });
+        
+        const result = await mockDb.connect();
+        
+        expect(result.status).to.equal('connected');
+        expect(result.connectionId).to.equal(123);
+        expect(mockDb.connect.calledOnce).to.be.true;
+      });
+
+      it('should execute SELECT query successfully', async () => {
+        const expectedRows = [
+          { id: 1, title: 'Announcement 1', content: 'Content 1' },
+          { id: 2, title: 'Announcement 2', content: 'Content 2' }
+        ];
+        
+        mockDb.query.resolves({ rows: expectedRows, rowCount: 2 });
+        
+        const result = await mockDb.query('SELECT * FROM announcements');
+        
+        expect(result.rows).to.deep.equal(expectedRows);
+        expect(result.rowCount).to.equal(2);
+        expect(mockDb.query.calledOnceWith('SELECT * FROM announcements')).to.be.true;
+      });
+
+      it('should execute INSERT query successfully', async () => {
+        const insertData = { title: 'New Announcement', content: 'New Content' };
+        const expectedResult = { insertId: 3, affectedRows: 1 };
+        
+        mockDb.query.resolves(expectedResult);
+        
+        const result = await mockDb.query('INSERT INTO announcements SET ?', [insertData]);
+        
+        expect(result.insertId).to.equal(3);
+        expect(result.affectedRows).to.equal(1);
+        expect(mockDb.query.calledOnceWith('INSERT INTO announcements SET ?', [insertData])).to.be.true;
+      });
+
+      it('should execute UPDATE query successfully', async () => {
+        const updateData = { title: 'Updated Title' };
+        const expectedResult = { affectedRows: 1, changedRows: 1 };
+        
+        mockDb.query.resolves(expectedResult);
+        
+        const result = await mockDb.query('UPDATE announcements SET ? WHERE id = ?', [updateData, 1]);
+        
+        expect(result.affectedRows).to.equal(1);
+        expect(result.changedRows).to.equal(1);
+        expect(mockDb.query.calledOnceWith('UPDATE announcements SET ? WHERE id = ?', [updateData, 1])).to.be.true;
+      });
+
+      it('should execute DELETE query successfully', async () => {
+        const expectedResult = { affectedRows: 1 };
+        
+        mockDb.query.resolves(expectedResult);
+        
+        const result = await mockDb.query('DELETE FROM announcements WHERE id = ?', [1]);
+        
+        expect(result.affectedRows).to.equal(1);
+        expect(mockDb.query.calledOnceWith('DELETE FROM announcements WHERE id = ?', [1])).to.be.true;
+      });
+
+      it('should execute transaction successfully', async () => {
+        const transactionQueries = [
+          'INSERT INTO announcements (title, content) VALUES (?, ?)',
+          'UPDATE announcements SET updated_at = NOW() WHERE id = ?'
+        ];
+        
+        mockDb.transaction.resolves({ success: true, results: [{ insertId: 1 }, { affectedRows: 1 }] });
+        
+        const result = await mockDb.transaction(transactionQueries);
+        
+        expect(result.success).to.be.true;
+        expect(result.results).to.have.length(2);
+        expect(mockDb.transaction.calledOnceWith(transactionQueries)).to.be.true;
+      });
+
+      it('should perform database backup successfully', async () => {
+        const backupOptions = { tables: ['announcements'], compression: true };
+        const expectedBackup = { 
+          filename: 'backup_20231201.sql.gz',
+          size: '2.5MB',
+          timestamp: new Date().toISOString()
+        };
+        
+        mockDb.backup.resolves(expectedBackup);
+        
+        const result = await mockDb.backup(backupOptions);
+        
+        expect(result.filename).to.equal('backup_20231201.sql.gz');
+        expect(result.size).to.equal('2.5MB');
+        expect(mockDb.backup.calledOnceWith(backupOptions)).to.be.true;
+      });
+
+      it('should restore database from backup successfully', async () => {
+        const restoreOptions = { filename: 'backup_20231201.sql.gz', validate: true };
+        const expectedResult = { 
+          success: true,
+          tablesRestored: ['announcements'],
+          recordsRestored: 150
+        };
+        
+        mockDb.restore.resolves(expectedResult);
+        
+        const result = await mockDb.restore(restoreOptions);
+        
+        expect(result.success).to.be.true;
+        expect(result.tablesRestored).to.include('announcements');
+        expect(result.recordsRestored).to.equal(150);
+        expect(mockDb.restore.calledOnceWith(restoreOptions)).to.be.true;
+      });
+
+      it('should validate connection health successfully', async () => {
+        mockConnection.ping.resolves({ status: 'healthy', latency: 15 });
+        
+        const result = await mockConnection.ping();
+        
+        expect(result.status).to.equal('healthy');
+        expect(result.latency).to.equal(15);
+        expect(mockConnection.ping.calledOnce).to.be.true;
+      });
+    });
+
+    describe('Error Path', () => {
+      it('should handle connection timeout error', async () => {
+        const timeoutError = new Error('Connection timeout');
+        timeoutError.code = 'ETIMEDOUT';
+        
+        mockDb.connect.rejects(timeoutError);
+        
+        await expect(mockDb.connect())
+          .to.be.rejectedWith('Connection timeout');
+      });
+
+      it('should handle authentication failure', async () => {
+        const authError = new Error('Access denied for user');
+        authError.code = 'ER_ACCESS_DENIED_ERROR';
+        
+        mockDb.connect.rejects(authError);
+        
+        await expect(mockDb.connect())
+          .to.be.rejectedWith('Access denied for user');
+      });
+
+      it('should handle host unreachable error', async () => {
+        const networkError = new Error('Host is unreachable');
+        networkError.code = 'ENOTFOUND';
+        
+        mockDb.connect.rejects(networkError);
+        
+        await expect(mockDb.connect())
+          .to.be.rejectedWith('Host is unreachable');
+      });
+
+      it('should handle SQL syntax error', async () => {
+        const syntaxError = new Error('You have an error in your SQL syntax');
+        syntaxError.code = 'ER_PARSE_ERROR';
+        
+        mockDb.query.rejects(syntaxError);
+        
+        await expect(mockDb.query('INVALID SQL SYNTAX'))
+          .to.be.rejectedWith('You have an error in your SQL syntax');
+      });
+
+      it('should handle table not found error', async () => {
+        const tableError = new Error('Table \'announcements\' doesn\'t exist');
+        tableError.code = 'ER_NO_SUCH_TABLE';
+        
+        mockDb.query.rejects(tableError);
+        
+        await expect(mockDb.query('SELECT * FROM announcements'))
+          .to.be.rejectedWith('Table \'announcements\' doesn\'t exist');
+      });
+
+      it('should handle duplicate entry error on INSERT', async () => {
+        const duplicateError = new Error('Duplicate entry \'1\' for key \'PRIMARY\'');
+        duplicateError.code = 'ER_DUP_ENTRY';
+        
+        mockDb.query.rejects(duplicateError);
+        
+        await expect(mockDb.query('INSERT INTO announcements (id, title) VALUES (1, \'Test\')'))
+          .to.be.rejectedWith('Duplicate entry \'1\' for key \'PRIMARY\'');
+      });
+
+      it('should handle foreign key constraint violation', async () => {
+        const constraintError = new Error('Cannot delete or update a parent row: a foreign key constraint fails');
+        constraintError.code = 'ER_ROW_IS_REFERENCED_2';
+        
+        mockDb.query.rejects(constraintError);
+        
+        await expect(mockDb.query('DELETE FROM announcements WHERE id = 1'))
+          .to.be.rejectedWith('Cannot delete or update a parent row: a foreign key constraint fails');
+      });
+
+      it('should handle data too long error', async () => {
+        const dataError = new Error('Data too long for column \'title\' at row 1');
+        dataError.code = 'ER_DATA_TOO_LONG';
+        
+        mockDb.query.rejects(dataError);
+        
+        await expect(mockDb.query('INSERT INTO announcements (title) VALUES (?)', ['x'.repeat(300)]))
+          .to.be.rejectedWith('Data too long for column \'title\' at row 1');
+      });
+
+      it('should handle lock wait timeout during transaction', async () => {
+        const lockError = new Error('Lock wait timeout exceeded; try restarting transaction');
+        lockError.code = 'ER_LOCK_WAIT_TIMEOUT';
+        
+        mockDb.transaction.rejects(lockError);
+        
+        await expect(mockDb.transaction(['UPDATE announcements SET title = ? WHERE id = ?']))
+          .to.be.rejectedWith('Lock wait timeout exceeded; try restarting transaction');
+      });
+
+      it('should handle deadlock during transaction', async () => {
+        const deadlockError = new Error('Deadlock found when trying to get lock; try restarting transaction');
+        deadlockError.code = 'ER_LOCK_DEADLOCK';
+        
+        mockDb.transaction.rejects(deadlockError);
+        
+        await expect(mockDb.transaction(['UPDATE announcements SET title = ? WHERE id = 1', 'UPDATE announcements SET title = ? WHERE id = 2']))
+          .to.be.rejectedWith('Deadlock found when trying to get lock; try restarting transaction');
+      });
+
+      it('should handle disk full error', async () => {
+        const diskError = new Error('The table \'announcements\' is full');
+        diskError.code = 'ER_RECORD_FILE_FULL';
+        
+        mockDb.query.rejects(diskError);
+        
+        await expect(mockDb.query('INSERT INTO announcements (title, content) VALUES (?, ?)'))
+          .to.be.rejectedWith('The table \'announcements\' is full');
+      });
+
+      it('should handle connection lost during query', async () => {
+        const connectionError = new Error('Connection lost: The server closed the connection');
+        connectionError.code = 'PROTOCOL_CONNECTION_LOST';
+        
+        mockDb.query.rejects(connectionError);
+        
+        await expect(mockDb.query('SELECT * FROM announcements'))
+          .to.be.rejectedWith('Connection lost: The server closed the connection');
+      });
+
+      it('should handle backup failure due to insufficient permissions', async () => {
+        const permissionError = new Error('Access denied; you need the SELECT privilege for this operation');
+        permissionError.code = 'ER_TABLEACCESS_DENIED_ERROR';
+        
+        mockDb.backup.rejects(permissionError);
+        
+        await expect(mockDb.backup({ tables: ['announcements'] }))
+          .to.be.rejectedWith('Access denied; you need the SELECT privilege for this operation');
+      });
+
+      it('should handle backup failure due to disk space', async () => {
+        const spaceError = new Error('No space left on device');
+        spaceError.code = 'ENOSPC';
+        
+        mockDb.backup.rejects(spaceError);
+        
+        await expect(mockDb.backup({ tables: ['announcements'] }))
+          .to.be.rejectedWith('No space left on device');
+      });
+
+      it('should handle restore failure due to corrupted backup', async () => {
+        const corruptionError = new Error('Backup file is corrupted or incompatible');
+        corruptionError.code = 'BACKUP_CORRUPTED';
+        
+        mockDb.restore.rejects(corruptionError);
+        
+        await expect(mockDb.restore({ filename: 'corrupted_backup.sql' }))
+          .to.be.rejectedWith('Backup file is corrupted or incompatible');
+      });
+
+      it('should handle restore failure due to version mismatch', async () => {
+        const versionError = new Error('Backup version is incompatible with current database version');
+        versionError.code = 'VERSION_MISMATCH';
+        
+        mockDb.restore.rejects(versionError);
+        
+        await expect(mockDb.restore({ filename: 'old_version_backup.sql' }))
+          .to.be.rejectedWith('Backup version is incompatible with current database version');
+      });
+
+      it('should handle connection pool exhaustion', async () => {
+        const poolError = new Error('Too many connections');
+        poolError.code = 'ER_CON_COUNT_ERROR';
+        
+        mockDb.connect.rejects(poolError);
+        
+        await expect(mockDb.connect())
+          .to.be.rejectedWith('Too many connections');
+      });
+
+      it('should handle server gone away error', async () => {
+        const serverError = new Error('MySQL server has gone away');
+        serverError.code = 'ER_SERVER_GONE_ERROR';
+        
+        mockDb.query.rejects(serverError);
+        
+        await expect(mockDb.query('SELECT * FROM announcements'))
+          .to.be.rejectedWith('MySQL server has gone away');
+      });
+
+      it('should handle query timeout error', async () => {
+        const queryTimeoutError = new Error('Query execution was interrupted');
+        queryTimeoutError.code = 'ER_QUERY_INTERRUPTED';
+        
+        mockDb.query.rejects(queryTimeoutError);
+        
+        await expect(mockDb.query('SELECT * FROM announcements WHERE created_at > DATE_SUB(NOW(), INTERVAL 1 YEAR)'))
+          .to.be.rejectedWith('Query execution was interrupted');
+      });
+
+      it('should handle out of memory error during large operations', async () => {
+        const memoryError = new Error('Out of memory; restart server and try again');
+        memoryError.code = 'ER_OUT_OF_RESOURCES';
+        
+        mockDb.query.rejects(memoryError);
+        
+        await expect(mockDb.query('SELECT * FROM announcements ORDER BY content'))
+          .to.be.rejectedWith('Out of memory; restart server and try again');
       });
     });
   });

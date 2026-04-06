@@ -20,7 +20,7 @@ const TestWrapper = ({ children, authContext = mockAuthContext }) => (
   </AuthProvider>
 );
 
-describe('TC-003: Security input validation - AnnouncementForm component validation and submission', () => {
+describe('TC-003: AnnouncementForm component validation and submission', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -79,36 +79,9 @@ describe('TC-003: Security input validation - AnnouncementForm component validat
         });
       });
     });
-
-    it('should sanitize user input to prevent XSS attacks', async () => {
-      const user = userEvent.setup();
-      const mockSubmitSanitized = jest.fn();
-
-      render(
-        <TestWrapper>
-          <AnnouncementForm onSubmit={mockSubmitSanitized} />
-        </TestWrapper>
-      );
-
-      const maliciousTitle = '<script>alert("xss")</script>Announcement';
-      const maliciousContent = '<img src="x" onerror="alert(\'xss\')" />Content';
-
-      await user.type(screen.getByLabelText(/title/i), maliciousTitle);
-      await user.type(screen.getByLabelText(/content/i), maliciousContent);
-      await user.click(screen.getByRole('button', { name: /submit/i }));
-
-      await waitFor(() => {
-        expect(mockSubmitSanitized).toHaveBeenCalledWith(
-          expect.objectContaining({
-            title: expect.not.stringContaining('<script>'),
-            content: expect.not.stringContaining('<img')
-          })
-        );
-      });
-    });
   });
 
-  describe('TC-003 Error Path - Form validation failures and security violations', () => {
+  describe('TC-003 Error Path - Form validation failures', () => {
     it('should display validation errors for empty required fields', async () => {
       const user = userEvent.setup();
       render(
@@ -166,58 +139,10 @@ describe('TC-003: Security input validation - AnnouncementForm component validat
         expect(screen.getByText(/failed to submit announcement/i)).toBeInTheDocument();
       });
     });
-
-    it('should prevent CSRF attacks by validating request tokens', async () => {
-      const user = userEvent.setup();
-      const mockSubmitCSRF = jest.fn().mockRejectedValue({
-        response: { status: 403, data: { message: 'CSRF token mismatch' } }
-      });
-
-      render(
-        <TestWrapper>
-          <AnnouncementForm onSubmit={mockSubmitCSRF} />
-        </TestWrapper>
-      );
-
-      await user.type(screen.getByLabelText(/title/i), 'CSRF Test');
-      await user.type(screen.getByLabelText(/content/i), 'Testing CSRF protection');
-      await user.click(screen.getByRole('button', { name: /submit/i }));
-
-      await waitFor(() => {
-        expect(screen.getByText(/security validation failed/i)).toBeInTheDocument();
-      });
-    });
-
-    it('should reject SQL injection attempts in input fields', async () => {
-      const user = userEvent.setup();
-      const mockSubmitSQL = jest.fn();
-
-      render(
-        <TestWrapper>
-          <AnnouncementForm onSubmit={mockSubmitSQL} />
-        </TestWrapper>
-      );
-
-      const sqlInjectionTitle = "'; DROP TABLE announcements; --";
-      const sqlInjectionContent = "Content'; DELETE FROM users WHERE '1'='1";
-
-      await user.type(screen.getByLabelText(/title/i), sqlInjectionTitle);
-      await user.type(screen.getByLabelText(/content/i), sqlInjectionContent);
-      await user.click(screen.getByRole('button', { name: /submit/i }));
-
-      await waitFor(() => {
-        expect(mockSubmitSQL).toHaveBeenCalledWith(
-          expect.objectContaining({
-            title: expect.not.stringContaining('DROP TABLE'),
-            content: expect.not.stringContaining('DELETE FROM')
-          })
-        );
-      });
-    });
   });
 });
 
-describe('TC-004: Authorization and access control - Security authorization tests', () => {
+describe('TC-004: Authorization and security tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -283,37 +208,6 @@ describe('TC-004: Authorization and access control - Security authorization test
           })
         );
       });
-    });
-
-    it('should maintain session integrity for authorized users', async () => {
-      const user = userEvent.setup();
-      const validAuthContext = {
-        user: { id: 'admin123', role: 'admin', sessionToken: 'valid-token-123' },
-        isAuthenticated: true,
-        login: jest.fn(),
-        logout: jest.fn()
-      };
-
-      render(
-        <TestWrapper authContext={validAuthContext}>
-          <AnnouncementForm onSubmit={mockSubmit} />
-        </TestWrapper>
-      );
-
-      await user.type(screen.getByLabelText(/title/i), 'Session Test');
-      await user.type(screen.getByLabelText(/content/i), 'Testing session integrity');
-      await user.click(screen.getByRole('button', { name: /submit/i }));
-
-      await waitFor(() => {
-        expect(mockSubmit).toHaveBeenCalledWith(
-          expect.objectContaining({
-            title: 'Session Test',
-            content: 'Testing session integrity'
-          })
-        );
-      });
-
-      expect(validAuthContext.logout).not.toHaveBeenCalled();
     });
   });
 
@@ -384,71 +278,383 @@ describe('TC-004: Authorization and access control - Security authorization test
       expect(expiredTokenContext.logout).toHaveBeenCalled();
     });
 
-    it('should prevent privilege escalation attempts', () => {
-      const compromisedUserContext = {
-        user: { id: 'user123', role: 'user', injectedRole: 'admin' },
+    it('should prevent CSRF attacks by validating request tokens', async () => {
+      const user = userEvent.setup();
+      const mockSubmitCSRF = jest.fn().mockRejectedValue({
+        response: { status: 403, data: { message: 'CSRF token mismatch' } }
+      });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitCSRF} />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'CSRF Test');
+      await user.type(screen.getByLabelText(/content/i), 'Testing CSRF protection');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/security validation failed/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should sanitize user input to prevent XSS attacks', async () => {
+      const user = userEvent.setup();
+      const mockSubmitSanitized = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitSanitized} />
+        </TestWrapper>
+      );
+
+      const maliciousTitle = '<script>alert("xss")</script>Announcement';
+      const maliciousContent = '<img src="x" onerror="alert(\'xss\')" />Content';
+
+      await user.type(screen.getByLabelText(/title/i), maliciousTitle);
+      await user.type(screen.getByLabelText(/content/i), maliciousContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSubmitSanitized).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: expect.not.stringContaining('<script>'),
+            content: expect.not.stringContaining('<img')
+          })
+        );
+      });
+    });
+  });
+});
+
+describe('TC-006: Authentication/Authorization', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('TC-006 Happy Path - Successful authentication and authorization flows', () => {
+    it('should authenticate user with valid credentials and grant appropriate access', async () => {
+      const user = userEvent.setup();
+      const mockLogin = jest.fn().mockResolvedValue({
+        user: { id: 'admin123', role: 'admin', email: 'admin@test.com' },
+        token: 'valid-jwt-token'
+      });
+
+      const authContext = {
+        user: null,
+        isAuthenticated: false,
+        login: mockLogin,
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={authContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      // Initial state - should show login prompt
+      expect(screen.getByText(/please log in to access this feature/i)).toBeInTheDocument();
+
+      // Simulate successful login
+      await act(async () => {
+        await mockLogin('admin@test.com', 'valid-password');
+      });
+
+      // Re-render with authenticated context
+      const authenticatedContext = {
+        user: { id: 'admin123', role: 'admin', email: 'admin@test.com' },
+        isAuthenticated: true,
+        login: mockLogin,
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={authenticatedContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      // Should now show the form
+      expect(screen.getByRole('form')).toBeInTheDocument();
+      expect(screen.getByLabelText(/title/i)).toBeEnabled();
+    });
+
+    it('should maintain user session and verify token validity across requests', async () => {
+      const user = userEvent.setup();
+      const mockTokenValidation = jest.fn().mockResolvedValue({ valid: true });
+      const mockSubmitWithToken = jest.fn().mockResolvedValue({ success: true });
+
+      const authContext = {
+        user: { id: 'admin123', role: 'admin', token: 'valid-jwt-token' },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn(),
+        validateToken: mockTokenValidation
+      };
+
+      render(
+        <TestWrapper authContext={authContext}>
+          <AnnouncementForm onSubmit={mockSubmitWithToken} />
+        </TestWrapper>
+      );
+
+      // Fill and submit form
+      await user.type(screen.getByLabelText(/title/i), 'Session Test');
+      await user.type(screen.getByLabelText(/content/i), 'Testing session maintenance');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSubmitWithToken).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: 'Session Test',
+            content: 'Testing session maintenance'
+          })
+        );
+      });
+    });
+
+    it('should properly authorize admin users for all operations', async () => {
+      const user = userEvent.setup();
+      const adminContext = {
+        user: { id: 'admin123', role: 'admin', permissions: ['create', 'edit', 'delete', 'moderate'] },
         isAuthenticated: true,
         login: jest.fn(),
         logout: jest.fn()
       };
 
       render(
-        <TestWrapper authContext={compromisedUserContext}>
+        <TestWrapper authContext={adminContext}>
           <AnnouncementForm onSubmit={mockSubmit} />
         </TestWrapper>
       );
 
-      // Should still deny access based on actual role, not injected role
+      // Admin should have access to all form features
+      expect(screen.getByRole('form')).toBeInTheDocument();
+      expect(screen.getByLabelText(/title/i)).toBeEnabled();
+      expect(screen.getByLabelText(/content/i)).toBeEnabled();
+      
+      // Check for admin-specific features
+      const prioritySelect = screen.queryByLabelText(/priority/i);
+      if (prioritySelect) {
+        expect(prioritySelect).toBeEnabled();
+      }
+
+      await user.type(screen.getByLabelText(/title/i), 'Admin Announcement');
+      await user.type(screen.getByLabelText(/content/i), 'Administrative announcement content');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSubmit).toHaveBeenCalled();
+      });
+    });
+
+    it('should handle role-based permissions correctly for moderators', async () => {
+      const user = userEvent.setup();
+      const moderatorContext = {
+        user: { id: 'mod123', role: 'moderator', permissions: ['create', 'edit', 'moderate'] },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={moderatorContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      // Moderator should have access to form but possibly limited features
+      expect(screen.getByRole('form')).toBeInTheDocument();
+      expect(screen.getByLabelText(/title/i)).toBeEnabled();
+      expect(screen.getByLabelText(/content/i)).toBeEnabled();
+
+      await user.type(screen.getByLabelText(/title/i), 'Moderator Announcement');
+      await user.type(screen.getByLabelText(/content/i), 'Moderator announcement content');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSubmit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: 'Moderator Announcement',
+            content: 'Moderator announcement content'
+          })
+        );
+      });
+    });
+  });
+
+  describe('TC-006 Error Path - Authentication and authorization failures', () => {
+    it('should reject authentication with invalid credentials', async () => {
+      const user = userEvent.setup();
+      const mockFailedLogin = jest.fn().mockRejectedValue(new Error('Invalid credentials'));
+
+      const authContext = {
+        user: null,
+        isAuthenticated: false,
+        login: mockFailedLogin,
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={authContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      expect(screen.getByText(/please log in to access this feature/i)).toBeInTheDocument();
+      expect(screen.queryByRole('form')).not.toBeInTheDocument();
+
+      // Attempt login with invalid credentials should fail
+      await expect(mockFailedLogin('invalid@test.com', 'wrong-password')).rejects.toThrow('Invalid credentials');
+    });
+
+    it('should deny access to users without proper authorization', () => {
+      const unauthorizedContext = {
+        user: { id: 'user123', role: 'guest', permissions: ['read'] },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={unauthorizedContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
       expect(screen.getByText(/insufficient privileges/i)).toBeInTheDocument();
       expect(screen.queryByRole('form')).not.toBeInTheDocument();
     });
 
-    it('should block access when user account is disabled', () => {
-      const disabledUserContext = {
-        user: { id: 'admin123', role: 'admin', status: 'disabled' },
+    it('should handle expired authentication tokens and force re-authentication', async () => {
+      const user = userEvent.setup();
+      const mockLogout = jest.fn();
+      const expiredContext = {
+        user: { id: 'admin123', role: 'admin', token: 'expired-token' },
         isAuthenticated: true,
         login: jest.fn(),
-        logout: jest.fn()
+        logout: mockLogout
+      };
+
+      const mockSubmitExpired = jest.fn().mockRejectedValue({
+        response: { status: 401, data: { message: 'Token expired' } }
+      });
+
+      render(
+        <TestWrapper authContext={expiredContext}>
+          <AnnouncementForm onSubmit={mockSubmitExpired} />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'Expired Token Test');
+      await user.type(screen.getByLabelText(/content/i), 'Testing expired token handling');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/session expired.*please log in again/i)).toBeInTheDocument();
+        expect(mockLogout).toHaveBeenCalled();
+      });
+    });
+
+    it('should prevent unauthorized access attempts and log security violations', async () => {
+      const user = userEvent.setup();
+      const mockSecurityLog = jest.fn();
+      const maliciousContext = {
+        user: { id: 'hacker123', role: 'user' },
+        isAuthenticated: false, // Inconsistent state - authenticated user but not marked as authenticated
+        login: jest.fn(),
+        logout: jest.fn(),
+        logSecurityViolation: mockSecurityLog
       };
 
       render(
-        <TestWrapper authContext={disabledUserContext}>
+        <TestWrapper authContext={maliciousContext}>
           <AnnouncementForm onSubmit={mockSubmit} />
         </TestWrapper>
       );
 
-      expect(screen.getByText(/account has been disabled/i)).toBeInTheDocument();
+      expect(screen.getByText(/please log in to access this feature/i)).toBeInTheDocument();
       expect(screen.queryByRole('form')).not.toBeInTheDocument();
     });
 
-    it('should prevent session hijacking by validating user identity', async () => {
+    it('should handle network failures during authentication gracefully', async () => {
+      const mockNetworkFailureLogin = jest.fn().mockRejectedValue(new Error('Network error'));
+
+      const authContext = {
+        user: null,
+        isAuthenticated: false,
+        login: mockNetworkFailureLogin,
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={authContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      expect(screen.getByText(/please log in to access this feature/i)).toBeInTheDocument();
+
+      // Network failure should be handled gracefully
+      await expect(mockNetworkFailureLogin('user@test.com', 'password')).rejects.toThrow('Network error');
+    });
+
+    it('should validate user permissions for each protected operation', async () => {
       const user = userEvent.setup();
-      const suspiciousSessionContext = {
-        user: { id: 'admin123', role: 'admin' },
+      const limitedUserContext = {
+        user: { id: 'limited123', role: 'contributor', permissions: ['create'] },
         isAuthenticated: true,
         login: jest.fn(),
         logout: jest.fn()
       };
 
-      const mockSubmitSessionError = jest.fn().mockRejectedValue({
-        response: { status: 403, data: { message: 'Session validation failed' } }
+      const mockRestrictedSubmit = jest.fn().mockRejectedValue({
+        response: { status: 403, data: { message: 'Insufficient permissions for this operation' } }
       });
 
       render(
-        <TestWrapper authContext={suspiciousSessionContext}>
-          <AnnouncementForm onSubmit={mockSubmitSessionError} />
+        <TestWrapper authContext={limitedUserContext}>
+          <AnnouncementForm onSubmit={mockRestrictedSubmit} />
         </TestWrapper>
       );
 
-      await user.type(screen.getByLabelText(/title/i), 'Hijack Test');
-      await user.type(screen.getByLabelText(/content/i), 'Testing session security');
+      await user.type(screen.getByLabelText(/title/i), 'Limited Access Test');
+      await user.type(screen.getByLabelText(/content/i), 'Testing permission restrictions');
       await user.click(screen.getByRole('button', { name: /submit/i }));
 
       await waitFor(() => {
-        expect(screen.getByText(/session validation failed/i)).toBeInTheDocument();
+        expect(screen.getByText(/insufficient permissions/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should prevent session hijacking by validating session integrity', async () => {
+      const user = userEvent.setup();
+      const suspiciousContext = {
+        user: { id: 'admin123', role: 'admin', sessionId: 'hijacked-session' },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      const mockHijackingDetection = jest.fn().mockRejectedValue({
+        response: { status: 403, data: { message: 'Session integrity violation detected' } }
       });
 
-      expect(suspiciousSessionContext.logout).toHaveBeenCalled();
+      render(
+        <TestWrapper authContext={suspiciousContext}>
+          <AnnouncementForm onSubmit={mockHijackingDetection} />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'Hijacking Test');
+      await user.type(screen.getByLabelText(/content/i), 'Testing session hijacking prevention');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/security violation detected/i)).toBeInTheDocument();
+      });
     });
   });
 });

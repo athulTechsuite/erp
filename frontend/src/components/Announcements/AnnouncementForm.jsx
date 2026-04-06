@@ -28,6 +28,14 @@ const AnnouncementForm = ({
     }
   }, [announcement]);
 
+  const sanitizeErrorMessage = (message) => {
+    if (typeof message !== 'string') {
+      return 'An error occurred. Please try again.';
+    }
+    // Remove HTML tags and return plain text
+    return message.replace(/<[^>]*>/g, '');
+  };
+
   const validateField = (name, value) => {
     const fieldErrors = {};
     
@@ -102,8 +110,9 @@ const AnnouncementForm = ({
       });
     } catch (error) {
       console.error('Error saving announcement:', error);
+      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to save announcement. Please try again.';
       setErrors({ 
-        submit: 'Failed to save announcement. Please try again.' 
+        submit: sanitizeErrorMessage(errorMessage)
       });
     }
   };
@@ -127,7 +136,10 @@ const AnnouncementForm = ({
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{errors.submit}</AlertDescription>
+              <AlertDescription>
+                {/* Sanitized error message to prevent XSS */}
+                <span>{sanitizeErrorMessage(errors.submit)}</span>
+              </AlertDescription>
             </Alert>
           )}
           

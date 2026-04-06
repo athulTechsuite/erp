@@ -5,49 +5,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Save, X, AlertCircle, Loader2 } from 'lucide-react';
-
-// Error Boundary Component
-class AnnouncementFormErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error, errorInfo) {
-    console.error('AnnouncementForm Error:', error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <Card className="w-full max-w-2xl mx-auto">
-          <CardContent className="p-6">
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                Something went wrong while loading the announcement form. Please refresh the page and try again.
-              </AlertDescription>
-            </Alert>
-            <Button 
-              onClick={() => this.setState({ hasError: false, error: null })} 
-              className="mt-4"
-              variant="outline"
-            >
-              Try Again
-            </Button>
-          </CardContent>
-        </Card>
-      );
-    }
-
-    return this.props.children;
-  }
-}
+import { Save, X, AlertCircle } from 'lucide-react';
 
 const AnnouncementForm = ({ 
   announcement = null, 
@@ -61,33 +19,36 @@ const AnnouncementForm = ({
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
-  const [isLoading, setIsLoading] = useState(false);
-  const [isInitializing, setIsInitializing] = useState(!!announcement);
+
+  // Sanitize input function with strict settings
+  const sanitizeInput = (input) => {
+    return DOMPurify.sanitize(input, { 
+      ALLOWED_TAGS: [],
+      ALLOWED_ATTR: [],
+      KEEP_CONTENT: true,
+      FORBID_TAGS: ['script', 'object', 'embed', 'link', 'style', 'img', 'svg'],
+      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur', 'onchange', 'onsubmit']
+    });
+  };
+
+  // Additional HTML entity encoding for display
+  const encodeForDisplay = (input) => {
+    return input
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#x27;')
+      .replace(/\//g, '&#x2F;');
+  };
 
   useEffect(() => {
-    const initializeForm = async () => {
-      if (announcement) {
-        try {
-          setIsInitializing(true);
-          // Simulate async operation if needed (e.g., fetching additional data)
-          await new Promise(resolve => setTimeout(resolve, 100));
-          
-          setFormData({
-            title: DOMPurify.sanitize(announcement.title || ''),
-            content: DOMPurify.sanitize(announcement.content || '')
-          });
-        } catch (error) {
-          console.error('Error initializing form:', error);
-          setErrors({ 
-            initialization: 'Failed to load announcement data. Please try again.' 
-          });
-        } finally {
-          setIsInitializing(false);
-        }
-      }
-    };
-
-    initializeForm();
+    if (announcement) {
+      setFormData({
+        title: sanitizeInput(announcement.title || ''),
+        content: sanitizeInput(announcement.content || '')
+      });
+    }
   }, [announcement]);
 
   const validateField = (name, value) => {
@@ -117,7 +78,7 @@ const AnnouncementForm = ({
     const contentErrors = validateField('content', formData.content);
     
     const allErrors = { ...titleErrors, ...contentErrors };
-    setErrors(prev => ({ ...prev, ...allErrors }));
+    setErrors(allErrors);
     
     return Object.keys(allErrors).length === 0;
   };
@@ -125,9 +86,12 @@ const AnnouncementForm = ({
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     
+    // Sanitize input value immediately
+    const sanitizedValue = sanitizeInput(value);
+    
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: sanitizedValue
     }));
 
     // Clear errors for this field when user starts typing
@@ -143,7 +107,7 @@ const AnnouncementForm = ({
     const { name, value } = e.target;
     setTouched(prev => ({ ...prev, [name]: true }));
     
-    const fieldErrors = validateField(name, value);
+    const fieldErrors = validateField(name, sanitizeInput(value));
     setErrors(prev => ({ ...prev, ...fieldErrors }));
   };
 
@@ -157,22 +121,27 @@ const AnnouncementForm = ({
     }
 
     try {
-      setIsLoading(true);
-      setErrors(prev => ({ ...prev, submit: undefined }));
-      
-      await onSave({
-        ...formData,
-        title: DOMPurify.sanitize(formData.title.trim()),
-        content: DOMPurify.sanitize(formData.content.trim())
-      });
+      // Double sanitization: once for storage, once for any potential rendering
+      const sanitizedData = {
+        title: sanitizeInput(formData.title.trim()),
+        content: sanitizeInput(formData.content.trim())
+      };
+
+      // Additional validation to ensure no malicious content
+      if (sanitizedData.title !== formData.title.trim() || 
+          sanitizedData.content !== formData.content.trim()) {
+        setErrors({ 
+          submit: 'Invalid content detected. Please remove any HTML tags or scripts.' 
+        });
+        return;
+      }
+
+      await onSave(sanitizedData);
     } catch (error) {
       console.error('Error saving announcement:', error);
-      setErrors(prev => ({ 
-        ...prev,
+      setErrors({ 
         submit: 'Failed to save announcement. Please try again.' 
-      }));
-    } finally {
-      setIsLoading(false);
+      });
     }
   };
 
@@ -183,59 +152,19 @@ const AnnouncementForm = ({
     onCancel();
   };
 
-  const isFormDisabled = isSubmitting || isLoading || isInitializing;
-
-  // Loading state for form initialization
-  if (isInitializing) {
-    return (
-      <Card className="w-full max-w-2xl mx-auto">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading Announcement...
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4 animate-pulse">
-            <div className="space-y-2">
-              <div className="h-4 bg-gray-200 rounded w-1/4"></div>
-              <div className="h-10 bg-gray-200 rounded"></div>
-            </div>
-            <div className="space-y-2">
-              <div className="h-4 bg-gray-200 rounded w-1/4"></div>
-              <div className="h-32 bg-gray-200 rounded"></div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <div className="h-10 bg-gray-200 rounded w-20"></div>
-              <div className="h-10 bg-gray-200 rounded w-24"></div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
           {announcement ? 'Edit Announcement' : 'Create New Announcement'}
         </CardTitle>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {errors.initialization && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{DOMPurify.sanitize(errors.initialization)}</AlertDescription>
-            </Alert>
-          )}
-          
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{DOMPurify.sanitize(errors.submit)}</AlertDescription>
+              <AlertDescription>{encodeForDisplay(errors.submit)}</AlertDescription>
             </Alert>
           )}
           
@@ -252,12 +181,11 @@ const AnnouncementForm = ({
               placeholder="Enter announcement title..."
               className={errors.title && touched.title ? 'border-red-500' : ''}
               maxLength={200}
-              disabled={isFormDisabled}
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.title && touched.title && (
-                  <span className="text-red-500">{DOMPurify.sanitize(errors.title)}</span>
+                  <span className="text-red-500">{encodeForDisplay(errors.title)}</span>
                 )}
               </span>
               <span>{formData.title.length}/200</span>
@@ -278,12 +206,11 @@ const AnnouncementForm = ({
               rows={8}
               className={errors.content && touched.content ? 'border-red-500' : ''}
               maxLength={5000}
-              disabled={isFormDisabled}
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.content && touched.content && (
-                  <span className="text-red-500">{DOMPurify.sanitize(errors.content)}</span>
+                  <span className="text-red-500">{encodeForDisplay(errors.content)}</span>
                 )}
               </span>
               <span>{formData.content.length}/5000</span>
@@ -295,21 +222,17 @@ const AnnouncementForm = ({
               type="button"
               variant="outline"
               onClick={handleCancel}
-              disabled={isFormDisabled}
+              disabled={isSubmitting}
             >
               <X className="h-4 w-4 mr-2" />
               Cancel
             </Button>
             <Button
               type="submit"
-              disabled={isFormDisabled || Object.keys(errors).filter(key => key !== 'initialization').length > 0}
+              disabled={isSubmitting || Object.keys(errors).length > 0}
             >
-              {isLoading || isSubmitting ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4 mr-2" />
-              )}
-              {isLoading || isSubmitting ? 'Saving...' : announcement ? 'Update' : 'Publish'}
+              <Save className="h-4 w-4 mr-2" />
+              {isSubmitting ? 'Saving...' : announcement ? 'Update' : 'Publish'}
             </Button>
           </div>
         </form>
@@ -318,13 +241,4 @@ const AnnouncementForm = ({
   );
 };
 
-// Wrap the component with error boundary
-const AnnouncementFormWithErrorBoundary = (props) => {
-  return (
-    <AnnouncementFormErrorBoundary>
-      <AnnouncementForm {...props} />
-    </AnnouncementFormErrorBoundary>
-  );
-};
-
-export default AnnouncementFormWithErrorBoundary;
+export default AnnouncementForm;

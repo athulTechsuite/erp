@@ -1,26 +1,92 @@
 import api from './api';
 
-// API endpoints configuration - can be overridden by environment variables
-const API_ENDPOINTS = {
-  ANNOUNCEMENTS: process.env.REACT_APP_ANNOUNCEMENTS_ENDPOINT || '/announcements',
-  ADMIN_ANNOUNCEMENTS: process.env.REACT_APP_ADMIN_ANNOUNCEMENTS_ENDPOINT || '/admin/announcements',
-  ADMIN_ANNOUNCEMENTS_STATS: process.env.REACT_APP_ADMIN_ANNOUNCEMENTS_STATS_ENDPOINT || '/admin/announcements/stats',
-  ADMIN_ANNOUNCEMENTS_SEARCH: process.env.REACT_APP_ADMIN_ANNOUNCEMENTS_SEARCH_ENDPOINT || '/admin/announcements/search',
-  ADMIN_ANNOUNCEMENTS_BULK_DELETE: process.env.REACT_APP_ADMIN_ANNOUNCEMENTS_BULK_DELETE_ENDPOINT || '/admin/announcements/bulk-delete',
-  ADMIN_ANNOUNCEMENTS_CHECK_PERMISSION: process.env.REACT_APP_ADMIN_ANNOUNCEMENTS_CHECK_PERMISSION_ENDPOINT || '/admin/announcements/check-permission'
-};
-
 class AnnouncementService {
+  /**
+   * Handle API errors with detailed error information
+   */
+  _handleApiError(error, operation = 'API operation') {
+    let errorMessage = `Failed to ${operation}`;
+    let errorCode = 'UNKNOWN_ERROR';
+    
+    if (error.code === 'ECONNABORTED') {
+      // Request timeout
+      errorMessage = `Request timeout: ${operation} took too long to complete`;
+      errorCode = 'TIMEOUT_ERROR';
+    } else if (error.code === 'ERR_NETWORK' || !error.response) {
+      // Network error (offline, DNS issues, etc.)
+      errorMessage = `Network error: Unable to connect to server during ${operation}`;
+      errorCode = 'NETWORK_ERROR';
+    } else if (error.response) {
+      // Server responded with error status
+      const status = error.response.status;
+      const data = error.response.data;
+      
+      switch (status) {
+        case 400:
+          errorMessage = data?.message || `Bad request: Invalid data for ${operation}`;
+          errorCode = 'BAD_REQUEST';
+          break;
+        case 401:
+          errorMessage = 'Authentication required: Please log in again';
+          errorCode = 'UNAUTHORIZED';
+          break;
+        case 403:
+          errorMessage = 'Access denied: Insufficient permissions';
+          errorCode = 'FORBIDDEN';
+          break;
+        case 404:
+          errorMessage = data?.message || 'Resource not found';
+          errorCode = 'NOT_FOUND';
+          break;
+        case 422:
+          errorMessage = data?.message || `Validation error during ${operation}`;
+          errorCode = 'VALIDATION_ERROR';
+          break;
+        case 429:
+          errorMessage = 'Too many requests: Please try again later';
+          errorCode = 'RATE_LIMIT';
+          break;
+        case 500:
+          errorMessage = 'Server error: Please try again later';
+          errorCode = 'SERVER_ERROR';
+          break;
+        case 502:
+        case 503:
+        case 504:
+          errorMessage = 'Service temporarily unavailable: Please try again later';
+          errorCode = 'SERVICE_UNAVAILABLE';
+          break;
+        default:
+          errorMessage = data?.message || `Server error (${status}) during ${operation}`;
+          errorCode = 'HTTP_ERROR';
+      }
+    }
+
+    const enhancedError = new Error(errorMessage);
+    enhancedError.code = errorCode;
+    enhancedError.originalError = error;
+    enhancedError.status = error.response?.status;
+    enhancedError.data = error.response?.data;
+    
+    console.error(`AnnouncementService Error - ${operation}:`, {
+      message: errorMessage,
+      code: errorCode,
+      status: error.response?.status,
+      originalError: error
+    });
+    
+    return enhancedError;
+  }
+
   /**
    * Get all announcements (for employees to view on dashboard)
    */
   async getAllAnnouncements() {
     try {
-      const response = await api.get(API_ENDPOINTS.ANNOUNCEMENTS);
+      const response = await api.get('/announcements');
       return response.data;
     } catch (error) {
-      console.error('Error fetching announcements:', error);
-      throw error;
+      throw this._handleApiError(error, 'fetch announcements');
     }
   }
 
@@ -29,11 +95,10 @@ class AnnouncementService {
    */
   async getAnnouncementsForAdmin() {
     try {
-      const response = await api.get(API_ENDPOINTS.ADMIN_ANNOUNCEMENTS);
+      const response = await api.get('/admin/announcements');
       return response.data;
     } catch (error) {
-      console.error('Error fetching admin announcements:', error);
-      throw error;
+      throw this._handleApiError(error, 'fetch admin announcements');
     }
   }
 
@@ -42,11 +107,10 @@ class AnnouncementService {
    */
   async getAnnouncementById(id) {
     try {
-      const response = await api.get(`${API_ENDPOINTS.ANNOUNCEMENTS}/${id}`);
+      const response = await api.get(`/announcements/${id}`);
       return response.data;
     } catch (error) {
-      console.error('Error fetching announcement:', error);
-      throw error;
+      throw this._handleApiError(error, `fetch announcement with ID ${id}`);
     }
   }
 
@@ -55,11 +119,10 @@ class AnnouncementService {
    */
   async createAnnouncement(announcementData) {
     try {
-      const response = await api.post(API_ENDPOINTS.ADMIN_ANNOUNCEMENTS, announcementData);
+      const response = await api.post('/admin/announcements', announcementData);
       return response.data;
     } catch (error) {
-      console.error('Error creating announcement:', error);
-      throw error;
+      throw this._handleApiError(error, 'create announcement');
     }
   }
 
@@ -68,11 +131,10 @@ class AnnouncementService {
    */
   async updateAnnouncement(id, announcementData) {
     try {
-      const response = await api.put(`${API_ENDPOINTS.ADMIN_ANNOUNCEMENTS}/${id}`, announcementData);
+      const response = await api.put(`/admin/announcements/${id}`, announcementData);
       return response.data;
     } catch (error) {
-      console.error('Error updating announcement:', error);
-      throw error;
+      throw this._handleApiError(error, `update announcement with ID ${id}`);
     }
   }
 
@@ -81,11 +143,10 @@ class AnnouncementService {
    */
   async deleteAnnouncement(id) {
     try {
-      const response = await api.delete(`${API_ENDPOINTS.ADMIN_ANNOUNCEMENTS}/${id}`);
+      const response = await api.delete(`/admin/announcements/${id}`);
       return response.data;
     } catch (error) {
-      console.error('Error deleting announcement:', error);
-      throw error;
+      throw this._handleApiError(error, `delete announcement with ID ${id}`);
     }
   }
 
@@ -94,11 +155,10 @@ class AnnouncementService {
    */
   async toggleAnnouncementStatus(id) {
     try {
-      const response = await api.patch(`${API_ENDPOINTS.ADMIN_ANNOUNCEMENTS}/${id}/toggle-status`);
+      const response = await api.patch(`/admin/announcements/${id}/toggle-status`);
       return response.data;
     } catch (error) {
-      console.error('Error toggling announcement status:', error);
-      throw error;
+      throw this._handleApiError(error, `toggle status for announcement with ID ${id}`);
     }
   }
 
@@ -107,11 +167,10 @@ class AnnouncementService {
    */
   async getAnnouncementStats() {
     try {
-      const response = await api.get(API_ENDPOINTS.ADMIN_ANNOUNCEMENTS_STATS);
+      const response = await api.get('/admin/announcements/stats');
       return response.data;
     } catch (error) {
-      console.error('Error fetching announcement stats:', error);
-      throw error;
+      throw this._handleApiError(error, 'fetch announcement statistics');
     }
   }
 
@@ -124,11 +183,10 @@ class AnnouncementService {
         q: query,
         ...filters
       });
-      const response = await api.get(`${API_ENDPOINTS.ADMIN_ANNOUNCEMENTS_SEARCH}?${params}`);
+      const response = await api.get(`/admin/announcements/search?${params}`);
       return response.data;
     } catch (error) {
-      console.error('Error searching announcements:', error);
-      throw error;
+      throw this._handleApiError(error, `search announcements with query "${query}"`);
     }
   }
 
@@ -137,13 +195,12 @@ class AnnouncementService {
    */
   async bulkDeleteAnnouncements(announcementIds) {
     try {
-      const response = await api.post(API_ENDPOINTS.ADMIN_ANNOUNCEMENTS_BULK_DELETE, {
+      const response = await api.post('/admin/announcements/bulk-delete', {
         ids: announcementIds
       });
       return response.data;
     } catch (error) {
-      console.error('Error bulk deleting announcements:', error);
-      throw error;
+      throw this._handleApiError(error, `bulk delete ${announcementIds.length} announcements`);
     }
   }
 
@@ -199,7 +256,7 @@ class AnnouncementService {
    */
   async checkManagementPermission() {
     try {
-      const response = await api.get(API_ENDPOINTS.ADMIN_ANNOUNCEMENTS_CHECK_PERMISSION);
+      const response = await api.get('/admin/announcements/check-permission');
       return response.data.hasPermission;
     } catch (error) {
       console.error('Error checking announcement permission:', error);

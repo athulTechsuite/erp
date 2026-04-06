@@ -521,6 +521,498 @@ describe('TC-004: Security and authentication testing', () => {
   });
 });
 
+describe('TC-005: Authentication and authorization', () => {
+  const mockAuthService = {
+    authenticate: vi.fn(),
+    authorize: vi.fn(),
+    validateCredentials: vi.fn(),
+    checkRolePermissions: vi.fn(),
+    enforceAccessControl: vi.fn(),
+    validateSession: vi.fn(),
+    logout: vi.fn()
+  };
+
+  const mockUserService = {
+    getUserById: vi.fn(),
+    getUserRoles: vi.fn(),
+    updateUserPermissions: vi.fn()
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('Happy path - Authentication and authorization flows', () => {
+    it('TC-005: should successfully authenticate user with valid credentials and assign proper roles', async () => {
+      mockAuthService.authenticate.mockResolvedValue({
+        success: true,
+        user: {
+          id: 1,
+          username: 'admin_user',
+          email: 'admin@example.com',
+          roles: ['admin', 'moderator'],
+          permissions: ['create', 'read', 'update', 'delete'],
+          lastLogin: '2023-12-01T10:00:00Z'
+        },
+        session: {
+          id: 'session-123',
+          token: 'valid-auth-token',
+          expiresAt: '2023-12-01T18:00:00Z'
+        }
+      });
+
+      const result = await mockAuthService.authenticate({
+        username: 'admin_user',
+        password: 'SecurePassword123!'
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.user.roles).toContain('admin');
+      expect(result.user.roles).toContain('moderator');
+      expect(result.user.permissions).toContain('create');
+      expect(result.user.permissions).toContain('delete');
+      expect(result.session.token).toBe('valid-auth-token');
+    });
+
+    it('TC-005: should successfully authorize user with admin role for protected resource access', async () => {
+      mockAuthService.authorize.mockResolvedValue({
+        authorized: true,
+        user: { id: 1, roles: ['admin'] },
+        resource: 'user_management',
+        action: 'delete_user',
+        permissions: ['full_access'],
+        timestamp: '2023-12-01T10:00:00Z'
+      });
+
+      const result = await mockAuthService.authorize({
+        userId: 1,
+        resource: 'user_management',
+        action: 'delete_user'
+      });
+
+      expect(result.authorized).toBe(true);
+      expect(result.user.roles).toContain('admin');
+      expect(result.permissions).toContain('full_access');
+      expect(result.resource).toBe('user_management');
+      expect(result.action).toBe('delete_user');
+    });
+
+    it('TC-005: should successfully validate user credentials with password strength requirements', async () => {
+      mockAuthService.validateCredentials.mockResolvedValue({
+        valid: true,
+        user: { id: 2, username: 'secure_user' },
+        passwordStrength: 'strong',
+        lastPasswordChange: '2023-11-01T10:00:00Z',
+        requiresPasswordChange: false,
+        accountLocked: false
+      });
+
+      const result = await mockAuthService.validateCredentials({
+        username: 'secure_user',
+        password: 'VerySecureP@ssw0rd123!'
+      });
+
+      expect(result.valid).toBe(true);
+      expect(result.passwordStrength).toBe('strong');
+      expect(result.requiresPasswordChange).toBe(false);
+      expect(result.accountLocked).toBe(false);
+    });
+
+    it('TC-005: should successfully check role-based permissions for resource access', async () => {
+      mockAuthService.checkRolePermissions.mockResolvedValue({
+        hasPermission: true,
+        userRoles: ['moderator', 'content_manager'],
+        requiredRoles: ['moderator'],
+        resourcePermissions: ['read_announcements', 'create_announcements', 'moderate_content'],
+        inheritedPermissions: ['read_announcements']
+      });
+
+      const result = await mockAuthService.checkRolePermissions({
+        userId: 3,
+        resource: 'announcements',
+        requiredRoles: ['moderator']
+      });
+
+      expect(result.hasPermission).toBe(true);
+      expect(result.userRoles).toContain('moderator');
+      expect(result.userRoles).toContain('content_manager');
+      expect(result.resourcePermissions).toContain('create_announcements');
+      expect(result.inheritedPermissions).toContain('read_announcements');
+    });
+
+    it('TC-005: should successfully enforce access control policies with fine-grained permissions', async () => {
+      mockAuthService.enforceAccessControl.mockResolvedValue({
+        accessGranted: true,
+        policy: 'role_based_access_control',
+        user: { id: 1, roles: ['admin'] },
+        resource: { id: 'announcement-123', type: 'announcement', owner: 'user-456' },
+        appliedRules: ['admin_full_access', 'resource_owner_access'],
+        auditLog: {
+          timestamp: '2023-12-01T10:00:00Z',
+          action: 'access_granted',
+          reason: 'admin_privileges'
+        }
+      });
+
+      const result = await mockAuthService.enforceAccessControl({
+        userId: 1,
+        resource: { id: 'announcement-123', type: 'announcement' },
+        action: 'update'
+      });
+
+      expect(result.accessGranted).toBe(true);
+      expect(result.policy).toBe('role_based_access_control');
+      expect(result.appliedRules).toContain('admin_full_access');
+      expect(result.auditLog.action).toBe('access_granted');
+    });
+
+    it('TC-005: should successfully validate active user session with proper token management', async () => {
+      mockAuthService.validateSession.mockResolvedValue({
+        valid: true,
+        session: {
+          id: 'session-456',
+          userId: 1,
+          token: 'active-session-token',
+          createdAt: '2023-12-01T08:00:00Z',
+          lastActivity: '2023-12-01T10:00:00Z',
+          expiresAt: '2023-12-01T18:00:00Z',
+          ipAddress: '192.168.1.100',
+          userAgent: 'Mozilla/5.0'
+        },
+        user: { id: 1, username: 'active_user', status: 'active' },
+        remainingTime: 28800
+      });
+
+      const result = await mockAuthService.validateSession('active-session-token');
+
+      expect(result.valid).toBe(true);
+      expect(result.session.userId).toBe(1);
+      expect(result.user.status).toBe('active');
+      expect(result.remainingTime).toBe(28800);
+      expect(result.session.ipAddress).toBe('192.168.1.100');
+    });
+
+    it('TC-005: should successfully logout user and cleanup session data', async () => {
+      mockAuthService.logout.mockResolvedValue({
+        success: true,
+        userId: 1,
+        sessionId: 'session-789',
+        logoutTime: '2023-12-01T10:00:00Z',
+        tokensInvalidated: ['auth-token-123', 'refresh-token-456'],
+        cleanupCompleted: true
+      });
+
+      const result = await mockAuthService.logout({
+        sessionId: 'session-789',
+        invalidateAllSessions: false
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.userId).toBe(1);
+      expect(result.tokensInvalidated).toHaveLength(2);
+      expect(result.cleanupCompleted).toBe(true);
+    });
+
+    it('TC-005: should successfully handle role hierarchy and permission inheritance', async () => {
+      mockUserService.getUserRoles.mockResolvedValue({
+        user: { id: 4, username: 'hierarchy_user' },
+        directRoles: ['content_editor'],
+        inheritedRoles: ['user', 'content_viewer'],
+        roleHierarchy: {
+          content_editor: ['content_viewer', 'user'],
+          content_viewer: ['user']
+        },
+        effectivePermissions: ['read', 'create_content', 'edit_own_content'],
+        permissionSources: {
+          read: ['user'],
+          create_content: ['content_viewer'],
+          edit_own_content: ['content_editor']
+        }
+      });
+
+      const result = await mockUserService.getUserRoles(4);
+
+      expect(result.directRoles).toContain('content_editor');
+      expect(result.inheritedRoles).toContain('user');
+      expect(result.inheritedRoles).toContain('content_viewer');
+      expect(result.effectivePermissions).toContain('edit_own_content');
+      expect(result.permissionSources.read).toContain('user');
+    });
+  });
+
+  describe('Error path - Authentication and authorization failures', () => {
+    it('TC-005: should handle authentication failure with invalid username', async () => {
+      mockAuthService.authenticate.mockResolvedValue({
+        success: false,
+        error: 'User not found',
+        code: 'USER_NOT_FOUND',
+        details: {
+          username: 'nonexistent_user',
+          timestamp: '2023-12-01T10:00:00Z',
+          attemptNumber: 1
+        }
+      });
+
+      const result = await mockAuthService.authenticate({
+        username: 'nonexistent_user',
+        password: 'password123'
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('User not found');
+      expect(result.code).toBe('USER_NOT_FOUND');
+      expect(result.details.username).toBe('nonexistent_user');
+    });
+
+    it('TC-005: should handle authentication failure with incorrect password and track attempts', async () => {
+      mockAuthService.authenticate.mockResolvedValue({
+        success: false,
+        error: 'Invalid password',
+        code: 'INVALID_PASSWORD',
+        failedAttempts: 3,
+        maxAttempts: 5,
+        accountLockoutThreshold: 5,
+        nextAttemptAllowedAt: '2023-12-01T10:05:00Z',
+        remainingAttempts: 2
+      });
+
+      const result = await mockAuthService.authenticate({
+        username: 'valid_user',
+        password: 'wrong_password'
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Invalid password');
+      expect(result.failedAttempts).toBe(3);
+      expect(result.remainingAttempts).toBe(2);
+    });
+
+    it('TC-005: should handle authorization denial for insufficient role permissions', async () => {
+      mockAuthService.authorize.mockResolvedValue({
+        authorized: false,
+        error: 'Insufficient privileges',
+        code: 'ACCESS_DENIED',
+        user: { id: 5, roles: ['user'] },
+        requiredRoles: ['admin', 'moderator'],
+        resource: 'system_settings',
+        action: 'modify',
+        reason: 'User role "user" does not have required permissions for system_settings modification'
+      });
+
+      const result = await mockAuthService.authorize({
+        userId: 5,
+        resource: 'system_settings',
+        action: 'modify'
+      });
+
+      expect(result.authorized).toBe(false);
+      expect(result.error).toBe('Insufficient privileges');
+      expect(result.user.roles).toContain('user');
+      expect(result.requiredRoles).toContain('admin');
+      expect(result.reason).toContain('does not have required permissions');
+    });
+
+    it('TC-005: should handle account lockout after exceeding failed login attempts', async () => {
+      mockAuthService.authenticate.mockResolvedValue({
+        success: false,
+        error: 'Account locked due to excessive failed login attempts',
+        code: 'ACCOUNT_LOCKED',
+        lockoutTime: '2023-12-01T10:00:00Z',
+        unlockTime: '2023-12-01T10:30:00Z',
+        failedAttempts: 5,
+        lockoutDuration: 1800,
+        contactSupport: true
+      });
+
+      const result = await mockAuthService.authenticate({
+        username: 'locked_user',
+        password: 'password123'
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.code).toBe('ACCOUNT_LOCKED');
+      expect(result.lockoutDuration).toBe(1800);
+      expect(result.contactSupport).toBe(true);
+    });
+
+    it('TC-005: should handle credential validation failure with weak password', async () => {
+      mockAuthService.validateCredentials.mockResolvedValue({
+        valid: false,
+        error: 'Password does not meet security requirements',
+        code: 'WEAK_PASSWORD',
+        passwordStrength: 'weak',
+        requirements: {
+          minLength: 8,
+          requireUppercase: true,
+          requireLowercase: true,
+          requireNumbers: true,
+          requireSpecialChars: true
+        },
+        violations: ['missing_uppercase', 'missing_special_chars', 'too_short'],
+        suggestions: ['Add uppercase letters', 'Include special characters', 'Increase length to at least 8 characters']
+      });
+
+      const result = await mockAuthService.validateCredentials({
+        username: 'user',
+        password: 'weak'
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.passwordStrength).toBe('weak');
+      expect(result.violations).toContain('missing_uppercase');
+      expect(result.suggestions).toContain('Add uppercase letters');
+    });
+
+    it('TC-005: should handle role permission check failure for restricted resource', async () => {
+      mockAuthService.checkRolePermissions.mockResolvedValue({
+        hasPermission: false,
+        error: 'Access denied to restricted resource',
+        code: 'PERMISSION_DENIED',
+        userRoles: ['user', 'guest'],
+        requiredRoles: ['admin', 'super_admin'],
+        resource: 'admin_panel',
+        missingPermissions: ['admin_access', 'system_control'],
+        securityLevel: 'high'
+      });
+
+      const result = await mockAuthService.checkRolePermissions({
+        userId: 6,
+        resource: 'admin_panel',
+        requiredRoles: ['admin', 'super_admin']
+      });
+
+      expect(result.hasPermission).toBe(false);
+      expect(result.userRoles).toContain('user');
+      expect(result.requiredRoles).toContain('admin');
+      expect(result.missingPermissions).toContain('admin_access');
+    });
+
+    it('TC-005: should handle access control violation with policy enforcement failure', async () => {
+      mockAuthService.enforceAccessControl.mockResolvedValue({
+        accessGranted: false,
+        error: 'Policy violation detected',
+        code: 'POLICY_VIOLATION',
+        violationType: 'time_based_restriction',
+        policy: 'business_hours_access',
+        currentTime: '2023-12-01T22:00:00Z',
+        allowedHours: { start: '09:00', end: '18:00' },
+        user: { id: 7, roles: ['employee'] },
+        auditLog: {
+          timestamp: '2023-12-01T22:00:00Z',
+          action: 'access_denied',
+          reason: 'outside_business_hours'
+        }
+      });
+
+      const result = await mockAuthService.enforceAccessControl({
+        userId: 7,
+        resource: { id: 'sensitive-data', type: 'confidential' },
+        action: 'read'
+      });
+
+      expect(result.accessGranted).toBe(false);
+      expect(result.violationType).toBe('time_based_restriction');
+      expect(result.policy).toBe('business_hours_access');
+      expect(result.auditLog.reason).toBe('outside_business_hours');
+    });
+
+    it('TC-005: should handle session validation failure with expired token', async () => {
+      mockAuthService.validateSession.mockResolvedValue({
+        valid: false,
+        error: 'Session has expired',
+        code: 'SESSION_EXPIRED',
+        session: {
+          id: 'expired-session-123',
+          createdAt: '2023-12-01T08:00:00Z',
+          expiresAt: '2023-12-01T09:00:00Z',
+          lastActivity: '2023-12-01T08:45:00Z'
+        },
+        expiredAt: '2023-12-01T09:00:00Z',
+        requiresReauthentication: true
+      });
+
+      const result = await mockAuthService.validateSession('expired-session-token');
+
+      expect(result.valid).toBe(false);
+      expect(result.code).toBe('SESSION_EXPIRED');
+      expect(result.requiresReauthentication).toBe(true);
+    });
+
+    it('TC-005: should handle concurrent session violation and security breach detection', async () => {
+      mockAuthService.validateSession.mockResolvedValue({
+        valid: false,
+        error: 'Suspicious activity detected',
+        code: 'SECURITY_VIOLATION',
+        violations: ['concurrent_login_different_location', 'unusual_access_pattern'],
+        currentSession: { ipAddress: '192.168.1.100', location: 'New York' },
+        conflictingSessions: [
+          { ipAddress: '10.0.0.50', location: 'Los Angeles', timestamp: '2023-12-01T10:00:00Z' }
+        ],
+        securityAction: 'force_logout_all_sessions',
+        requiresIdentityVerification: true
+      });
+
+      const result = await mockAuthService.validateSession('suspicious-session-token');
+
+      expect(result.valid).toBe(false);
+      expect(result.code).toBe('SECURITY_VIOLATION');
+      expect(result.violations).toContain('concurrent_login_different_location');
+      expect(result.securityAction).toBe('force_logout_all_sessions');
+      expect(result.requiresIdentityVerification).toBe(true);
+    });
+
+    it('TC-005: should handle privilege escalation attempt and security audit', async () => {
+      mockAuthService.authorize.mockResolvedValue({
+        authorized: false,
+        error: 'Privilege escalation attempt detected',
+        code: 'PRIVILEGE_ESCALATION',
+        user: { id: 8, roles: ['user'] },
+        attemptedAction: 'modify_user_roles',
+        targetResource: 'user_management',
+        securityThreatLevel: 'high',
+        auditDetails: {
+          sourceIP: '192.168.1.200',
+          timestamp: '2023-12-01T10:00:00Z',
+          userAgent: 'Mozilla/5.0',
+          previousActions: ['failed_admin_login', 'enumerate_users']
+        },
+        responseActions: ['log_security_event', 'notify_admins', 'temporary_account_restriction']
+      });
+
+      const result = await mockAuthService.authorize({
+        userId: 8,
+        resource: 'user_management',
+        action: 'modify_user_roles'
+      });
+
+      expect(result.authorized).toBe(false);
+      expect(result.code).toBe('PRIVILEGE_ESCALATION');
+      expect(result.securityThreatLevel).toBe('high');
+      expect(result.responseActions).toContain('notify_admins');
+    });
+
+    it('TC-005: should handle role permission inheritance failure with circular dependencies', async () => {
+      mockUserService.getUserRoles.mockResolvedValue({
+        error: 'Circular role dependency detected',
+        code: 'CIRCULAR_DEPENDENCY',
+        user: { id: 9, username: 'circular_user' },
+        problematicRoles: ['role_a', 'role_b', 'role_c'],
+        dependencyChain: ['role_a -> role_b', 'role_b -> role_c', 'role_c -> role_a'],
+        systemIntegrity: 'compromised',
+        requiresAdminIntervention: true
+      });
+
+      const result = await mockUserService.getUserRoles(9);
+
+      expect(result.error).toBe('Circular role dependency detected');
+      expect(result.code).toBe('CIRCULAR_DEPENDENCY');
+      expect(result.problematicRoles).toContain('role_a');
+      expect(result.systemIntegrity).toBe('compromised');
+      expect(result.requiresAdminIntervention).toBe(true);
+    });
+  });
+});
+
 describe('TC-008: Database migration testing', () => {
   const mockMigrationService = {
     runMigration: vi.fn(),

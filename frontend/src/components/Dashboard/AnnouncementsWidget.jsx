@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Loader2, AlertCircle, Megaphone, Calendar } from 'lucide-react';
@@ -8,7 +8,6 @@ const AnnouncementsWidget = () => {
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const isMountedRef = useRef(true);
 
   const fetchAnnouncements = async () => {
     try {
@@ -25,23 +24,13 @@ const AnnouncementsWidget = () => {
       }
 
       const data = await response.json();
-      
-      // Only update state if component is still mounted
-      if (isMountedRef.current) {
-        setAnnouncements(data.slice(0, 5)); // Limit to 5 announcements
-        setError(null);
-      }
+      setAnnouncements(data.slice(0, 5)); // Limit to 5 announcements
+      setError(null);
     } catch (err) {
-      // Only update state if component is still mounted
-      if (isMountedRef.current) {
-        setError('Unable to load company announcements. Please try again later.');
-        console.error('Error fetching announcements:', err);
-      }
+      setError('Unable to load company announcements. Please try again later.');
+      console.error('Error fetching announcements:', err);
     } finally {
-      // Only update state if component is still mounted
-      if (isMountedRef.current) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
   };
 
@@ -51,10 +40,7 @@ const AnnouncementsWidget = () => {
     // Poll for updates every 30 seconds
     const interval = setInterval(fetchAnnouncements, 30000);
 
-    return () => {
-      clearInterval(interval);
-      isMountedRef.current = false;
-    };
+    return () => clearInterval(interval);
   }, []);
 
   const formatDate = (dateString) => {
@@ -145,7 +131,8 @@ const AnnouncementsWidget = () => {
         {announcements.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <Megaphone className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            <p>No announcements at this time.</p>
+            <p className="text-sm">No announcements at this time.</p>
+            <p className="text-xs mt-1">Check back later for company updates.</p>
           </div>
         ) : (
           <div className="space-y-4 max-h-96 overflow-y-auto">

@@ -1,5 +1,6 @@
 const Announcement = require('../models/Announcement');
 const { validationResult } = require('express-validator');
+const mongoose = require('mongoose');
 
 // Middleware to check if user is admin
 const requireAdmin = (req, res, next) => {
@@ -96,6 +97,15 @@ const createAnnouncement = async (req, res) => {
 const getAnnouncementById = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
+
     const announcement = await Announcement.findById(id)
       .populate('createdBy', 'name email');
 
@@ -141,6 +151,15 @@ const updateAnnouncement = async (req, res) => {
     }
 
     const { id } = req.params;
+    
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
+
     const { title, content, isActive } = req.body;
 
     const announcement = await Announcement.findById(id);
@@ -182,6 +201,14 @@ const deleteAnnouncement = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
+
     const announcement = await Announcement.findById(id);
 
     if (!announcement) {
@@ -210,6 +237,14 @@ const deleteAnnouncement = async (req, res) => {
 const toggleAnnouncementStatus = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
 
     const announcement = await Announcement.findById(id);
 

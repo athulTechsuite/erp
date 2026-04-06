@@ -108,7 +108,7 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
                   )}
                 </div>
               </div>
-              {showActions && user?.role === 'admin' && (
+              {showActions && (
                 <div className="flex items-center space-x-2 ml-4">
                   <button
                     onClick={() => window.location.href = `/admin/announcements/edit/${announcement.id}`}

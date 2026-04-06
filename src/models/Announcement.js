@@ -5,13 +5,25 @@ const announcementSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Announcement title is required'],
     trim: true,
-    maxlength: [200, 'Title cannot exceed 200 characters']
+    maxlength: [200, 'Title cannot exceed 200 characters'],
+    validate: {
+      validator: function(v) {
+        return v && v.trim().length > 0;
+      },
+      message: 'Title cannot be empty or contain only whitespace'
+    }
   },
   content: {
     type: String,
     required: [true, 'Announcement content is required'],
     trim: true,
-    maxlength: [5000, 'Content cannot exceed 5000 characters']
+    maxlength: [5000, 'Content cannot exceed 5000 characters'],
+    validate: {
+      validator: function(v) {
+        return v && v.trim().length > 0;
+      },
+      message: 'Content cannot be empty or contain only whitespace'
+    }
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -77,7 +89,7 @@ announcementSchema.methods.toggleActive = function() {
   return this.save();
 };
 
-// Pre-save middleware to validate user permissions with parameterized queries
+// Pre-save middleware to validate user permissions
 announcementSchema.pre('save', async function(next) {
   if (this.isNew || this.isModified('createdBy')) {
     try {

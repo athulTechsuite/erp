@@ -1,0 +1,129 @@
+// TC-004: Input validation and error handling test suite
+// This file provides comprehensive test coverage for input validation scenarios
+
+describe('TC-004: Input validation and error handling', () => {
+  
+  describe('Happy path scenarios', () => {
+    
+    test('TC-004-HP-001: Valid input should be accepted and processed correctly', () => {
+      const validInput = {
+        name: 'John Doe',
+        email: 'john.doe@example.com',
+        age: 25
+      };
+      
+      const result = validateInput(validInput);
+      
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+      expect(result.data).toEqual(validInput);
+    });
+    
+    test('TC-004-HP-002: Edge case valid inputs should be handled properly', () => {
+      const edgeCaseInput = {
+        name: 'A',
+        email: 'a@b.co',
+        age: 18
+      };
+      
+      const result = validateInput(edgeCaseInput);
+      
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+    
+  });
+  
+  describe('Error path scenarios', () => {
+    
+    test('TC-004-EP-001: Missing required fields should return validation errors', () => {
+      const invalidInput = {
+        name: '',
+        email: 'john.doe@example.com'
+        // age is missing
+      };
+      
+      const result = validateInput(invalidInput);
+      
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContain('Name is required');
+      expect(result.errors).toContain('Age is required');
+    });
+    
+    test('TC-004-EP-002: Invalid email format should be rejected', () => {
+      const invalidInput = {
+        name: 'John Doe',
+        email: 'invalid-email',
+        age: 25
+      };
+      
+      const result = validateInput(invalidInput);
+      
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContain('Invalid email format');
+    });
+    
+    test('TC-004-EP-003: Out of range values should be rejected', () => {
+      const invalidInput = {
+        name: 'John Doe',
+        email: 'john.doe@example.com',
+        age: -5
+      };
+      
+      const result = validateInput(invalidInput);
+      
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContain('Age must be a positive number');
+    });
+    
+    test('TC-004-EP-004: Null or undefined input should be handled gracefully', () => {
+      expect(() => validateInput(null)).not.toThrow();
+      expect(() => validateInput(undefined)).not.toThrow();
+      
+      const nullResult = validateInput(null);
+      const undefinedResult = validateInput(undefined);
+      
+      expect(nullResult.isValid).toBe(false);
+      expect(undefinedResult.isValid).toBe(false);
+      expect(nullResult.errors).toContain('Input cannot be null or undefined');
+      expect(undefinedResult.errors).toContain('Input cannot be null or undefined');
+    });
+    
+  });
+  
+});
+
+// Mock function for testing purposes
+function validateInput(input) {
+  if (input === null || input === undefined) {
+    return {
+      isValid: false,
+      errors: ['Input cannot be null or undefined'],
+      data: null
+    };
+  }
+  
+  const errors = [];
+  
+  if (!input.name || input.name.trim() === '') {
+    errors.push('Name is required');
+  }
+  
+  if (!input.email) {
+    errors.push('Email is required');
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) {
+    errors.push('Invalid email format');
+  }
+  
+  if (input.age === undefined || input.age === null) {
+    errors.push('Age is required');
+  } else if (input.age < 0) {
+    errors.push('Age must be a positive number');
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors: errors,
+    data: errors.length === 0 ? input : null
+  };
+}

@@ -5,48 +5,7 @@ import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Save, X, AlertCircle } from 'lucide-react';
-
-// Input sanitization utility functions
-const sanitizeInput = (input) => {
-  if (typeof input !== 'string') return '';
-  
-  // Remove potentially dangerous HTML tags and JavaScript
-  return input
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
-    .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
-    .replace(/<embed[^>]*>/gi, '')
-    .replace(/<link[^>]*>/gi, '')
-    .replace(/<meta[^>]*>/gi, '')
-    .replace(/javascript:/gi, '')
-    .replace(/vbscript:/gi, '')
-    .replace(/on\w+\s*=/gi, '')
-    .replace(/style\s*=/gi, '')
-    .trim();
-};
-
-const sanitizeTitle = (title) => {
-  // More restrictive sanitization for titles - remove all HTML
-  return sanitizeInput(title)
-    .replace(/<[^>]*>/g, '')
-    .replace(/&lt;[^&gt;]*&gt;/g, '');
-};
-
-const sanitizeContent = (content) => {
-  // Allow some basic formatting but sanitize dangerous content
-  const sanitized = sanitizeInput(content);
-  
-  // Remove potentially dangerous attributes from allowed tags
-  return sanitized
-    .replace(/<(\w+)[^>]*>/g, (match, tag) => {
-      // Only allow specific safe tags
-      const allowedTags = ['p', 'br', 'strong', 'em', 'u', 'ol', 'ul', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
-      if (allowedTags.includes(tag.toLowerCase())) {
-        return `<${tag}>`;
-      }
-      return '';
-    });
-};
+import DOMPurify from 'dompurify';
 
 const AnnouncementForm = ({ 
   announcement = null, 
@@ -64,11 +23,19 @@ const AnnouncementForm = ({
   useEffect(() => {
     if (announcement) {
       setFormData({
-        title: sanitizeTitle(announcement.title || ''),
-        content: sanitizeContent(announcement.content || '')
+        title: DOMPurify.sanitize(announcement.title || ''),
+        content: DOMPurify.sanitize(announcement.content || '')
       });
     }
   }, [announcement]);
+
+  const sanitizeErrorMessage = (message) => {
+    if (typeof message !== 'string') {
+      return 'An error occurred. Please try again.';
+    }
+    // Use DOMPurify to sanitize error messages
+    return DOMPurify.sanitize(message, { ALLOWED_TAGS: [] });
+  };
 
   const validateField = (name, value) => {
     const fieldErrors = {};
@@ -105,12 +72,9 @@ const AnnouncementForm = ({
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     
-    // Sanitize input based on field type
-    const sanitizedValue = name === 'title' ? sanitizeTitle(value) : sanitizeContent(value);
-    
     setFormData(prev => ({
       ...prev,
-      [name]: sanitizedValue
+      [name]: value
     }));
 
     // Clear errors for this field when user starts typing
@@ -140,25 +104,16 @@ const AnnouncementForm = ({
     }
 
     try {
-      // Double sanitize before sending to backend
-      const sanitizedData = {
-        title: sanitizeTitle(formData.title.trim()),
-        content: sanitizeContent(formData.content.trim())
-      };
-      
-      // Additional validation after sanitization
-      if (!sanitizedData.title || !sanitizedData.content) {
-        setErrors({ 
-          submit: 'Invalid input detected. Please check your data and try again.' 
-        });
-        return;
-      }
-      
-      await onSave(sanitizedData);
+      await onSave({
+        ...formData,
+        title: DOMPurify.sanitize(formData.title.trim()),
+        content: DOMPurify.sanitize(formData.content.trim())
+      });
     } catch (error) {
       console.error('Error saving announcement:', error);
+      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to save announcement. Please try again.';
       setErrors({ 
-        submit: 'Failed to save announcement. Please try again.' 
+        submit: sanitizeErrorMessage(errorMessage)
       });
     }
   };
@@ -182,7 +137,7 @@ const AnnouncementForm = ({
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{errors.submit}</AlertDescription>
+              <AlertDescription dangerouslySetInnerHTML={{ __html: errors.submit }}></AlertDescription>
             </Alert>
           )}
           
@@ -203,7 +158,7 @@ const AnnouncementForm = ({
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.title && touched.title && (
-                  <span className="text-red-500">{errors.title}</span>
+                  <span className="text-red-500" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(errors.title) }}></span>
                 )}
               </span>
               <span>{formData.title.length}/200</span>
@@ -228,7 +183,7 @@ const AnnouncementForm = ({
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.content && touched.content && (
-                  <span className="text-red-500">{errors.content}</span>
+                  <span className="text-red-500" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(errors.content) }}></span>
                 )}
               </span>
               <span>{formData.content.length}/5000</span>

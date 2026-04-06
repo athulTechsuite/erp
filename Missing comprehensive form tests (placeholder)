@@ -1,0 +1,196 @@
+// TC-003: Form validation and submission tests
+describe('TC-003: Form validation and submission', () => {
+  let form;
+  let submitButton;
+  let nameInput;
+  let emailInput;
+  let messageInput;
+
+  beforeEach(() => {
+    document.body.innerHTML = `
+      <form id="contact-form">
+        <input type="text" id="name" name="name" required />
+        <input type="email" id="email" name="email" required />
+        <textarea id="message" name="message" required></textarea>
+        <button type="submit" id="submit-btn">Submit</button>
+      </form>
+    `;
+    
+    form = document.getElementById('contact-form');
+    submitButton = document.getElementById('submit-btn');
+    nameInput = document.getElementById('name');
+    emailInput = document.getElementById('email');
+    messageInput = document.getElementById('message');
+  });
+
+  describe('Happy path - TC-003', () => {
+    it('should successfully submit form with valid data', async () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'This is a test message';
+
+      // Mock successful API response
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, id: '12345' })
+        })
+      );
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect(fetch).toHaveBeenCalledWith('/api/contact', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: 'John Doe',
+          email: 'john@example.com',
+          message: 'This is a test message'
+        })
+      });
+    });
+
+    it('should display success message after successful submission', async () => {
+      // Arrange
+      nameInput.value = 'Jane Smith';
+      emailInput.value = 'jane@example.com';
+      messageInput.value = 'Thank you for your service';
+
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true })
+        })
+      );
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const successMessage = document.querySelector('.success-message');
+      expect(successMessage).toBeTruthy();
+      expect(successMessage.textContent).toContain('Form submitted successfully');
+    });
+  });
+
+  describe('Error path - TC-003', () => {
+    it('should show validation errors for empty required fields', () => {
+      // Arrange - leave all fields empty
+      nameInput.value = '';
+      emailInput.value = '';
+      messageInput.value = '';
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      const nameError = document.querySelector('.error-name');
+      const emailError = document.querySelector('.error-email');
+      const messageError = document.querySelector('.error-message');
+      
+      expect(nameError.textContent).toBe('Name is required');
+      expect(emailError.textContent).toBe('Email is required');
+      expect(messageError.textContent).toBe('Message is required');
+    });
+
+    it('should validate email format and show error for invalid email', () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'invalid-email';
+      messageInput.value = 'Test message';
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      const emailError = document.querySelector('.error-email');
+      expect(emailError.textContent).toBe('Please enter a valid email address');
+    });
+
+    it('should handle server error response gracefully', async () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'Test message';
+
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: false,
+          status: 500,
+          json: () => Promise.resolve({ error: 'Internal server error' })
+        })
+      );
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const errorMessage = document.querySelector('.error-message');
+      expect(errorMessage.textContent).toContain('Something went wrong. Please try again.');
+    });
+
+    it('should handle network error', async () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'Test message';
+
+      global.fetch = jest.fn(() =>
+        Promise.reject(new Error('Network error'))
+      );
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const errorMessage = document.querySelector('.error-message');
+      expect(errorMessage.textContent).toContain('Network error. Please check your connection.');
+    });
+
+    it('should disable submit button during form submission', async () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'Test message';
+
+      global.fetch = jest.fn(() =>
+        new Promise(resolve => {
+          setTimeout(() => {
+            resolve({
+              ok: true,
+              json: () => Promise.resolve({ success: true })
+            });
+          }, 200);
+        })
+      );
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      expect(submitButton.disabled).toBe(true);
+      expect(submitButton.textContent).toBe('Submitting...');
+      
+      // Wait for completion
+      await new Promise(resolve => setTimeout(resolve, 300));
+      expect(submitButton.disabled).toBe(false);
+      expect(submitButton.textContent).toBe('Submit');
+    });
+  });
+});

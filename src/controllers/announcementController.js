@@ -10,6 +10,17 @@ const sanitizeInput = (input) => {
   return DOMPurify.sanitize(input, { ALLOWED_TAGS: [] });
 };
 
+// Middleware to check if user is authenticated
+const requireAuth = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication required. Please log in.'
+    });
+  }
+  next();
+};
+
 // Middleware to check if user is admin
 const requireAdmin = (req, res, next) => {
   if (!req.user || req.user.role !== 'admin') {
@@ -44,7 +55,7 @@ const getAllAnnouncements = async (req, res) => {
 // Get all announcements for admin management
 const getAnnouncementsForAdmin = async (req, res) => {
   try {
-    const announcements = await Announcement.find()
+    const announcements = await Announcement.find({})
       .sort({ createdAt: -1 });
 
     res.json({
@@ -287,6 +298,7 @@ const toggleAnnouncementStatus = async (req, res) => {
 };
 
 module.exports = {
+  requireAuth,
   requireAdmin,
   getAllAnnouncements,
   getAnnouncementsForAdmin,

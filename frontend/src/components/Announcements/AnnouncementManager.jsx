@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
+import './AnnouncementManager.css';
 
 const AnnouncementManager = () => {
   const [announcements, setAnnouncements] = useState([]);
@@ -19,7 +20,7 @@ const AnnouncementManager = () => {
   const fetchAnnouncements = async () => {
     try {
       setLoading(true);
-      // TODO: Security - Consider using httpOnly cookies instead of localStorage for JWT storage to prevent XSS attacks
+      // TODO: Consider using httpOnly cookies for token storage to prevent XSS attacks
       const token = localStorage.getItem('token');
       const response = await fetch('/api/announcements/admin', {
         headers: {
@@ -184,31 +185,11 @@ const AnnouncementManager = () => {
   };
 
   return (
-    <div className="announcement-manager" style={{
-      maxWidth: '800px',
-      margin: '0 auto',
-      padding: '20px',
-      fontFamily: 'Arial, sans-serif'
-    }}>
-      <div className="announcement-manager-header" style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '20px',
-        borderBottom: '2px solid #eee',
-        paddingBottom: '10px'
-      }}>
-        <h2 style={{ margin: 0, color: '#333' }}>Manage Announcements</h2>
+    <div className="announcement-manager">
+      <div className="announcement-manager-header">
+        <h2>Manage Announcements</h2>
         <button
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '14px'
-          }}
+          className="btn btn-primary"
           onClick={() => setShowForm(!showForm)}
           disabled={loading}
         >
@@ -217,20 +198,11 @@ const AnnouncementManager = () => {
       </div>
 
       {showForm && (
-        <div className="announcement-form-container" style={{
-          backgroundColor: '#f8f9fa',
-          padding: '20px',
-          borderRadius: '8px',
-          marginBottom: '20px'
-        }}>
-          <h3 style={{ marginTop: 0, color: '#333' }}>
-            {editingId ? 'Edit Announcement' : 'Create New Announcement'}
-          </h3>
+        <div className="announcement-form-container">
+          <h3>{editingId ? 'Edit Announcement' : 'Create New Announcement'}</h3>
           <form onSubmit={handleSubmit} className="announcement-form">
-            <div className="form-group" style={{ marginBottom: '15px' }}>
-              <label htmlFor="title" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                Title *
-              </label>
+            <div className="form-group">
+              <label htmlFor="title">Title *</label>
               <input
                 type="text"
                 id="title"
@@ -240,20 +212,11 @@ const AnnouncementManager = () => {
                 required
                 maxLength="200"
                 placeholder="Enter announcement title"
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  fontSize: '14px'
-                }}
               />
             </div>
 
-            <div className="form-group" style={{ marginBottom: '15px' }}>
-              <label htmlFor="content" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                Content *
-              </label>
+            <div className="form-group">
+              <label htmlFor="content">Content *</label>
               <textarea
                 id="content"
                 name="content"
@@ -263,55 +226,32 @@ const AnnouncementManager = () => {
                 rows="6"
                 maxLength="2000"
                 placeholder="Enter announcement content"
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                  resize: 'vertical'
-                }}
               />
             </div>
 
-            <div className="form-group" style={{ marginBottom: '15px' }}>
-              <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center' }}>
+            <div className="form-group">
+              <label className="checkbox-label">
                 <input
                   type="checkbox"
                   name="isActive"
                   checked={formData.isActive}
                   onChange={handleInputChange}
-                  style={{ marginRight: '8px' }}
                 />
                 <span>Publish immediately</span>
               </label>
             </div>
 
-            <div className="form-actions" style={{ display: 'flex', gap: '10px' }}>
+            <div className="form-actions">
               <button
                 type="submit"
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#007bff',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
+                className="btn btn-primary"
                 disabled={loading}
               >
                 {loading ? 'Saving...' : editingId ? 'Update' : 'Publish'}
               </button>
               <button
                 type="button"
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#6c757d',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
+                className="btn btn-secondary"
                 onClick={resetForm}
                 disabled={loading}
               >
@@ -323,68 +263,33 @@ const AnnouncementManager = () => {
       )}
 
       <div className="announcements-list">
-        <h3 style={{ color: '#333' }}>Existing Announcements</h3>
+        <h3>Existing Announcements</h3>
         {loading && !showForm && (
-          <div className="loading" style={{ textAlign: 'center', padding: '20px', color: '#666' }}>
-            Loading announcements...
-          </div>
+          <div className="loading">Loading announcements...</div>
         )}
         
         {!loading && announcements.length === 0 && (
-          <div className="no-announcements" style={{ 
-            textAlign: 'center', 
-            padding: '40px', 
-            color: '#666',
-            backgroundColor: '#f8f9fa',
-            borderRadius: '8px'
-          }}>
+          <div className="no-announcements">
             No announcements found. Create your first announcement to get started.
           </div>
         )}
 
         {announcements.map(announcement => (
-          <div key={announcement.id} className="announcement-item" style={{
-            border: '1px solid #ddd',
-            borderRadius: '8px',
-            padding: '20px',
-            marginBottom: '15px',
-            backgroundColor: 'white'
-          }}>
-            <div className="announcement-header" style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-              marginBottom: '10px'
-            }}>
-              <h4 style={{ margin: 0, color: '#333' }}>{announcement.title}</h4>
+          <div key={announcement.id} className="announcement-item">
+            <div className="announcement-header">
+              <h4>{announcement.title}</h4>
               <div className="announcement-status">
-                <span className={`status ${announcement.isActive ? 'active' : 'inactive'}`} style={{
-                  padding: '4px 12px',
-                  borderRadius: '20px',
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  backgroundColor: announcement.isActive ? '#28a745' : '#dc3545',
-                  color: 'white'
-                }}>
+                <span className={`status ${announcement.isActive ? 'active' : 'inactive'}`}>
                   {announcement.isActive ? 'Active' : 'Inactive'}
                 </span>
               </div>
             </div>
             
-            <div className="announcement-content" style={{ marginBottom: '15px' }}>
-              <p style={{ margin: 0, lineHeight: '1.5', color: '#555' }}>
-                {announcement.content}
-              </p>
+            <div className="announcement-content">
+              <p>{announcement.content}</p>
             </div>
             
-            <div className="announcement-meta" style={{
-              fontSize: '12px',
-              color: '#888',
-              marginBottom: '15px',
-              display: 'flex',
-              gap: '15px',
-              flexWrap: 'wrap'
-            }}>
+            <div className="announcement-meta">
               <span>Created: {formatDate(announcement.createdAt)}</span>
               {announcement.updatedAt !== announcement.createdAt && (
                 <span>Updated: {formatDate(announcement.updatedAt)}</span>
@@ -392,47 +297,23 @@ const AnnouncementManager = () => {
               <span>By: {announcement.createdBy?.name || 'Unknown'}</span>
             </div>
 
-            <div className="announcement-actions" style={{ display: 'flex', gap: '10px' }}>
+            <div className="announcement-actions">
               <button
-                style={{
-                  padding: '6px 12px',
-                  backgroundColor: '#6c757d',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '12px'
-                }}
+                className="btn btn-sm btn-secondary"
                 onClick={() => handleEdit(announcement)}
                 disabled={loading}
               >
                 Edit
               </button>
               <button
-                style={{
-                  padding: '6px 12px',
-                  backgroundColor: announcement.isActive ? '#ffc107' : '#28a745',
-                  color: announcement.isActive ? '#212529' : 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '12px'
-                }}
+                className={`btn btn-sm ${announcement.isActive ? 'btn-warning' : 'btn-success'}`}
                 onClick={() => toggleStatus(announcement.id, announcement.isActive)}
                 disabled={loading}
               >
                 {announcement.isActive ? 'Deactivate' : 'Activate'}
               </button>
               <button
-                style={{
-                  padding: '6px 12px',
-                  backgroundColor: '#dc3545',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '12px'
-                }}
+                className="btn btn-sm btn-danger"
                 onClick={() => handleDelete(announcement.id)}
                 disabled={loading}
               >

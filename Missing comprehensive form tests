@@ -1,0 +1,144 @@
+describe('TC-003: Form validation and submission', () => {
+  let form, submitButton, nameInput, emailInput, messageInput;
+
+  beforeEach(() => {
+    // Setup form elements
+    document.body.innerHTML = `
+      <form id="contact-form">
+        <input type="text" id="name" name="name" required>
+        <input type="email" id="email" name="email" required>
+        <textarea id="message" name="message" required></textarea>
+        <button type="submit" id="submit-btn">Submit</button>
+      </form>
+    `;
+    
+    form = document.getElementById('contact-form');
+    submitButton = document.getElementById('submit-btn');
+    nameInput = document.getElementById('name');
+    emailInput = document.getElementById('email');
+    messageInput = document.getElementById('message');
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  // Happy path tests
+  describe('Happy path - valid form submission', () => {
+    test('should successfully submit form with valid data', () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'This is a test message';
+
+      const mockSubmitHandler = jest.fn((e) => e.preventDefault());
+      form.addEventListener('submit', mockSubmitHandler);
+
+      // Act
+      submitButton.click();
+
+      // Assert
+      expect(mockSubmitHandler).toHaveBeenCalledTimes(1);
+      expect(form.checkValidity()).toBe(true);
+    });
+
+    test('should validate email format correctly', () => {
+      // Arrange
+      emailInput.value = 'valid@email.com';
+
+      // Act & Assert
+      expect(emailInput.validity.valid).toBe(true);
+      expect(emailInput.validity.typeMismatch).toBe(false);
+    });
+
+    test('should accept all required fields when filled', () => {
+      // Arrange
+      nameInput.value = 'Jane Smith';
+      emailInput.value = 'jane@test.com';
+      messageInput.value = 'Hello world';
+
+      // Act & Assert
+      expect(nameInput.validity.valid).toBe(true);
+      expect(emailInput.validity.valid).toBe(true);
+      expect(messageInput.validity.valid).toBe(true);
+      expect(form.checkValidity()).toBe(true);
+    });
+  });
+
+  // Error path tests
+  describe('Error path - invalid form submission', () => {
+    test('should prevent submission when name field is empty', () => {
+      // Arrange
+      nameInput.value = '';
+      emailInput.value = 'test@example.com';
+      messageInput.value = 'Test message';
+
+      const mockSubmitHandler = jest.fn((e) => e.preventDefault());
+      form.addEventListener('submit', mockSubmitHandler);
+
+      // Act
+      submitButton.click();
+
+      // Assert
+      expect(nameInput.validity.valid).toBe(false);
+      expect(nameInput.validity.valueMissing).toBe(true);
+      expect(form.checkValidity()).toBe(false);
+    });
+
+    test('should prevent submission when email field is empty', () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = '';
+      messageInput.value = 'Test message';
+
+      // Act & Assert
+      expect(emailInput.validity.valid).toBe(false);
+      expect(emailInput.validity.valueMissing).toBe(true);
+      expect(form.checkValidity()).toBe(false);
+    });
+
+    test('should prevent submission when message field is empty', () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = '';
+
+      // Act & Assert
+      expect(messageInput.validity.valid).toBe(false);
+      expect(messageInput.validity.valueMissing).toBe(true);
+      expect(form.checkValidity()).toBe(false);
+    });
+
+    test('should reject invalid email formats', () => {
+      // Arrange & Act
+      const invalidEmails = ['invalid-email', '@example.com', 'test@', 'test.com'];
+      
+      invalidEmails.forEach(invalidEmail => {
+        emailInput.value = invalidEmail;
+        
+        // Assert
+        expect(emailInput.validity.valid).toBe(false);
+        expect(emailInput.validity.typeMismatch).toBe(true);
+      });
+    });
+
+    test('should prevent submission when all fields are empty', () => {
+      // Arrange
+      nameInput.value = '';
+      emailInput.value = '';
+      messageInput.value = '';
+
+      const mockSubmitHandler = jest.fn((e) => e.preventDefault());
+      form.addEventListener('submit', mockSubmitHandler);
+
+      // Act
+      submitButton.click();
+
+      // Assert
+      expect(form.checkValidity()).toBe(false);
+      expect(nameInput.validity.valueMissing).toBe(true);
+      expect(emailInput.validity.valueMissing).toBe(true);
+      expect(messageInput.validity.valueMissing).toBe(true);
+    });
+  });
+});

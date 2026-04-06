@@ -57,11 +57,12 @@ announcementSchema.statics.getActiveAnnouncements = function() {
     .lean();
 };
 
-// Static method to get announcements with pagination
+// Static method to get announcements with pagination - using parameterized queries
 announcementSchema.statics.getAnnouncementsPaginated = function(page = 1, limit = 10, includeInactive = false) {
   const filter = includeInactive ? {} : { isActive: true };
   const skip = (page - 1) * limit;
   
+  // Use MongoDB's built-in query methods with proper parameterization
   return this.find(filter)
     .sort({ publishDate: -1 })
     .skip(skip)
@@ -81,6 +82,7 @@ announcementSchema.pre('save', async function(next) {
   if (this.isNew || this.isModified('createdBy')) {
     try {
       const User = mongoose.model('User');
+      // Use parameterized query with findById to prevent injection
       const user = await User.findById(this.createdBy);
       
       if (!user || user.role !== 'admin') {

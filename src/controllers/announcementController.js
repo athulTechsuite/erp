@@ -1,6 +1,13 @@
 const Announcement = require('../models/Announcement');
 const { validationResult } = require('express-validator');
-const mongoose = require('mongoose');
+const DOMPurify = require('isomorphic-dompurify');
+
+// Input sanitization middleware
+const sanitizeInput = (input) => {
+  if (typeof input !== 'string') return input;
+  // Strip HTML tags and sanitize content to prevent XSS
+  return DOMPurify.sanitize(input, { ALLOWED_TAGS: [] });
+};
 
 // Middleware to check if user is admin
 const requireAdmin = (req, res, next) => {
@@ -55,14 +62,6 @@ const getAnnouncementsForAdmin = async (req, res) => {
 // Create new announcement (admin only)
 const createAnnouncement = async (req, res) => {
   try {
-    // Check admin authorization
-    if (!req.user || req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. Admin privileges required.'
-      });
-    }
-
     // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -75,9 +74,13 @@ const createAnnouncement = async (req, res) => {
 
     const { title, content, isActive = true } = req.body;
 
+    // Sanitize input to prevent stored XSS
+    const sanitizedTitle = sanitizeInput(title);
+    const sanitizedContent = sanitizeInput(content);
+
     const announcement = new Announcement({
-      title,
-      content,
+      title: sanitizedTitle,
+      content: sanitizedContent,
       isActive,
       createdBy: req.user._id
     });
@@ -105,15 +108,6 @@ const createAnnouncement = async (req, res) => {
 const getAnnouncementById = async (req, res) => {
   try {
     const { id } = req.params;
-    
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID format'
-      });
-    }
-
     const announcement = await Announcement.findById(id)
       .populate('createdBy', 'name email');
 
@@ -148,14 +142,6 @@ const getAnnouncementById = async (req, res) => {
 // Update announcement (admin only)
 const updateAnnouncement = async (req, res) => {
   try {
-    // Check admin authorization
-    if (!req.user || req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. Admin privileges required.'
-      });
-    }
-
     // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -167,15 +153,6 @@ const updateAnnouncement = async (req, res) => {
     }
 
     const { id } = req.params;
-    
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID format'
-      });
-    }
-
     const { title, content, isActive } = req.body;
 
     const announcement = await Announcement.findById(id);
@@ -187,9 +164,9 @@ const updateAnnouncement = async (req, res) => {
       });
     }
 
-    // Update fields
-    if (title !== undefined) announcement.title = title;
-    if (content !== undefined) announcement.content = content;
+    // Update fields with sanitization
+    if (title !== undefined) announcement.title = sanitizeInput(title);
+    if (content !== undefined) announcement.content = sanitizeInput(content);
     if (isActive !== undefined) announcement.isActive = isActive;
 
     announcement.updatedAt = new Date();
@@ -215,23 +192,7 @@ const updateAnnouncement = async (req, res) => {
 // Delete announcement (admin only)
 const deleteAnnouncement = async (req, res) => {
   try {
-    // Check admin authorization
-    if (!req.user || req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. Admin privileges required.'
-      });
-    }
-
     const { id } = req.params;
-
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID format'
-      });
-    }
 
     const announcement = await Announcement.findById(id);
 
@@ -261,14 +222,6 @@ const deleteAnnouncement = async (req, res) => {
 const toggleAnnouncementStatus = async (req, res) => {
   try {
     const { id } = req.params;
-
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID format'
-      });
-    }
 
     const announcement = await Announcement.findById(id);
 

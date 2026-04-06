@@ -24,6 +24,38 @@ jest.mock('../utils/formValidator', () => ({
 }));
 
 /**
+ * Test utilities module for form testing
+ * Exports reusable test helper functions and mocks
+ */
+const testUtils = {
+  /**
+   * Creates a deterministic mock response for API calls
+   * @param {boolean} success - Whether the API call should succeed
+   * @param {string} id - The response ID
+   * @returns {Object} Mock API response
+   */
+  createMockApiResponse: (success = true, id = 'test-id-123') => ({
+    success,
+    id,
+    timestamp: '2023-01-01T00:00:00Z'
+  }),
+
+  /**
+   * Creates a deterministic error for API failure scenarios
+   * @param {string} message - Error message
+   * @returns {Error} Mock error object
+   */
+  createMockApiError: (message = 'Network error') => new Error(message),
+
+  /**
+   * Helper to simulate form validation states deterministically
+   * @param {boolean} isValid - Whether validation should pass
+   * @returns {boolean} Validation result
+   */
+  mockValidationResult: (isValid) => isValid
+};
+
+/**
  * TC-003: Company Announcement Form validation and submission tests
  * Comprehensive test coverage for form validation, submission, and error handling
  */
@@ -58,11 +90,9 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
   describe('TC-003 Happy path - valid form submission', () => {
     test('should successfully submit form with valid data', async () => {
       // Arrange
-      formSubmissionService.submitContactForm.mockResolvedValue({
-        success: true,
-        id: '12345'
-      });
-      formValidator.validateForm.mockReturnValue(true);
+      const mockResponse = testUtils.createMockApiResponse(true, 'success-12345');
+      formSubmissionService.submitContactForm.mockResolvedValue(mockResponse);
+      formValidator.validateForm.mockReturnValue(testUtils.mockValidationResult(true));
 
       const mockOnSubmit = jest.fn();
       renderContactForm({ onSubmit: mockOnSubmit });
@@ -95,7 +125,7 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
         'firstname.lastname@company.com'
       ];
 
-      formValidator.validateField.mockReturnValue(true);
+      formValidator.validateField.mockReturnValue(testUtils.mockValidationResult(true));
       renderContactForm();
 
       const emailInput = screen.getByLabelText(/email address/i);
@@ -116,7 +146,7 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
 
     test('should accept all required fields when properly filled', async () => {
       // Arrange
-      formValidator.validateForm.mockReturnValue(true);
+      formValidator.validateForm.mockReturnValue(testUtils.mockValidationResult(true));
       renderContactForm();
 
       // Act
@@ -132,7 +162,7 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
     test('should validate optional phone number when provided', async () => {
       // Arrange
       const validPhones = ['+1234567890', '1234567890', '+44207123456'];
-      formValidator.validateField.mockReturnValue(true);
+      formValidator.validateField.mockReturnValue(testUtils.mockValidationResult(true));
       renderContactForm();
 
       const phoneInput = screen.getByLabelText(/phone number/i);
@@ -153,7 +183,7 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
 
     test('should enable submit button when form is valid', async () => {
       // Arrange
-      formValidator.validateForm.mockReturnValue(true);
+      formValidator.validateForm.mockReturnValue(testUtils.mockValidationResult(true));
       renderContactForm();
 
       const submitButton = screen.getByRole('button', { name: /submit/i });
@@ -174,8 +204,8 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
   describe('TC-003 Error path - invalid form submission', () => {
     test('should prevent submission when name field is empty', async () => {
       // Arrange
-      formValidator.validateForm.mockReturnValue(false);
-      formValidator.validateField.mockReturnValue(false);
+      formValidator.validateForm.mockReturnValue(testUtils.mockValidationResult(false));
+      formValidator.validateField.mockReturnValue(testUtils.mockValidationResult(false));
       
       renderContactForm();
 
@@ -194,8 +224,8 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
 
     test('should prevent submission when email field is empty', async () => {
       // Arrange
-      formValidator.validateForm.mockReturnValue(false);
-      formValidator.validateField.mockReturnValue(false);
+      formValidator.validateForm.mockReturnValue(testUtils.mockValidationResult(false));
+      formValidator.validateField.mockReturnValue(testUtils.mockValidationResult(false));
       
       renderContactForm();
 
@@ -214,8 +244,8 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
 
     test('should prevent submission when message field is empty', async () => {
       // Arrange
-      formValidator.validateForm.mockReturnValue(false);
-      formValidator.validateField.mockReturnValue(false);
+      formValidator.validateForm.mockReturnValue(testUtils.mockValidationResult(false));
+      formValidator.validateField.mockReturnValue(testUtils.mockValidationResult(false));
       
       renderContactForm();
 
@@ -245,7 +275,7 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
         'user@domain',
       ];
 
-      formValidator.validateField.mockReturnValue(false);
+      formValidator.validateField.mockReturnValue(testUtils.mockValidationResult(false));
       renderContactForm();
 
       const emailInput = screen.getByLabelText(/email address/i);
@@ -266,7 +296,7 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
 
     test('should validate name field length constraints', async () => {
       // Arrange
-      formValidator.validateField.mockReturnValue(false);
+      formValidator.validateField.mockReturnValue(testUtils.mockValidationResult(false));
       renderContactForm();
 
       const nameInput = screen.getByLabelText(/full name/i);
@@ -297,7 +327,7 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
 
     test('should validate message field length constraints', async () => {
       // Arrange
-      formValidator.validateField.mockReturnValue(false);
+      formValidator.validateField.mockReturnValue(testUtils.mockValidationResult(false));
       renderContactForm();
 
       const messageInput = screen.getByLabelText(/message/i);
@@ -334,7 +364,7 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
         '0123456789012345678'
       ];
 
-      formValidator.validateField.mockReturnValue(false);
+      formValidator.validateField.mockReturnValue(testUtils.mockValidationResult(false));
       renderContactForm();
 
       const phoneInput = screen.getByLabelText(/phone number/i);
@@ -355,9 +385,9 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
 
     test('should handle form submission errors gracefully', async () => {
       // Arrange
-      const errorMessage = 'Network error';
-      formSubmissionService.submitContactForm.mockRejectedValue(new Error(errorMessage));
-      formValidator.validateForm.mockReturnValue(true);
+      const mockError = testUtils.createMockApiError('Network connection failed');
+      formSubmissionService.submitContactForm.mockRejectedValue(mockError);
+      formValidator.validateForm.mockReturnValue(testUtils.mockValidationResult(true));
 
       renderContactForm();
 
@@ -379,7 +409,7 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
   describe('TC-003 Edge cases and accessibility', () => {
     test('should maintain focus on invalid field after submission attempt', async () => {
       // Arrange
-      formValidator.validateForm.mockReturnValue(false);
+      formValidator.validateForm.mockReturnValue(testUtils.mockValidationResult(false));
       renderContactForm();
 
       const nameInput = screen.getByLabelText(/full name/i);
@@ -398,7 +428,7 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
     test('should display appropriate error messages for invalid fields', async () => {
       // Arrange
       const errorMessage = 'Full Name is required.';
-      formValidator.validateField.mockReturnValue(false);
+      formValidator.validateField.mockReturnValue(testUtils.mockValidationResult(false));
       formValidator.showFieldError.mockImplementation(() => {
         // Simulate error message display
       });
@@ -444,7 +474,7 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
         'Mary-Jane'
       ];
 
-      formValidator.validateField.mockReturnValue(true);
+      formValidator.validateField.mockReturnValue(testUtils.mockValidationResult(true));
       renderContactForm();
 
       const nameInput = screen.getByLabelText(/full name/i);
@@ -466,9 +496,9 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
     test('should validate form state changes during user interaction', async () => {
       // Arrange
       formValidator.validateForm
-        .mockReturnValueOnce(false) // After name input
-        .mockReturnValueOnce(false) // After email input
-        .mockReturnValueOnce(true); // After message input
+        .mockReturnValueOnce(testUtils.mockValidationResult(false)) // After name input
+        .mockReturnValueOnce(testUtils.mockValidationResult(false)) // After email input
+        .mockReturnValueOnce(testUtils.mockValidationResult(true)); // After message input
 
       renderContactForm();
 
@@ -494,7 +524,7 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
       });
       
       formSubmissionService.submitContactForm.mockReturnValue(submissionPromise);
-      formValidator.validateForm.mockReturnValue(true);
+      formValidator.validateForm.mockReturnValue(testUtils.mockValidationResult(true));
 
       renderContactForm();
 
@@ -511,7 +541,8 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
       expect(submitButton).toBeDisabled();
 
       // Resolve submission
-      resolveSubmission({ success: true, id: '12345' });
+      const mockResponse = testUtils.createMockApiResponse(true, 'loading-test-12345');
+      resolveSubmission(mockResponse);
 
       await waitFor(() => {
         expect(screen.queryByText(/submitting/i)).not.toBeInTheDocument();
@@ -520,3 +551,6 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
     });
   });
 });
+
+// Export test utilities for reuse in other test files
+export { testUtils };

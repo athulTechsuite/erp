@@ -623,4 +623,255 @@ describe('Company Announcements System Integration Tests', () => {
       expect(allAnnouncements.body).toHaveLength(3);
     });
   });
+
+  describe('[TC-AN-011] Announcement Lifecycle Management', () => {
+    test('[TC-AN-011-HP] should track announcement creation and modification timestamps', async () => {
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Timestamped Announcement',
+          content: 'Testing timestamp functionality'
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.data).toHaveProperty('created_at');
+      expect(response.body.data).toHaveProperty('updated_at');
+      expect(new Date(response.body.data.created_at)).toBeInstanceOf(Date);
+    });
+
+    test('[TC-AN-011-EP] should handle announcement status transitions correctly', async () => {
+      // Create active announcement
+      const createResponse = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Status Test',
+          content: 'Testing status transitions'
+        });
+
+      const announcementId = createResponse.body.data._id;
+
+      // Deactivate announcement
+      const deactivateResponse = await request(app)
+        .put(`/api/announcements/${announcementId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ isActive: false });
+
+      expect(deactivateResponse.status).toBe(200);
+
+      // Verify it's no longer visible to employees
+      const employeeView = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', `Bearer ${employeeToken}`);
+
+      expect(employeeView.body).toHaveLength(0);
+    });
+  });
+
+  describe('[TC-AN-012] Content Filtering and Search', () => {
+    beforeEach(async () => {
+      await Announcement.insertMany([
+        { title: 'HR Policy Update', content: 'New HR policies effective next month', createdBy: adminUser._id, isActive: true },
+        { title: 'IT Maintenance', content: 'System maintenance scheduled for weekend', createdBy: adminUser._id, isActive: true },
+        { title: 'Company Event', content: 'Annual company picnic announcement', createdBy: adminUser._id, isActive: true }
+      ]);
+    });
+
+    test('[TC-AN-012-HP] should filter announcements by search term', async () => {
+      const response = await request(app)
+        .get('/api/announcements?search=HR')
+        .set('Authorization', `Bearer ${employeeToken}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveLength(1);
+      expect(response.body[0].title).toContain('HR');
+    });
+
+    test('[TC-AN-012-EP] should handle empty search results gracefully', async () => {
+      const response = await request(app)
+        .get('/api/announcements?search=NonExistentTerm')
+        .set('Authorization', `Bearer ${employeeToken}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual([]);
+    });
+
+    test('[TC-AN-012-HP] should support case-insensitive search', async () => {
+      const response = await request(app)
+        .get('/api/announcements?search=company')
+        .set('Authorization', `Bearer ${employeeToken}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.length).toBeGreaterThan(0);
+      expect(response.body.some(ann => ann.title.toLowerCase().includes('company'))).toBe(true);
+    });
+  });
+
+  describe('[TC-AN-013] Announcement Analytics and Metrics', () => {
+    test('[TC-AN-013-HP] should track announcement view statistics for admin users', async () => {
+      // Create announcement
+      const createResponse = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Analytics Test',
+          content: 'Testing analytics functionality'
+        });
+
+      const announcementId = createResponse.body.data._id;
+
+      // Simulate employee viewing announcement
+      await request(app)
+        .get('/api/announcements')
+        .set('Authorization', `Bearer ${employeeToken}`);
+
+      // Admin should be able to view analytics
+      const analyticsResponse = await request(app)
+        .get(`/api/announcements/${announcementId}/analytics`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(analyticsResponse.status).toBe(200);
+      expect(analyticsResponse.body).toHaveProperty('viewCount');
+    });
+
+    test('[TC-AN-013-EP] should deny analytics access to non-admin users', async () => {
+      const response = await request(app)
+        .get('/api/announcements/507f1f77bcf86cd799439011/analytics')
+        .set('Authorization', `Bearer ${employeeToken}`);
+
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe('Access denied. Admin privileges required.');
+    });
+  });
+
+  describe('[TC-AN-014] Bulk Operations', () => {
+    test('[TC-AN-014-HP] should allow admin to perform bulk announcement operations', async () => {
+      // Create multiple announcements
+      const announcements = await Announcement.insertMany([
+        { title: 'Bulk Test 1', content: 'Content 1', createdBy: adminUser._id, isActive: true },
+        { title: 'Bulk Test 2', content: 'Content 2', createdBy: adminUser._id, isActive: true },
+        { title: 'Bulk Test 3', content: 'Content 3', createdBy: adminUser._id, isActive: true }
+      ]);
+
+      const announcementIds = announcements.map(ann => ann._id.toString());
+
+      // Bulk deactivate
+      const bulkResponse = await request(app)
+        .put('/api/announcements/bulk')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          ids: announcementIds,
+          action: 'deactivate'
+        });
+
+      expect(bulkResponse.status).toBe(200);
+      expect(bulkResponse.body.success).toBe(true);
+
+      // Verify all announcements are deactivated
+      const employeeView = await request(app)
+        .get('/api/announcements')
+        .set('Authorization', `Bearer ${employeeToken}`);
+
+      expect(employeeView.body).toHaveLength(0);
+    });
+
+    test('[TC-AN-014-EP] should validate bulk operation parameters', async () => {
+      const response = await request(app)
+        .put('/api/announcements/bulk')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          ids: [],
+          action: 'invalid_action'
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('Invalid bulk operation');
+    });
+
+    test('[TC-AN-014-EP] should handle partial failures in bulk operations gracefully', async () => {
+      const response = await request(app)
+        .put('/api/announcements/bulk')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          ids: ['507f1f77bcf86cd799439011', '507f1f77bcf86cd799439012'],
+          action: 'delete'
+        });
+
+      expect(response.status).toBe(207); // Multi-status for partial success
+      expect(response.body.results).toHaveProperty('failed');
+      expect(response.body.results).toHaveProperty('succeeded');
+    });
+  });
+
+  describe('[TC-AN-015] Integration with External Systems', () => {
+    test('[TC-AN-015-HP] should trigger notification system when announcement is created', async () => {
+      // Mock notification service
+      const mockNotificationService = jest.fn();
+      const originalNotify = require('../../src/services/notificationService');
+      require('../../src/services/notificationService').sendAnnouncement = mockNotificationService;
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Notification Test',
+          content: 'Testing notification integration'
+        });
+
+      expect(response.status).toBe(201);
+      expect(mockNotificationService).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Notification Test',
+          content: 'Testing notification integration'
+        })
+      );
+
+      // Restore original service
+      require('../../src/services/notificationService').sendAnnouncement = originalNotify.sendAnnouncement;
+    });
+
+    test('[TC-AN-015-EP] should handle notification service failures gracefully', async () => {
+      // Mock notification service to fail
+      const mockNotificationService = jest.fn().mockRejectedValue(new Error('Notification service down'));
+      require('../../src/services/notificationService').sendAnnouncement = mockNotificationService;
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Failure Test',
+          content: 'Testing notification failure handling'
+        });
+
+      // Announcement should still be created despite notification failure
+      expect(response.status).toBe(201);
+      expect(response.body.success).toBe(true);
+      expect(response.body.warnings).toContain('Notification delivery failed');
+    });
+
+    test('[TC-AN-015-HP] should integrate with audit logging system', async () => {
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Audit Test',
+          content: 'Testing audit log integration'
+        });
+
+      expect(response.status).toBe(201);
+
+      // Verify audit log entry
+      const auditResponse = await request(app)
+        .get('/api/audit/announcements')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(auditResponse.status).toBe(200);
+      expect(auditResponse.body.some(log => 
+        log.action === 'CREATE_ANNOUNCEMENT' && 
+        log.details.title === 'Audit Test'
+      )).toBe(true);
+    });
+  });
 });

@@ -77,7 +77,7 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
 
   if (loading) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4" role="region" aria-label="Loading announcements" aria-live="polite">
         {[...Array(3)].map((_, index) => (
           <Card key={index} className="animate-pulse">
             <CardContent className="p-4">
@@ -94,7 +94,7 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
 
   if (error) {
     return (
-      <Alert variant="destructive">
+      <Alert variant="destructive" role="alert">
         <AlertDescription>{error}</AlertDescription>
       </Alert>
     );
@@ -102,7 +102,7 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
 
   if (announcements.length === 0) {
     return (
-      <Card>
+      <Card role="region" aria-label="No announcements">
         <CardContent className="p-6 text-center">
           <p className="text-gray-500">No announcements available</p>
         </CardContent>
@@ -111,38 +111,40 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" role="region" aria-label="Announcements list">
       {announcements.map((announcement) => (
-        <Card key={announcement.id} className="border-l-4 border-l-blue-500">
+        <Card key={announcement.id} className="border-l-4 border-l-blue-500" role="article" aria-labelledby={`announcement-title-${announcement.id}`}>
           <CardHeader className="pb-2">
             <div className="flex items-start justify-between">
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                <h3 id={`announcement-title-${announcement.id}`} className="text-lg font-semibold text-gray-900 mb-1">
                   {announcement.title}
                 </h3>
                 <div className="flex items-center text-sm text-gray-500">
-                  <Calendar className="h-4 w-4 mr-1" />
-                  <span>Published {formatDate(announcement.createdAt)}</span>
+                  <Calendar className="h-4 w-4 mr-1" aria-hidden="true" />
+                  <time dateTime={announcement.createdAt}>Published {formatDate(announcement.createdAt)}</time>
                   {announcement.author && (
                     <span className="ml-2">by {announcement.author.name}</span>
                   )}
                 </div>
               </div>
               {showActions && (
-                <div className="flex items-center space-x-2 ml-4">
+                <div className="flex items-center space-x-2 ml-4" role="group" aria-label={`Actions for ${announcement.title}`}>
                   <button
                     onClick={() => window.location.href = `/admin/announcements/edit/${announcement.id}`}
                     className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                     title="Edit announcement"
+                    aria-label={`Edit announcement: ${announcement.title}`}
                   >
-                    <Edit className="h-4 w-4" />
+                    <Edit className="h-4 w-4" aria-hidden="true" />
                   </button>
                   <button
                     onClick={() => handleDelete(announcement.id)}
                     className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                     title="Delete announcement"
+                    aria-label={`Delete announcement: ${announcement.title}`}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </button>
                 </div>
               )}
@@ -150,7 +152,7 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="prose prose-sm max-w-none">
-              <div className="text-gray-700 leading-relaxed">
+              <div className="text-gray-700 leading-relaxed" role="region" aria-label="Announcement content">
                 {renderSafeContent(announcement.content)}
               </div>
             </div>

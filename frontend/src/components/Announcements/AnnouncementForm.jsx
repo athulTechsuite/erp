@@ -1,11 +1,17 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Save, X, AlertCircle } from 'lucide-react';
-import DOMPurify from 'dompurify';
+
+// Validation configuration constants
+const VALIDATION_LIMITS = {
+  TITLE_MAX_LENGTH: 200,
+  CONTENT_MAX_LENGTH: 5000
+};
 
 const AnnouncementForm = ({ 
   announcement = null, 
@@ -20,57 +26,39 @@ const AnnouncementForm = ({
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
 
-  // Sanitize announcement data when it changes
-  const sanitizedAnnouncement = useMemo(() => {
-    if (!announcement) return null;
-    return {
-      title: DOMPurify.sanitize(announcement.title || '', { ALLOWED_TAGS: [] }),
-      content: DOMPurify.sanitize(announcement.content || '', { ALLOWED_TAGS: [] })
-    };
-  }, [announcement]);
-
   useEffect(() => {
-    if (sanitizedAnnouncement) {
+    if (announcement) {
       setFormData({
-        title: sanitizedAnnouncement.title,
-        content: sanitizedAnnouncement.content
+        title: announcement.title || '',
+        content: announcement.content || ''
       });
     }
-  }, [sanitizedAnnouncement]);
+  }, [announcement]);
 
   const sanitizeErrorMessage = (message) => {
     if (typeof message !== 'string') {
       return 'An error occurred. Please try again.';
     }
-    // Use DOMPurify to sanitize error messages, allowing no HTML tags
-    return DOMPurify.sanitize(message, { ALLOWED_TAGS: [] });
-  };
-
-  const sanitizeInput = (value) => {
-    if (typeof value !== 'string') {
-      return '';
-    }
-    // Sanitize user input, removing all HTML tags for form fields
-    return DOMPurify.sanitize(value, { ALLOWED_TAGS: [] });
+    // Sanitize HTML content using DOMPurify
+    return DOMPurify.sanitize(message, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
   };
 
   const validateField = (name, value) => {
     const fieldErrors = {};
-    const sanitizedValue = sanitizeInput(value);
     
     if (name === 'title') {
-      if (!sanitizedValue.trim()) {
+      if (!value.trim()) {
         fieldErrors.title = 'Title is required';
-      } else if (sanitizedValue.length > 200) {
-        fieldErrors.title = 'Title must be less than 200 characters';
+      } else if (value.length > VALIDATION_LIMITS.TITLE_MAX_LENGTH) {
+        fieldErrors.title = `Title must be less than ${VALIDATION_LIMITS.TITLE_MAX_LENGTH} characters`;
       }
     }
     
     if (name === 'content') {
-      if (!sanitizedValue.trim()) {
+      if (!value.trim()) {
         fieldErrors.content = 'Content is required';
-      } else if (sanitizedValue.length > 5000) {
-        fieldErrors.content = 'Content must be less than 5000 characters';
+      } else if (value.length > VALIDATION_LIMITS.CONTENT_MAX_LENGTH) {
+        fieldErrors.content = `Content must be less than ${VALIDATION_LIMITS.CONTENT_MAX_LENGTH} characters`;
       }
     }
     
@@ -89,11 +77,10 @@ const AnnouncementForm = ({
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    const sanitizedValue = sanitizeInput(value);
     
     setFormData(prev => ({
       ...prev,
-      [name]: sanitizedValue
+      [name]: value
     }));
 
     // Clear errors for this field when user starts typing
@@ -107,10 +94,9 @@ const AnnouncementForm = ({
 
   const handleBlur = (e) => {
     const { name, value } = e.target;
-    const sanitizedValue = sanitizeInput(value);
     setTouched(prev => ({ ...prev, [name]: true }));
     
-    const fieldErrors = validateField(name, sanitizedValue);
+    const fieldErrors = validateField(name, value);
     setErrors(prev => ({ ...prev, ...fieldErrors }));
   };
 
@@ -124,13 +110,11 @@ const AnnouncementForm = ({
     }
 
     try {
-      // Double sanitization: once on input, once before submission
-      const sanitizedData = {
-        title: DOMPurify.sanitize(formData.title.trim(), { ALLOWED_TAGS: [] }),
-        content: DOMPurify.sanitize(formData.content.trim(), { ALLOWED_TAGS: [] })
-      };
-      
-      await onSave(sanitizedData);
+      await onSave({
+        ...formData,
+        title: formData.title.trim(),
+        content: formData.content.trim()
+      });
     } catch (error) {
       console.error('Error saving announcement:', error);
       const errorMessage = error?.response?.data?.message || error?.message || 'Failed to save announcement. Please try again.';
@@ -147,22 +131,6 @@ const AnnouncementForm = ({
     onCancel();
   };
 
-  // Sanitize display values
-  const sanitizedFormData = useMemo(() => ({
-    title: sanitizeInput(formData.title),
-    content: sanitizeInput(formData.content)
-  }), [formData.title, formData.content]);
-
-  const sanitizedErrors = useMemo(() => {
-    const sanitized = {};
-    Object.keys(errors).forEach(key => {
-      if (errors[key]) {
-        sanitized[key] = sanitizeErrorMessage(errors[key]);
-      }
-    });
-    return sanitized;
-  }, [errors]);
-
   return (
     <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
@@ -172,10 +140,10 @@ const AnnouncementForm = ({
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {sanitizedErrors.submit && (
+          {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{sanitizedErrors.submit}</AlertDescription>
+              <AlertDescription>{errors.submit}</AlertDescription>
             </Alert>
           )}
           
@@ -186,20 +154,20 @@ const AnnouncementForm = ({
             <Input
               id="title"
               name="title"
-              value={sanitizedFormData.title}
+              value={formData.title}
               onChange={handleInputChange}
               onBlur={handleBlur}
               placeholder="Enter announcement title..."
-              className={sanitizedErrors.title && touched.title ? 'border-red-500' : ''}
-              maxLength={200}
+              className={errors.title && touched.title ? 'border-red-500' : ''}
+              maxLength={VALIDATION_LIMITS.TITLE_MAX_LENGTH}
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
-                {sanitizedErrors.title && touched.title && (
-                  <span className="text-red-500">{sanitizedErrors.title}</span>
+                {errors.title && touched.title && (
+                  <span className="text-red-500">{errors.title}</span>
                 )}
               </span>
-              <span>{sanitizedFormData.title.length}/200</span>
+              <span>{formData.title.length}/{VALIDATION_LIMITS.TITLE_MAX_LENGTH}</span>
             </div>
           </div>
 
@@ -210,21 +178,21 @@ const AnnouncementForm = ({
             <Textarea
               id="content"
               name="content"
-              value={sanitizedFormData.content}
+              value={formData.content}
               onChange={handleInputChange}
               onBlur={handleBlur}
               placeholder="Enter announcement content..."
               rows={8}
-              className={sanitizedErrors.content && touched.content ? 'border-red-500' : ''}
-              maxLength={5000}
+              className={errors.content && touched.content ? 'border-red-500' : ''}
+              maxLength={VALIDATION_LIMITS.CONTENT_MAX_LENGTH}
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
-                {sanitizedErrors.content && touched.content && (
-                  <span className="text-red-500">{sanitizedErrors.content}</span>
+                {errors.content && touched.content && (
+                  <span className="text-red-500">{errors.content}</span>
                 )}
               </span>
-              <span>{sanitizedFormData.content.length}/5000</span>
+              <span>{formData.content.length}/{VALIDATION_LIMITS.CONTENT_MAX_LENGTH}</span>
             </div>
           </div>
 
@@ -240,7 +208,7 @@ const AnnouncementForm = ({
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting || Object.keys(sanitizedErrors).length > 0}
+              disabled={isSubmitting || Object.keys(errors).length > 0}
             >
               <Save className="h-4 w-4 mr-2" />
               {isSubmitting ? 'Saving...' : announcement ? 'Update' : 'Publish'}

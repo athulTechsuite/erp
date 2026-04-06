@@ -6,6 +6,48 @@ import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Save, X, AlertCircle } from 'lucide-react';
 
+// Input sanitization utility functions
+const sanitizeInput = (input) => {
+  if (typeof input !== 'string') return '';
+  
+  // Remove potentially dangerous HTML tags and JavaScript
+  return input
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
+    .replace(/<embed[^>]*>/gi, '')
+    .replace(/<link[^>]*>/gi, '')
+    .replace(/<meta[^>]*>/gi, '')
+    .replace(/javascript:/gi, '')
+    .replace(/vbscript:/gi, '')
+    .replace(/on\w+\s*=/gi, '')
+    .replace(/style\s*=/gi, '')
+    .trim();
+};
+
+const sanitizeTitle = (title) => {
+  // More restrictive sanitization for titles - remove all HTML
+  return sanitizeInput(title)
+    .replace(/<[^>]*>/g, '')
+    .replace(/&lt;[^&gt;]*&gt;/g, '');
+};
+
+const sanitizeContent = (content) => {
+  // Allow some basic formatting but sanitize dangerous content
+  const sanitized = sanitizeInput(content);
+  
+  // Remove potentially dangerous attributes from allowed tags
+  return sanitized
+    .replace(/<(\w+)[^>]*>/g, (match, tag) => {
+      // Only allow specific safe tags
+      const allowedTags = ['p', 'br', 'strong', 'em', 'u', 'ol', 'ul', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+      if (allowedTags.includes(tag.toLowerCase())) {
+        return `<${tag}>`;
+      }
+      return '';
+    });
+};
+
 const AnnouncementForm = ({ 
   announcement = null, 
   onSave, 
@@ -22,8 +64,8 @@ const AnnouncementForm = ({
   useEffect(() => {
     if (announcement) {
       setFormData({
-        title: announcement.title || '',
-        content: announcement.content || ''
+        title: sanitizeTitle(announcement.title || ''),
+        content: sanitizeContent(announcement.content || '')
       });
     }
   }, [announcement]);
@@ -63,9 +105,12 @@ const AnnouncementForm = ({
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     
+    // Sanitize input based on field type
+    const sanitizedValue = name === 'title' ? sanitizeTitle(value) : sanitizeContent(value);
+    
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: sanitizedValue
     }));
 
     // Clear errors for this field when user starts typing
@@ -95,11 +140,21 @@ const AnnouncementForm = ({
     }
 
     try {
-      await onSave({
-        ...formData,
-        title: formData.title.trim(),
-        content: formData.content.trim()
-      });
+      // Double sanitize before sending to backend
+      const sanitizedData = {
+        title: sanitizeTitle(formData.title.trim()),
+        content: sanitizeContent(formData.content.trim())
+      };
+      
+      // Additional validation after sanitization
+      if (!sanitizedData.title || !sanitizedData.content) {
+        setErrors({ 
+          submit: 'Invalid input detected. Please check your data and try again.' 
+        });
+        return;
+      }
+      
+      await onSave(sanitizedData);
     } catch (error) {
       console.error('Error saving announcement:', error);
       setErrors({ 
@@ -115,10 +170,6 @@ const AnnouncementForm = ({
     onCancel();
   };
 
-  const titleError = errors.title && touched.title;
-  const contentError = errors.content && touched.content;
-  const hasErrors = Object.keys(errors).some(key => key !== 'submit' && errors[key]);
-
   return (
     <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
@@ -127,9 +178,9 @@ const AnnouncementForm = ({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+        <form onSubmit={handleSubmit} className="space-y-4">
           {errors.submit && (
-            <Alert variant="destructive" role="alert" aria-live="polite">
+            <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{errors.submit}</AlertDescription>
             </Alert>
@@ -137,7 +188,7 @@ const AnnouncementForm = ({
           
           <div className="space-y-2">
             <label htmlFor="title" className="text-sm font-medium">
-              Title <span className="text-red-500" aria-label="required">*</span>
+              Title <span className="text-red-500">*</span>
             </label>
             <Input
               id="title"
@@ -146,35 +197,22 @@ const AnnouncementForm = ({
               onChange={handleInputChange}
               onBlur={handleBlur}
               placeholder="Enter announcement title..."
-              className={titleError ? 'border-red-500' : ''}
+              className={errors.title && touched.title ? 'border-red-500' : ''}
               maxLength={200}
-              required
-              aria-invalid={titleError ? 'true' : 'false'}
-              aria-describedby={titleError ? 'title-error' : 'title-count'}
-              aria-label="Announcement title"
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
-                {titleError && (
-                  <span 
-                    id="title-error" 
-                    className="text-red-500" 
-                    role="alert"
-                    aria-live="polite"
-                  >
-                    {errors.title}
-                  </span>
+                {errors.title && touched.title && (
+                  <span className="text-red-500">{errors.title}</span>
                 )}
               </span>
-              <span id="title-count" aria-label={`${formData.title.length} of 200 characters used`}>
-                {formData.title.length}/200
-              </span>
+              <span>{formData.title.length}/200</span>
             </div>
           </div>
 
           <div className="space-y-2">
             <label htmlFor="content" className="text-sm font-medium">
-              Content <span className="text-red-500" aria-label="required">*</span>
+              Content <span className="text-red-500">*</span>
             </label>
             <Textarea
               id="content"
@@ -184,29 +222,16 @@ const AnnouncementForm = ({
               onBlur={handleBlur}
               placeholder="Enter announcement content..."
               rows={8}
-              className={contentError ? 'border-red-500' : ''}
+              className={errors.content && touched.content ? 'border-red-500' : ''}
               maxLength={5000}
-              required
-              aria-invalid={contentError ? 'true' : 'false'}
-              aria-describedby={contentError ? 'content-error' : 'content-count'}
-              aria-label="Announcement content"
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
-                {contentError && (
-                  <span 
-                    id="content-error" 
-                    className="text-red-500" 
-                    role="alert"
-                    aria-live="polite"
-                  >
-                    {errors.content}
-                  </span>
+                {errors.content && touched.content && (
+                  <span className="text-red-500">{errors.content}</span>
                 )}
               </span>
-              <span id="content-count" aria-label={`${formData.content.length} of 5000 characters used`}>
-                {formData.content.length}/5000
-              </span>
+              <span>{formData.content.length}/5000</span>
             </div>
           </div>
 
@@ -216,17 +241,15 @@ const AnnouncementForm = ({
               variant="outline"
               onClick={handleCancel}
               disabled={isSubmitting}
-              aria-label="Cancel announcement creation"
             >
-              <X className="h-4 w-4 mr-2" aria-hidden="true" />
+              <X className="h-4 w-4 mr-2" />
               Cancel
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting || hasErrors}
-              aria-label={isSubmitting ? 'Saving announcement' : announcement ? 'Update announcement' : 'Publish announcement'}
+              disabled={isSubmitting || Object.keys(errors).length > 0}
             >
-              <Save className="h-4 w-4 mr-2" aria-hidden="true" />
+              <Save className="h-4 w-4 mr-2" />
               {isSubmitting ? 'Saving...' : announcement ? 'Update' : 'Publish'}
             </Button>
           </div>

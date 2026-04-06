@@ -1,0 +1,129 @@
+describe('TC-003: Form validation and submission - Announcement Form', () => {
+  beforeEach(() => {
+    cy.visit('/announcements/new');
+  });
+
+  describe('Happy Path', () => {
+    it('should successfully submit valid announcement form', () => {
+      // Fill out all required fields with valid data
+      cy.get('[data-testid="announcement-title"]').type('Important Company Update');
+      cy.get('[data-testid="announcement-content"]').type('This is a test announcement with valid content that meets the minimum length requirements.');
+      cy.get('[data-testid="announcement-category"]').select('General');
+      cy.get('[data-testid="announcement-priority"]').select('Medium');
+      
+      // Submit the form
+      cy.get('[data-testid="submit-announcement"]').click();
+      
+      // Verify successful submission
+      cy.get('[data-testid="success-message"]').should('be.visible');
+      cy.get('[data-testid="success-message"]').should('contain', 'Announcement created successfully');
+      cy.url().should('include', '/announcements');
+    });
+
+    it('should handle optional fields correctly', () => {
+      // Fill required fields only
+      cy.get('[data-testid="announcement-title"]').type('Minimal Announcement');
+      cy.get('[data-testid="announcement-content"]').type('This announcement only has required fields filled.');
+      cy.get('[data-testid="announcement-category"]').select('General');
+      
+      // Submit without optional fields
+      cy.get('[data-testid="submit-announcement"]').click();
+      
+      // Verify successful submission
+      cy.get('[data-testid="success-message"]').should('be.visible');
+      cy.url().should('include', '/announcements');
+    });
+  });
+
+  describe('Error Path', () => {
+    it('should show validation errors for empty required fields', () => {
+      // Attempt to submit without filling required fields
+      cy.get('[data-testid="submit-announcement"]').click();
+      
+      // Verify validation errors are displayed
+      cy.get('[data-testid="title-error"]').should('be.visible');
+      cy.get('[data-testid="title-error"]').should('contain', 'Title is required');
+      
+      cy.get('[data-testid="content-error"]').should('be.visible');
+      cy.get('[data-testid="content-error"]').should('contain', 'Content is required');
+      
+      cy.get('[data-testid="category-error"]').should('be.visible');
+      cy.get('[data-testid="category-error"]').should('contain', 'Category is required');
+      
+      // Verify form was not submitted
+      cy.url().should('include', '/announcements/new');
+    });
+
+    it('should validate title length constraints', () => {
+      // Test title too short
+      cy.get('[data-testid="announcement-title"]').type('Hi');
+      cy.get('[data-testid="announcement-content"]').type('Valid content for testing title validation.');
+      cy.get('[data-testid="announcement-category"]').select('General');
+      
+      cy.get('[data-testid="submit-announcement"]').click();
+      
+      cy.get('[data-testid="title-error"]').should('be.visible');
+      cy.get('[data-testid="title-error"]').should('contain', 'Title must be at least 5 characters');
+      
+      // Test title too long
+      cy.get('[data-testid="announcement-title"]').clear();
+      cy.get('[data-testid="announcement-title"]').type('A'.repeat(201)); // Assuming 200 char limit
+      
+      cy.get('[data-testid="submit-announcement"]').click();
+      
+      cy.get('[data-testid="title-error"]').should('be.visible');
+      cy.get('[data-testid="title-error"]').should('contain', 'Title must be less than 200 characters');
+    });
+
+    it('should validate content length constraints', () => {
+      cy.get('[data-testid="announcement-title"]').type('Valid Title');
+      cy.get('[data-testid="announcement-category"]').select('General');
+      
+      // Test content too short
+      cy.get('[data-testid="announcement-content"]').type('Short');
+      
+      cy.get('[data-testid="submit-announcement"]').click();
+      
+      cy.get('[data-testid="content-error"]').should('be.visible');
+      cy.get('[data-testid="content-error"]').should('contain', 'Content must be at least 10 characters');
+    });
+
+    it('should handle server errors gracefully', () => {
+      // Mock server error
+      cy.intercept('POST', '/api/announcements', {
+        statusCode: 500,
+        body: { error: 'Internal server error' }
+      }).as('createAnnouncement');
+      
+      // Fill valid form data
+      cy.get('[data-testid="announcement-title"]').type('Server Error Test');
+      cy.get('[data-testid="announcement-content"]').type('Testing server error handling for announcement submission.');
+      cy.get('[data-testid="announcement-category"]').select('General');
+      
+      // Submit form
+      cy.get('[data-testid="submit-announcement"]').click();
+      
+      cy.wait('@createAnnouncement');
+      
+      // Verify error message is displayed
+      cy.get('[data-testid="error-message"]').should('be.visible');
+      cy.get('[data-testid="error-message"]').should('contain', 'Failed to create announcement');
+      
+      // Verify user stays on form page
+      cy.url().should('include', '/announcements/new');
+    });
+
+    it('should prevent duplicate submissions', () => {
+      cy.get('[data-testid="announcement-title"]').type('Duplicate Test');
+      cy.get('[data-testid="announcement-content"]').type('Testing duplicate submission prevention.');
+      cy.get('[data-testid="announcement-category"]').select('General');
+      
+      // Submit form multiple times quickly
+      cy.get('[data-testid="submit-announcement"]').click();
+      cy.get('[data-testid="submit-announcement"]').should('be.disabled');
+      
+      // Verify only one submission occurs
+      cy.get('[data-testid="success-message"]').should('be.visible');
+    });
+  });
+});

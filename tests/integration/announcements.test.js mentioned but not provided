@@ -2,7 +2,7 @@ const request = require('supertest');
 const app = require('../../src/app');
 const { setupTestDb, teardownTestDb } = require('../helpers/db');
 
-describe('TC-003: API endpoint tests - Announcements Integration Tests', () => {
+describe('API-001: Announcement CRUD operations - Integration Tests', () => {
   beforeAll(async () => {
     await setupTestDb();
   });
@@ -11,7 +11,7 @@ describe('TC-003: API endpoint tests - Announcements Integration Tests', () => {
     await teardownTestDb();
   });
 
-  describe('GET /api/announcements', () => {
+  describe('API-001: GET /api/announcements - Read All', () => {
     it('should return all announcements - happy path', async () => {
       const response = await request(app)
         .get('/api/announcements')
@@ -31,7 +31,7 @@ describe('TC-003: API endpoint tests - Announcements Integration Tests', () => {
     });
   });
 
-  describe('GET /api/announcements/:id', () => {
+  describe('API-001: GET /api/announcements/:id - Read Single', () => {
     it('should return specific announcement by ID - happy path', async () => {
       // First create an announcement to test with
       const createResponse = await request(app)
@@ -61,7 +61,7 @@ describe('TC-003: API endpoint tests - Announcements Integration Tests', () => {
     });
   });
 
-  describe('POST /api/announcements', () => {
+  describe('API-001: POST /api/announcements - Create', () => {
     it('should create new announcement - happy path', async () => {
       const newAnnouncement = {
         title: 'New Test Announcement',
@@ -112,7 +112,7 @@ describe('TC-003: API endpoint tests - Announcements Integration Tests', () => {
     });
   });
 
-  describe('PUT /api/announcements/:id', () => {
+  describe('API-001: PUT /api/announcements/:id - Update', () => {
     it('should update existing announcement - happy path', async () => {
       // First create an announcement
       const createResponse = await request(app)
@@ -153,9 +153,33 @@ describe('TC-003: API endpoint tests - Announcements Integration Tests', () => {
 
       expect(response.body).toHaveProperty('error', 'Announcement not found');
     });
+
+    it('should return validation error for invalid update data - error path', async () => {
+      // Create announcement first
+      const createResponse = await request(app)
+        .post('/api/announcements')
+        .send({
+          title: 'Test Title',
+          content: 'Test content',
+          priority: 'normal'
+        });
+
+      const announcementId = createResponse.body.id;
+      const invalidData = {
+        title: '', // Empty title should fail validation
+        priority: 'invalid_priority'
+      };
+
+      const response = await request(app)
+        .put(`/api/announcements/${announcementId}`)
+        .send(invalidData)
+        .expect(400);
+
+      expect(response.body).toHaveProperty('error');
+    });
   });
 
-  describe('DELETE /api/announcements/:id', () => {
+  describe('API-001: DELETE /api/announcements/:id - Delete', () => {
     it('should delete existing announcement - happy path', async () => {
       // First create an announcement
       const createResponse = await request(app)
@@ -187,7 +211,7 @@ describe('TC-003: API endpoint tests - Announcements Integration Tests', () => {
     });
   });
 
-  describe('GET /api/announcements/search', () => {
+  describe('API-001: GET /api/announcements/search - Search Operation', () => {
     it('should search announcements by query - happy path', async () => {
       // Create test announcements
       await request(app)

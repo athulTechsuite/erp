@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -32,8 +33,16 @@ const AnnouncementForm = ({
     if (typeof message !== 'string') {
       return 'An error occurred. Please try again.';
     }
-    // Remove HTML tags and return plain text
-    return message.replace(/<[^>]*>/g, '');
+    // Sanitize HTML content using DOMPurify
+    return DOMPurify.sanitize(message, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+  };
+
+  const sanitizeInput = (input) => {
+    if (typeof input !== 'string') {
+      return '';
+    }
+    // Remove HTML tags and sanitize input
+    return DOMPurify.sanitize(input, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] }).trim();
   };
 
   const validateField = (name, value) => {
@@ -44,6 +53,8 @@ const AnnouncementForm = ({
         fieldErrors.title = 'Title is required';
       } else if (value.length > 200) {
         fieldErrors.title = 'Title must be less than 200 characters';
+      } else if (value.trim().length < 3) {
+        fieldErrors.title = 'Title must be at least 3 characters long';
       }
     }
     
@@ -52,6 +63,8 @@ const AnnouncementForm = ({
         fieldErrors.content = 'Content is required';
       } else if (value.length > 5000) {
         fieldErrors.content = 'Content must be less than 5000 characters';
+      } else if (value.trim().length < 10) {
+        fieldErrors.content = 'Content must be at least 10 characters long';
       }
     }
     
@@ -103,11 +116,37 @@ const AnnouncementForm = ({
     }
 
     try {
-      await onSave({
-        ...formData,
-        title: formData.title.trim(),
-        content: formData.content.trim()
-      });
+      // Sanitize and validate inputs before sending to API
+      const sanitizedTitle = sanitizeInput(formData.title);
+      const sanitizedContent = sanitizeInput(formData.content);
+      
+      // Additional validation after sanitization
+      if (!sanitizedTitle || sanitizedTitle.length < 3) {
+        setErrors({ title: 'Title must be at least 3 characters long after sanitization' });
+        return;
+      }
+      
+      if (!sanitizedContent || sanitizedContent.length < 10) {
+        setErrors({ content: 'Content must be at least 10 characters long after sanitization' });
+        return;
+      }
+      
+      if (sanitizedTitle.length > 200) {
+        setErrors({ title: 'Title is too long' });
+        return;
+      }
+      
+      if (sanitizedContent.length > 5000) {
+        setErrors({ content: 'Content is too long' });
+        return;
+      }
+
+      const sanitizedData = {
+        title: sanitizedTitle,
+        content: sanitizedContent
+      };
+
+      await onSave(sanitizedData);
     } catch (error) {
       console.error('Error saving announcement:', error);
       const errorMessage = error?.response?.data?.message || error?.message || 'Failed to save announcement. Please try again.';
@@ -136,10 +175,7 @@ const AnnouncementForm = ({
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                {/* Sanitized error message to prevent XSS */}
-                <span>{sanitizeErrorMessage(errors.submit)}</span>
-              </AlertDescription>
+              <AlertDescription>{errors.submit}</AlertDescription>
             </Alert>
           )}
           

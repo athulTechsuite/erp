@@ -10,15 +10,114 @@ const sanitizeInput = (input) => {
   return DOMPurify.sanitize(input, { ALLOWED_TAGS: [] });
 };
 
-// Middleware to check authentication
-const requireAuth = (req, res, next) => {
-  if (!req.user) {
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication required. Please log in.'
-    });
+// Input validation middleware
+const validateInputs = (inputs) => {
+  const errors = [];
+  
+  for (const [key, value] of Object.entries(inputs)) {
+    if (value === null || value === undefined) continue;
+    
+    // Validate string inputs
+    if (typeof value === 'string') {
+      if (value.length > 10000) {
+        errors.push(`${key} exceeds maximum length`);
+      }
+      // Check for potential SQL injection patterns (even though we use MongoDB)
+      const sqlInjectionPatterns = /(\$where|\$ne|\$gt|\$lt|\$in|\$nin|\$exists|\$regex|javascript:|eval\(|function\()/i;
+      if (sqlInjectionPatterns.test(value)) {
+        errors.push(`${key} contains potentially dangerous content`);
+      }
+    }
+    
+    // Validate ObjectId strings
+    if ((key.includes('Id') || key === '_id' || key === 'id') && typeof value === 'string') {
+      if (!mongoose.Types.ObjectId.isValid(value)) {
+        errors.push(`${key} must be a valid ObjectId`);
+      }
+    }
+    
+    // Validate boolean inputs
+    if (key === 'isActive' && typeof value !== 'boolean') {
+      errors.push(`${key} must be a boolean value`);
+    }
   }
-  next();
+  
+  return errors;
+};
+
+// Enhanced parameterized query helper for MongoDB operations
+const executeSecureQuery = async (model, operation, params = {}) => {
+  try {
+    // Validate all input parameters first
+    const validationErrors = validateInputs(params);
+    if (validationErrors.length > 0) {
+      throw new Error(`Input validation failed: ${validationErrors.join(', ')}`);
+    }
+    
+    // Validate and convert ObjectId parameters to prevent injection
+    const processedParams = { ...params };
+    for (const [key, value] of Object.entries(processedParams)) {
+      if (key.includes('Id') || key === '_id' || key === 'id') {
+        if (!mongoose.Types.ObjectId.isValid(value)) {
+          throw new Error(`Invalid ObjectId format for parameter: ${key}`);
+        }
+        // Convert to proper ObjectId to ensure parameterized query
+        processedParams[key] = new mongoose.Types.ObjectId(value);
+      }
+      
+      // Recursively process nested objects (like filter, update objects)
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        for (const [nestedKey, nestedValue] of Object.entries(value)) {
+          if ((nestedKey.includes('Id') || nestedKey === '_id' || nestedKey === 'id') && 
+              typeof nestedValue === 'string') {
+            if (!mongoose.Types.ObjectId.isValid(nestedValue)) {
+              throw new Error(`Invalid ObjectId format for nested parameter: ${nestedKey}`);
+            }
+            value[nestedKey] = new mongoose.Types.ObjectId(nestedValue);
+          }
+        }
+      }
+    }
+
+    // Execute operation with validated and processed parameters
+    switch (operation) {
+      case 'find':
+        return await model.find(
+          processedParams.filter || {}, 
+          processedParams.select || null, 
+          processedParams.options || {}
+        );
+      case 'findById':
+        return await model.findById(processedParams.id, processedParams.select || null);
+      case 'findOne':
+        return await model.findOne(
+          processedParams.filter || {}, 
+          processedParams.select || null
+        );
+      case 'create':
+        return await model.create(processedParams.data);
+      case 'findByIdAndUpdate':
+        return await model.findByIdAndUpdate(
+          processedParams.id, 
+          processedParams.update, 
+          processedParams.options || {}
+        );
+      case 'findByIdAndDelete':
+        return await model.findByIdAndDelete(processedParams.id);
+      case 'updateOne':
+        return await model.updateOne(
+          processedParams.filter, 
+          processedParams.update, 
+          processedParams.options || {}
+        );
+      case 'deleteOne':
+        return await model.deleteOne(processedParams.filter);
+      default:
+        throw new Error(`Unsupported database operation: ${operation}`);
+    }
+  } catch (error) {
+    throw error;
+  }
 };
 
 // Middleware to check if user is admin
@@ -35,9 +134,11 @@ const requireAdmin = (req, res, next) => {
 // Get all announcements (public - for dashboard display)
 const getAllAnnouncements = async (req, res) => {
   try {
-    const announcements = await Announcement.find({ isActive: true })
-      .sort({ createdAt: -1 })
-      .select('title content createdAt updatedAt');
+    const announcements = await executeSecureQuery(Announcement, 'find', {
+      filter: { isActive: true },
+      select: 'title content createdAt updatedAt',
+      options: { sort: { createdAt: -1 } }
+    });
 
     res.json({
       success: true,
@@ -55,8 +156,10 @@ const getAllAnnouncements = async (req, res) => {
 // Get all announcements for admin management
 const getAnnouncementsForAdmin = async (req, res) => {
   try {
-    const announcements = await Announcement.find()
-      .sort({ createdAt: -1 });
+    const announcements = await executeSecureQuery(Announcement, 'find', {
+      filter: {},
+      options: { sort: { createdAt: -1 } }
+    });
 
     res.json({
       success: true,
@@ -86,20 +189,40 @@ const createAnnouncement = async (req, res) => {
 
     const { title, content, isActive = true } = req.body;
 
+    // Validate input data
+    const inputValidationErrors = validateInputs({ title, content, isActive, createdBy: req.user._id });
+    if (inputValidationErrors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Input validation failed',
+        errors: inputValidationErrors
+      });
+    }
+
     // Sanitize input to prevent stored XSS
     const sanitizedTitle = sanitizeInput(title);
     const sanitizedContent = sanitizeInput(content);
 
-    const announcement = new Announcement({
+    // Validate createdBy user ID
+    if (!mongoose.Types.ObjectId.isValid(req.user._id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format'
+      });
+    }
+
+    const announcementData = {
       title: sanitizedTitle,
       content: sanitizedContent,
       isActive,
-      createdBy: req.user._id
+      createdBy: new mongoose.Types.ObjectId(req.user._id)
+    };
+
+    const announcement = await executeSecureQuery(Announcement, 'create', {
+      data: announcementData
     });
 
-    await announcement.save();
-
-    // Populate creator info for response
+    // Populate creator info for response using secure query
     await announcement.populate('createdBy', 'name email');
 
     res.status(201).json({
@@ -121,16 +244,20 @@ const getAnnouncementById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    // Validate input parameters
+    const inputValidationErrors = validateInputs({ id });
+    if (inputValidationErrors.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid announcement ID format'
+        message: 'Invalid announcement ID',
+        errors: inputValidationErrors
       });
     }
-
-    const announcement = await Announcement.findById(id)
-      .populate('createdBy', 'name email');
+    
+    // Use secure query which validates ObjectId
+    const announcement = await executeSecureQuery(Announcement, 'findById', {
+      id: id
+    });
 
     if (!announcement) {
       return res.status(404).json({
@@ -146,6 +273,8 @@ const getAnnouncementById = async (req, res) => {
         message: 'Announcement not found'
       });
     }
+
+    await announcement.populate('createdBy', 'name email');
 
     res.json({
       success: true,
@@ -176,15 +305,19 @@ const updateAnnouncement = async (req, res) => {
     const { id } = req.params;
     const { title, content, isActive } = req.body;
 
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    // Validate all input parameters
+    const inputValidationErrors = validateInputs({ id, title, content, isActive });
+    if (inputValidationErrors.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid announcement ID format'
+        message: 'Input validation failed',
+        errors: inputValidationErrors
       });
     }
 
-    const announcement = await Announcement.findById(id);
+    const announcement = await executeSecureQuery(Announcement, 'findById', {
+      id: id
+    });
 
     if (!announcement) {
       return res.status(404).json({
@@ -193,21 +326,26 @@ const updateAnnouncement = async (req, res) => {
       });
     }
 
-    // Update fields with sanitization
-    if (title !== undefined) announcement.title = sanitizeInput(title);
-    if (content !== undefined) announcement.content = sanitizeInput(content);
-    if (isActive !== undefined) announcement.isActive = isActive;
+    // Prepare update data with sanitization
+    const updateData = {};
+    if (title !== undefined) updateData.title = sanitizeInput(title);
+    if (content !== undefined) updateData.content = sanitizeInput(content);
+    if (isActive !== undefined) updateData.isActive = isActive;
+    updateData.updatedAt = new Date();
 
-    announcement.updatedAt = new Date();
-    await announcement.save();
+    const updatedAnnouncement = await executeSecureQuery(Announcement, 'findByIdAndUpdate', {
+      id: id,
+      update: updateData,
+      options: { new: true }
+    });
 
     // Populate creator info for response
-    await announcement.populate('createdBy', 'name email');
+    await updatedAnnouncement.populate('createdBy', 'name email');
 
     res.json({
       success: true,
       message: 'Announcement updated successfully',
-      data: announcement
+      data: updatedAnnouncement
     });
   } catch (error) {
     res.status(500).json({
@@ -223,15 +361,19 @@ const deleteAnnouncement = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    // Validate input parameters
+    const inputValidationErrors = validateInputs({ id });
+    if (inputValidationErrors.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid announcement ID format'
+        message: 'Invalid announcement ID',
+        errors: inputValidationErrors
       });
     }
 
-    const announcement = await Announcement.findById(id);
+    const announcement = await executeSecureQuery(Announcement, 'findById', {
+      id: id
+    });
 
     if (!announcement) {
       return res.status(404).json({
@@ -240,7 +382,9 @@ const deleteAnnouncement = async (req, res) => {
       });
     }
 
-    await Announcement.findByIdAndDelete(id);
+    await executeSecureQuery(Announcement, 'findByIdAndDelete', {
+      id: id
+    });
 
     res.json({
       success: true,
@@ -260,15 +404,19 @@ const toggleAnnouncementStatus = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    // Validate input parameters
+    const inputValidationErrors = validateInputs({ id });
+    if (inputValidationErrors.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid announcement ID format'
+        message: 'Invalid announcement ID',
+        errors: inputValidationErrors
       });
     }
 
-    const announcement = await Announcement.findById(id);
+    const announcement = await executeSecureQuery(Announcement, 'findById', {
+      id: id
+    });
 
     if (!announcement) {
       return res.status(404).json({
@@ -277,16 +425,23 @@ const toggleAnnouncementStatus = async (req, res) => {
       });
     }
 
-    announcement.isActive = !announcement.isActive;
-    announcement.updatedAt = new Date();
-    await announcement.save();
+    const updateData = {
+      isActive: !announcement.isActive,
+      updatedAt: new Date()
+    };
 
-    await announcement.populate('createdBy', 'name email');
+    const updatedAnnouncement = await executeSecureQuery(Announcement, 'findByIdAndUpdate', {
+      id: id,
+      update: updateData,
+      options: { new: true }
+    });
+
+    await updatedAnnouncement.populate('createdBy', 'name email');
 
     res.json({
       success: true,
-      message: `Announcement ${announcement.isActive ? 'activated' : 'deactivated'} successfully`,
-      data: announcement
+      message: `Announcement ${updatedAnnouncement.isActive ? 'activated' : 'deactivated'} successfully`,
+      data: updatedAnnouncement
     });
   } catch (error) {
     res.status(500).json({
@@ -298,7 +453,6 @@ const toggleAnnouncementStatus = async (req, res) => {
 };
 
 module.exports = {
-  requireAuth,
   requireAdmin,
   getAllAnnouncements,
   getAnnouncementsForAdmin,

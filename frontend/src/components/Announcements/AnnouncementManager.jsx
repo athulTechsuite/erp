@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import './AnnouncementManager.css';
 
@@ -12,8 +12,76 @@ const AnnouncementManager = () => {
   });
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [userPermissions, setUserPermissions] = useState({
+    canCreate: false,
+    canEdit: false,
+    canDelete: false,
+    isAdmin: false
+  });
   const requestQueueRef = useRef([]);
   const isProcessingRef = useRef(false);
+
+  useEffect(() => {
+    fetchAnnouncements();
+    fetchUserPermissions();
+  }, []);
+
+  // Fetch user permissions from backend
+  const fetchUserPermissions = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/user/permissions', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const permissions = await response.json();
+        setUserPermissions(permissions);
+      }
+    } catch (error) {
+      console.error('Failed to fetch user permissions:', error);
+    }
+  };
+
+  // Check if user can edit specific announcement
+  const canEditAnnouncement = (announcement) => {
+    if (!announcement) return false;
+    
+    // Admin can edit all announcements
+    if (userPermissions.isAdmin) return true;
+    
+    // Users can only edit their own announcements if they have edit permission
+    return userPermissions.canEdit && announcement.createdBy?.id === getCurrentUserId();
+  };
+
+  // Check if user can delete specific announcement
+  const canDeleteAnnouncement = (announcement) => {
+    if (!announcement) return false;
+    
+    // Admin can delete all announcements
+    if (userPermissions.isAdmin) return true;
+    
+    // Users can only delete their own announcements if they have delete permission
+    return userPermissions.canDelete && announcement.createdBy?.id === getCurrentUserId();
+  };
+
+  // Get current user ID from token or user context
+  const getCurrentUserId = () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return null;
+      
+      // Decode JWT token to get user ID (assuming standard JWT structure)
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return payload.userId || payload.id;
+    } catch (error) {
+      console.error('Failed to get current user ID:', error);
+      return null;
+    }
+  };
 
   // Input sanitization utility
   const sanitizeInput = (input) => {
@@ -28,7 +96,7 @@ const AnnouncementManager = () => {
   };
 
   // Request queue processor to handle race conditions
-  const processRequestQueue = useCallback(async () => {
+  const processRequestQueue = async () => {
     if (isProcessingRef.current || requestQueueRef.current.length === 0) {
       return;
     }
@@ -45,10 +113,10 @@ const AnnouncementManager = () => {
     }
     
     isProcessingRef.current = false;
-  }, []);
+  };
 
   // Add request to queue
-  const queueRequest = useCallback((requestFn) => {
+  const queueRequest = (requestFn) => {
     return new Promise((resolve, reject) => {
       requestQueueRef.current.push(async () => {
         try {
@@ -60,9 +128,9 @@ const AnnouncementManager = () => {
       });
       processRequestQueue();
     });
-  }, [processRequestQueue]);
+  };
 
-  const fetchAnnouncements = useCallback(async () => {
+  const fetchAnnouncements = async () => {
     try {
       setLoading(true);
       // TODO: Consider using httpOnly cookies for token storage to prevent XSS attacks
@@ -89,11 +157,7 @@ const AnnouncementManager = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
-
-  useEffect(() => {
-    fetchAnnouncements();
-  }, [fetchAnnouncements]);
+  };
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -105,6 +169,18 @@ const AnnouncementManager = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Authorization check for editing
+    if (editingId) {
+      const announcement = announcements.find(ann => ann.id === editingId);
+      if (!canEditAnnouncement(announcement)) {
+        toast.error('You do not have permission to edit this announcement');
+        return;
+      }
+    } else if (!userPermissions.canCreate) {
+      toast.error('You do not have permission to create announcements');
+      return;
+    }
     
     // Sanitize inputs
     const sanitizedTitle = sanitizeInput(formData.title);
@@ -180,6 +256,12 @@ const AnnouncementManager = () => {
   };
 
   const handleEdit = (announcement) => {
+    // Authorization check before allowing edit
+    if (!canEditAnnouncement(announcement)) {
+      toast.error('You do not have permission to edit this announcement');
+      return;
+    }
+
     setFormData({
       title: announcement.title,
       content: announcement.content,
@@ -190,6 +272,14 @@ const AnnouncementManager = () => {
   };
 
   const handleDelete = async (id) => {
+    const announcement = announcements.find(ann => ann.id === id);
+    
+    // Authorization check before allowing delete
+    if (!canDeleteAnnouncement(announcement)) {
+      toast.error('You do not have permission to delete this announcement');
+      return;
+    }
+
     if (!window.confirm('Are you sure you want to delete this announcement?')) {
       return;
     }
@@ -222,6 +312,14 @@ const AnnouncementManager = () => {
   };
 
   const toggleStatus = async (id, currentStatus) => {
+    const announcement = announcements.find(ann => ann.id === id);
+    
+    // Authorization check before allowing status toggle
+    if (!canEditAnnouncement(announcement)) {
+      toast.error('You do not have permission to modify this announcement');
+      return;
+    }
+
     const toggleRequest = async () => {
       const token = localStorage.getItem('token');
       const response = await fetch(`/api/announcements/${id}`, {
@@ -270,16 +368,18 @@ const AnnouncementManager = () => {
     <div className="announcement-manager">
       <div className="announcement-manager-header">
         <h2>Manage Announcements</h2>
-        <button
-          className="btn btn-primary"
-          onClick={() => setShowForm(!showForm)}
-          disabled={loading}
-        >
-          {showForm ? 'Cancel' : 'Create New Announcement'}
-        </button>
+        {userPermissions.canCreate && (
+          <button
+            className="btn btn-primary"
+            onClick={() => setShowForm(!showForm)}
+            disabled={loading}
+          >
+            {showForm ? 'Cancel' : 'Create New Announcement'}
+          </button>
+        )}
       </div>
 
-      {showForm && (
+      {showForm && userPermissions.canCreate && (
         <div className="announcement-form-container">
           <h3>{editingId ? 'Edit Announcement' : 'Create New Announcement'}</h3>
           <form onSubmit={handleSubmit} className="announcement-form">
@@ -380,27 +480,33 @@ const AnnouncementManager = () => {
             </div>
 
             <div className="announcement-actions">
-              <button
-                className="btn btn-sm btn-secondary"
-                onClick={() => handleEdit(announcement)}
-                disabled={loading}
-              >
-                Edit
-              </button>
-              <button
-                className={`btn btn-sm ${announcement.isActive ? 'btn-warning' : 'btn-success'}`}
-                onClick={() => toggleStatus(announcement.id, announcement.isActive)}
-                disabled={loading}
-              >
-                {announcement.isActive ? 'Deactivate' : 'Activate'}
-              </button>
-              <button
-                className="btn btn-sm btn-danger"
-                onClick={() => handleDelete(announcement.id)}
-                disabled={loading}
-              >
-                Delete
-              </button>
+              {canEditAnnouncement(announcement) && (
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => handleEdit(announcement)}
+                  disabled={loading}
+                >
+                  Edit
+                </button>
+              )}
+              {canEditAnnouncement(announcement) && (
+                <button
+                  className={`btn btn-sm ${announcement.isActive ? 'btn-warning' : 'btn-success'}`}
+                  onClick={() => toggleStatus(announcement.id, announcement.isActive)}
+                  disabled={loading}
+                >
+                  {announcement.isActive ? 'Deactivate' : 'Activate'}
+                </button>
+              )}
+              {canDeleteAnnouncement(announcement) && (
+                <button
+                  className="btn btn-sm btn-danger"
+                  onClick={() => handleDelete(announcement.id)}
+                  disabled={loading}
+                >
+                  Delete
+                </button>
+              )}
             </div>
           </div>
         ))}

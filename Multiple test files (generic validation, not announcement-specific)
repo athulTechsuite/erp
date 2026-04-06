@@ -1,0 +1,131 @@
+/**
+ * TC-004: Input Validation Test Suite
+ * Tests for generic input validation across all system components
+ */
+
+const { validateInput, sanitizeInput, validateEmail, validatePhone } = require('../src/utils/validation');
+
+describe('TC-004: Input Validation - Generic Validation Tests', () => {
+  describe('Happy Path - Valid Inputs', () => {
+    test('TC-004: should accept valid string input within length limits', () => {
+      const validInput = 'Valid test string';
+      expect(validateInput(validInput, { type: 'string', maxLength: 50 })).toBe(true);
+    });
+
+    test('TC-004: should accept valid email format', () => {
+      const validEmail = 'test@example.com';
+      expect(validateEmail(validEmail)).toBe(true);
+    });
+
+    test('TC-004: should accept valid phone number format', () => {
+      const validPhone = '+1-555-123-4567';
+      expect(validatePhone(validPhone)).toBe(true);
+    });
+
+    test('TC-004: should accept valid numeric input within range', () => {
+      const validNumber = 25;
+      expect(validateInput(validNumber, { type: 'number', min: 1, max: 100 })).toBe(true);
+    });
+
+    test('TC-004: should sanitize and accept safe HTML content', () => {
+      const safeHtml = '<p>Safe content</p>';
+      const sanitized = sanitizeInput(safeHtml);
+      expect(sanitized).toBe(safeHtml);
+      expect(sanitized).not.toContain('<script>');
+    });
+  });
+
+  describe('Error Path - Invalid Inputs', () => {
+    test('TC-004: should reject null or undefined input', () => {
+      expect(validateInput(null, { type: 'string' })).toBe(false);
+      expect(validateInput(undefined, { type: 'string' })).toBe(false);
+    });
+
+    test('TC-004: should reject empty string when required', () => {
+      expect(validateInput('', { type: 'string', required: true })).toBe(false);
+    });
+
+    test('TC-004: should reject string exceeding maximum length', () => {
+      const longString = 'a'.repeat(101);
+      expect(validateInput(longString, { type: 'string', maxLength: 100 })).toBe(false);
+    });
+
+    test('TC-004: should reject invalid email formats', () => {
+      const invalidEmails = [
+        'invalid-email',
+        '@example.com',
+        'test@',
+        'test..test@example.com',
+        'test@example',
+        ''
+      ];
+      
+      invalidEmails.forEach(email => {
+        expect(validateEmail(email)).toBe(false);
+      });
+    });
+
+    test('TC-004: should reject invalid phone number formats', () => {
+      const invalidPhones = [
+        '123',
+        'abc-def-ghij',
+        '+1-555-123',
+        '555-123-456789',
+        ''
+      ];
+      
+      invalidPhones.forEach(phone => {
+        expect(validatePhone(phone)).toBe(false);
+      });
+    });
+
+    test('TC-004: should reject numbers outside valid range', () => {
+      expect(validateInput(-5, { type: 'number', min: 0, max: 100 })).toBe(false);
+      expect(validateInput(150, { type: 'number', min: 0, max: 100 })).toBe(false);
+    });
+
+    test('TC-004: should sanitize malicious HTML content', () => {
+      const maliciousHtml = '<script>alert("xss")</script><p>Content</p>';
+      const sanitized = sanitizeInput(maliciousHtml);
+      expect(sanitized).not.toContain('<script>');
+      expect(sanitized).not.toContain('alert');
+      expect(sanitized).toContain('<p>Content</p>');
+    });
+
+    test('TC-004: should reject SQL injection attempts', () => {
+      const sqlInjection = "'; DROP TABLE users; --";
+      expect(validateInput(sqlInjection, { type: 'string', allowSpecialChars: false })).toBe(false);
+    });
+
+    test('TC-004: should handle extremely long input gracefully', () => {
+      const extremelyLongString = 'a'.repeat(10000);
+      expect(validateInput(extremelyLongString, { type: 'string', maxLength: 1000 })).toBe(false);
+    });
+
+    test('TC-004: should reject input with invalid character encoding', () => {
+      const invalidEncoding = '\uFEFF\u0000\u001F';
+      expect(validateInput(invalidEncoding, { type: 'string', strictEncoding: true })).toBe(false);
+    });
+  });
+
+  describe('Edge Cases', () => {
+    test('TC-004: should handle whitespace-only input based on configuration', () => {
+      const whitespaceOnly = '   \t\n  ';
+      expect(validateInput(whitespaceOnly, { type: 'string', allowWhitespaceOnly: false })).toBe(false);
+      expect(validateInput(whitespaceOnly, { type: 'string', allowWhitespaceOnly: true })).toBe(true);
+    });
+
+    test('TC-004: should validate unicode characters correctly', () => {
+      const unicodeString = '测试文本 🚀 émojis';
+      expect(validateInput(unicodeString, { type: 'string', allowUnicode: true })).toBe(true);
+      expect(validateInput(unicodeString, { type: 'string', allowUnicode: false })).toBe(false);
+    });
+
+    test('TC-004: should handle boundary values for numeric validation', () => {
+      expect(validateInput(0, { type: 'number', min: 0, max: 100 })).toBe(true);
+      expect(validateInput(100, { type: 'number', min: 0, max: 100 })).toBe(true);
+      expect(validateInput(-0.1, { type: 'number', min: 0, max: 100 })).toBe(false);
+      expect(validateInput(100.1, { type: 'number', min: 0, max: 100 })).toBe(false);
+    });
+  });
+});

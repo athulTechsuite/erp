@@ -16,12 +16,15 @@ BEGIN
     END IF;
 END $$;
 
+-- Create enum type for announcement status
+CREATE TYPE announcement_status AS ENUM ('active', 'inactive', 'draft', 'archived');
+
 CREATE TABLE announcements (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
-    created_by INT REFERENCES users(id),
-    is_active BOOLEAN DEFAULT true,
+    created_by INTEGER NOT NULL,
+    status announcement_status DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     
@@ -29,17 +32,11 @@ CREATE TABLE announcements (
     CONSTRAINT fk_announcements_created_by 
         FOREIGN KEY (created_by) 
         REFERENCES users(id) 
-        ON DELETE RESTRICT,
-    
-    -- Check constraints for reasonable length limits
-    CONSTRAINT chk_announcements_title_length 
-        CHECK (char_length(title) <= 255 AND char_length(title) >= 1),
-    CONSTRAINT chk_announcements_content_length 
-        CHECK (char_length(content) <= 50000 AND char_length(content) >= 1)
+        ON DELETE RESTRICT
 );
 
 -- Create indexes for better query performance
-CREATE INDEX idx_announcements_is_active ON announcements(is_active);
+CREATE INDEX idx_announcements_status ON announcements(status);
 CREATE INDEX idx_announcements_created_at ON announcements(created_at DESC);
 CREATE INDEX idx_announcements_created_by ON announcements(created_by);
 

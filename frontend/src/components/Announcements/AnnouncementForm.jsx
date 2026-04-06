@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import DOMPurify from 'dompurify';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -20,11 +19,28 @@ const AnnouncementForm = ({
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
 
+  const sanitizeInput = (input) => {
+    if (typeof input !== 'string') {
+      return '';
+    }
+    // Remove HTML tags and escape special characters to prevent XSS
+    return input.replace(/<[^>]*>/g, '').replace(/[<>&"']/g, (match) => {
+      const htmlEntities = {
+        '<': '&lt;',
+        '>': '&gt;',
+        '&': '&amp;',
+        '"': '&quot;',
+        "'": '&#x27;'
+      };
+      return htmlEntities[match];
+    });
+  };
+
   useEffect(() => {
     if (announcement) {
       setFormData({
-        title: announcement.title || '',
-        content: announcement.content || ''
+        title: sanitizeInput(announcement.title) || '',
+        content: sanitizeInput(announcement.content) || ''
       });
     }
   }, [announcement]);
@@ -33,8 +49,17 @@ const AnnouncementForm = ({
     if (typeof message !== 'string') {
       return 'An error occurred. Please try again.';
     }
-    // Use DOMPurify to sanitize HTML content
-    return DOMPurify.sanitize(message, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+    // Remove HTML tags and escape special characters
+    return message.replace(/<[^>]*>/g, '').replace(/[<>&"']/g, (match) => {
+      const htmlEntities = {
+        '<': '&lt;',
+        '>': '&gt;',
+        '&': '&amp;',
+        '"': '&quot;',
+        "'": '&#x27;'
+      };
+      return htmlEntities[match];
+    });
   };
 
   const validateField = (name, value) => {
@@ -71,10 +96,11 @@ const AnnouncementForm = ({
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    const sanitizedValue = sanitizeInput(value);
     
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: sanitizedValue
     }));
 
     // Clear errors for this field when user starts typing
@@ -137,7 +163,7 @@ const AnnouncementForm = ({
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(errors.submit) }}></AlertDescription>
+              <AlertDescription>{errors.submit}</AlertDescription>
             </Alert>
           )}
           

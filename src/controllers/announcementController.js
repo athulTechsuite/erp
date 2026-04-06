@@ -3,6 +3,17 @@ const { validationResult } = require('express-validator');
 const DOMPurify = require('isomorphic-dompurify');
 const mongoose = require('mongoose');
 
+// Authentication middleware to check if user is logged in
+const requireAuth = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication required'
+    });
+  }
+  next();
+};
+
 // Input sanitization middleware
 const sanitizeInput = (input) => {
   if (typeof input !== 'string') return input;
@@ -35,8 +46,7 @@ const getAllAnnouncements = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error fetching announcements',
-      error: error.message
+      message: 'Internal server error'
     });
   }
 };
@@ -54,8 +64,7 @@ const getAnnouncementsForAdmin = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error fetching announcements',
-      error: error.message
+      message: 'Internal server error'
     });
   }
 };
@@ -99,8 +108,7 @@ const createAnnouncement = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error creating announcement',
-      error: error.message
+      message: 'Internal server error'
     });
   }
 };
@@ -143,8 +151,7 @@ const getAnnouncementById = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error fetching announcement',
-      error: error.message
+      message: 'Internal server error'
     });
   }
 };
@@ -201,8 +208,7 @@ const updateAnnouncement = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error updating announcement',
-      error: error.message
+      message: 'Internal server error'
     });
   }
 };
@@ -238,8 +244,7 @@ const deleteAnnouncement = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error deleting announcement',
-      error: error.message
+      message: 'Internal server error'
     });
   }
 };
@@ -280,13 +285,13 @@ const toggleAnnouncementStatus = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error updating announcement status',
-      error: error.message
+      message: 'Internal server error'
     });
   }
 };
 
 module.exports = {
+  requireAuth,
   requireAdmin,
   getAllAnnouncements,
   getAnnouncementsForAdmin,

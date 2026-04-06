@@ -6,6 +6,23 @@ import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Save, X, AlertCircle } from 'lucide-react';
 
+// Utility function to sanitize HTML and prevent XSS
+const sanitizeInput = (input) => {
+  if (typeof input !== 'string') return '';
+  
+  // Remove potentially dangerous HTML tags and attributes
+  return input
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
+    .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '')
+    .replace(/<link\b[^>]*>/gi, '')
+    .replace(/<meta\b[^>]*>/gi, '')
+    .replace(/javascript:/gi, '')
+    .replace(/on\w+\s*=/gi, '')
+    .trim();
+};
+
 const AnnouncementForm = ({ 
   announcement = null, 
   onSave, 
@@ -18,38 +35,37 @@ const AnnouncementForm = ({
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
-  const [csrfToken, setCsrfToken] = useState('');
 
   useEffect(() => {
     if (announcement) {
       setFormData({
-        title: announcement.title || '',
-        content: announcement.content || ''
+        title: sanitizeInput(announcement.title) || '',
+        content: sanitizeInput(announcement.content) || ''
       });
     }
-    
-    // Get CSRF token from meta tag or API
-    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
-                  document.cookie.split('; ').find(row => row.startsWith('csrftoken='))?.split('=')[1] || '';
-    setCsrfToken(token);
   }, [announcement]);
 
   const validateField = (name, value) => {
     const fieldErrors = {};
+    const sanitizedValue = sanitizeInput(value);
     
     if (name === 'title') {
-      if (!value.trim()) {
+      if (!sanitizedValue.trim()) {
         fieldErrors.title = 'Title is required';
-      } else if (value.length > 200) {
+      } else if (sanitizedValue.length > 200) {
         fieldErrors.title = 'Title must be less than 200 characters';
+      } else if (sanitizedValue.length < 3) {
+        fieldErrors.title = 'Title must be at least 3 characters';
       }
     }
     
     if (name === 'content') {
-      if (!value.trim()) {
+      if (!sanitizedValue.trim()) {
         fieldErrors.content = 'Content is required';
-      } else if (value.length > 5000) {
+      } else if (sanitizedValue.length > 5000) {
         fieldErrors.content = 'Content must be less than 5000 characters';
+      } else if (sanitizedValue.length < 10) {
+        fieldErrors.content = 'Content must be at least 10 characters';
       }
     }
     
@@ -68,10 +84,11 @@ const AnnouncementForm = ({
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    const sanitizedValue = sanitizeInput(value);
     
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: sanitizedValue
     }));
 
     // Clear errors for this field when user starts typing
@@ -101,12 +118,21 @@ const AnnouncementForm = ({
     }
 
     try {
-      await onSave({
-        ...formData,
-        title: formData.title.trim(),
-        content: formData.content.trim(),
-        csrfToken: csrfToken
-      });
+      // Double sanitize before submission
+      const sanitizedData = {
+        title: sanitizeInput(formData.title).trim(),
+        content: sanitizeInput(formData.content).trim()
+      };
+
+      // Additional validation before submission
+      if (!sanitizedData.title || !sanitizedData.content) {
+        setErrors({ 
+          submit: 'Please ensure all required fields are properly filled.' 
+        });
+        return;
+      }
+
+      await onSave(sanitizedData);
     } catch (error) {
       console.error('Error saving announcement:', error);
       setErrors({ 
@@ -131,8 +157,6 @@ const AnnouncementForm = ({
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <input type="hidden" name="csrfToken" value={csrfToken} />
-          
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
@@ -153,6 +177,7 @@ const AnnouncementForm = ({
               placeholder="Enter announcement title..."
               className={errors.title && touched.title ? 'border-red-500' : ''}
               maxLength={200}
+              autoComplete="off"
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
@@ -178,6 +203,7 @@ const AnnouncementForm = ({
               rows={8}
               className={errors.content && touched.content ? 'border-red-500' : ''}
               maxLength={5000}
+              autoComplete="off"
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>

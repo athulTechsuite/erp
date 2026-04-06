@@ -26,6 +26,7 @@ CREATE TABLE announcements (
         FOREIGN KEY (created_by) 
         REFERENCES users(id) 
         ON DELETE RESTRICT
+        ON UPDATE RESTRICT
 );
 
 -- Create indexes for better query performance

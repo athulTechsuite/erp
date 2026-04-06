@@ -5,7 +5,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Save, X, AlertCircle } from 'lucide-react';
+import { Save, X, AlertCircle, Loader2 } from 'lucide-react';
 
 const AnnouncementForm = ({ 
   announcement = null, 
@@ -19,6 +19,7 @@ const AnnouncementForm = ({
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
+  const [isLoading, setIsLoading] = useState(false);
 
   // Sanitize input function
   const sanitizeInput = (input) => {
@@ -107,6 +108,9 @@ const AnnouncementForm = ({
       return;
     }
 
+    setIsLoading(true);
+    setErrors(prev => ({ ...prev, submit: undefined }));
+
     try {
       // Sanitize data before saving
       const sanitizedData = {
@@ -117,23 +121,49 @@ const AnnouncementForm = ({
       await onSave(sanitizedData);
     } catch (error) {
       console.error('Error saving announcement:', error);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Failed to save announcement. Please try again.';
+      
+      if (error.response?.status === 400) {
+        errorMessage = 'Invalid data provided. Please check your input and try again.';
+      } else if (error.response?.status === 401) {
+        errorMessage = 'You are not authorized to perform this action. Please log in and try again.';
+      } else if (error.response?.status === 403) {
+        errorMessage = 'You do not have permission to save announcements.';
+      } else if (error.response?.status >= 500) {
+        errorMessage = 'Server error occurred. Please try again later.';
+      } else if (error.name === 'NetworkError' || !error.response) {
+        errorMessage = 'Network error. Please check your connection and try again.';
+      }
+      
       setErrors({ 
-        submit: 'Failed to save announcement. Please try again.' 
+        submit: errorMessage
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleCancel = () => {
+    if (isLoading || isSubmitting) {
+      return; // Prevent cancellation during loading
+    }
+    
     setFormData({ title: '', content: '' });
     setErrors({});
     setTouched({});
     onCancel();
   };
 
+  const isFormDisabled = isSubmitting || isLoading;
+  const hasValidationErrors = Object.keys(errors).filter(key => key !== 'submit').length > 0;
+
   return (
     <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
+          {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
           {announcement ? 'Edit Announcement' : 'Create New Announcement'}
         </CardTitle>
       </CardHeader>
@@ -143,6 +173,13 @@ const AnnouncementForm = ({
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{errors.submit}</AlertDescription>
+            </Alert>
+          )}
+
+          {isLoading && (
+            <Alert>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <AlertDescription>Saving announcement...</AlertDescription>
             </Alert>
           )}
           
@@ -159,6 +196,7 @@ const AnnouncementForm = ({
               placeholder="Enter announcement title..."
               className={errors.title && touched.title ? 'border-red-500' : ''}
               maxLength={200}
+              disabled={isFormDisabled}
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
@@ -184,6 +222,7 @@ const AnnouncementForm = ({
               rows={8}
               className={errors.content && touched.content ? 'border-red-500' : ''}
               maxLength={5000}
+              disabled={isFormDisabled}
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
@@ -200,17 +239,21 @@ const AnnouncementForm = ({
               type="button"
               variant="outline"
               onClick={handleCancel}
-              disabled={isSubmitting}
+              disabled={isFormDisabled}
             >
               <X className="h-4 w-4 mr-2" />
               Cancel
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting || Object.keys(errors).length > 0}
+              disabled={isFormDisabled || hasValidationErrors}
             >
-              <Save className="h-4 w-4 mr-2" />
-              {isSubmitting ? 'Saving...' : announcement ? 'Update' : 'Publish'}
+              {isLoading || isSubmitting ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              {isLoading || isSubmitting ? 'Saving...' : announcement ? 'Update' : 'Publish'}
             </Button>
           </div>
         </form>

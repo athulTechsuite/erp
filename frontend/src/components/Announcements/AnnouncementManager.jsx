@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import './AnnouncementManager.css';
 
@@ -15,10 +15,6 @@ const AnnouncementManager = () => {
   const requestQueueRef = useRef([]);
   const isProcessingRef = useRef(false);
 
-  useEffect(() => {
-    fetchAnnouncements();
-  }, []);
-
   // Input sanitization utility
   const sanitizeInput = (input) => {
     if (typeof input !== 'string') return '';
@@ -32,7 +28,7 @@ const AnnouncementManager = () => {
   };
 
   // Request queue processor to handle race conditions
-  const processRequestQueue = async () => {
+  const processRequestQueue = useCallback(async () => {
     if (isProcessingRef.current || requestQueueRef.current.length === 0) {
       return;
     }
@@ -49,10 +45,10 @@ const AnnouncementManager = () => {
     }
     
     isProcessingRef.current = false;
-  };
+  }, []);
 
   // Add request to queue
-  const queueRequest = (requestFn) => {
+  const queueRequest = useCallback((requestFn) => {
     return new Promise((resolve, reject) => {
       requestQueueRef.current.push(async () => {
         try {
@@ -64,9 +60,9 @@ const AnnouncementManager = () => {
       });
       processRequestQueue();
     });
-  };
+  }, [processRequestQueue]);
 
-  const fetchAnnouncements = async () => {
+  const fetchAnnouncements = useCallback(async () => {
     try {
       setLoading(true);
       // TODO: Consider using httpOnly cookies for token storage to prevent XSS attacks
@@ -93,7 +89,11 @@ const AnnouncementManager = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchAnnouncements();
+  }, [fetchAnnouncements]);
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;

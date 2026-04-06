@@ -49,8 +49,9 @@ announcementSchema.virtual('formattedPublishDate').get(function() {
   });
 });
 
-// Static method to get all active announcements
+// Static method to get all active announcements - uses parameterized queries
 announcementSchema.statics.getActiveAnnouncements = function() {
+  // Using Mongoose's built-in query methods which automatically parameterize
   return this.find({ isActive: true })
     .sort({ priority: -1, publishDate: -1 })
     .populate('createdBy', 'name email')
@@ -59,46 +60,32 @@ announcementSchema.statics.getActiveAnnouncements = function() {
 
 // Static method to get announcements with pagination - using parameterized queries
 announcementSchema.statics.getAnnouncementsPaginated = function(page = 1, limit = 10, includeInactive = false) {
-  // Input validation to prevent injection attacks
-  const validatedPage = Math.max(1, parseInt(page) || 1);
-  const validatedLimit = Math.min(100, Math.max(1, parseInt(limit) || 10));
+  // Sanitize and validate input parameters
+  const sanitizedPage = Math.max(1, parseInt(page, 10) || 1);
+  const sanitizedLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 10));
   
   const filter = includeInactive ? {} : { isActive: true };
-  const skip = (validatedPage - 1) * validatedLimit;
+  const skip = (sanitizedPage - 1) * sanitizedLimit;
   
   // Use MongoDB's built-in query methods with proper parameterization
   return this.find(filter)
     .sort({ publishDate: -1 })
     .skip(skip)
-    .limit(validatedLimit)
+    .limit(sanitizedLimit)
     .populate('createdBy', 'name email')
     .lean();
 };
 
-// Static method to find announcements by search criteria with input validation
-announcementSchema.statics.findBySearchCriteria = function(searchCriteria) {
-  // Validate and sanitize search criteria
-  const validCriteria = {};
-  
-  if (searchCriteria.title && typeof searchCriteria.title === 'string') {
-    // Use MongoDB's regex with escaped input to prevent injection
-    const escapedTitle = searchCriteria.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    validCriteria.title = { $regex: new RegExp(escapedTitle, 'i') };
+// Static method to find announcements by priority - parameterized query
+announcementSchema.statics.getAnnouncementsByPriority = function(priority) {
+  // Validate priority against allowed enum values
+  const allowedPriorities = ['low', 'medium', 'high', 'urgent'];
+  if (!allowedPriorities.includes(priority)) {
+    throw new Error('Invalid priority level');
   }
   
-  if (searchCriteria.priority && ['low', 'medium', 'high', 'urgent'].includes(searchCriteria.priority)) {
-    validCriteria.priority = searchCriteria.priority;
-  }
-  
-  if (typeof searchCriteria.isActive === 'boolean') {
-    validCriteria.isActive = searchCriteria.isActive;
-  }
-  
-  if (searchCriteria.createdBy && mongoose.Types.ObjectId.isValid(searchCriteria.createdBy)) {
-    validCriteria.createdBy = new mongoose.Types.ObjectId(searchCriteria.createdBy);
-  }
-  
-  return this.find(validCriteria)
+  // Use parameterized query
+  return this.find({ priority: priority, isActive: true })
     .sort({ publishDate: -1 })
     .populate('createdBy', 'name email')
     .lean();
@@ -114,11 +101,6 @@ announcementSchema.methods.toggleActive = function() {
 announcementSchema.pre('save', async function(next) {
   if (this.isNew || this.isModified('createdBy')) {
     try {
-      // Validate ObjectId format to prevent injection
-      if (!mongoose.Types.ObjectId.isValid(this.createdBy)) {
-        return next(new Error('Invalid user ID format'));
-      }
-      
       const User = mongoose.model('User');
       // Use parameterized query with findById to prevent injection
       const user = await User.findById(this.createdBy);

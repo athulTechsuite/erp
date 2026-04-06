@@ -1,18 +1,31 @@
-// test_input_validation.js
-// TC-004: Input validation and error handling test coverage
+// tests/unit/announcement-form-validation.test.js
+// TC-004: Announcement form input validation test coverage
 
-describe('TC-004: Input validation and error handling', () => {
-  // Setup DOM elements for testing
+describe('TC-004: Announcement form input validation', () => {
+  // Setup DOM elements for testing announcement form
   beforeEach(() => {
     document.body.innerHTML = `
-      <div class="error-name" style="display: none;"></div>
-      <div class="error-email" style="display: none;"></div>
-      <input id="name-input" type="text" />
-      <input id="email-input" type="email" />
-      <form id="test-form">
-        <input name="username" type="text" />
-        <input name="email" type="email" />
+      <form id="announcement-form">
+        <input id="announcement-title" name="title" type="text" required />
+        <textarea id="announcement-message" name="message" required></textarea>
+        <input id="announcement-author" name="author" type="text" required />
+        <input id="announcement-email" name="email" type="email" required />
+        <select id="announcement-priority" name="priority" required>
+          <option value="">Select priority</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+        <input id="announcement-date" name="date" type="date" required />
+        <button type="submit">Submit Announcement</button>
       </form>
+      <div class="error-title" style="display: none;"></div>
+      <div class="error-message" style="display: none;"></div>
+      <div class="error-author" style="display: none;"></div>
+      <div class="error-email" style="display: none;"></div>
+      <div class="error-priority" style="display: none;"></div>
+      <div class="error-date" style="display: none;"></div>
+      <div class="success-message" style="display: none;"></div>
     `;
   });
 
@@ -20,339 +33,465 @@ describe('TC-004: Input validation and error handling', () => {
     document.body.innerHTML = '';
   });
 
-  // Happy path tests
-  describe('Valid input scenarios', () => {
-    test('TC-004: should accept valid string input', () => {
-      const validInput = 'test string';
-      const result = validateInput(validInput);
+  // Happy path tests for TC-004
+  describe('TC-004: Valid announcement form submission scenarios', () => {
+    test('TC-004: should accept valid announcement form with all required fields', () => {
+      const formData = {
+        title: 'Important System Update',
+        message: 'The system will be updated on Friday evening.',
+        author: 'John Administrator',
+        email: 'admin@company.com',
+        priority: 'high',
+        date: '2024-01-15'
+      };
+
+      const result = validateAnnouncementForm(formData);
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('TC-004: should accept valid title with alphanumeric characters', () => {
+      const validTitle = 'System Update 2024 - Version 1.5';
+      const result = validateAnnouncementTitle(validTitle);
       expect(result.isValid).toBe(true);
       expect(result.error).toBeNull();
     });
 
-    test('TC-004: should accept valid numeric input', () => {
-      const validInput = 123;
-      const result = validateInput(validInput);
+    test('TC-004: should accept valid message with proper length', () => {
+      const validMessage = 'This is a detailed announcement message explaining the upcoming changes to the system.';
+      const result = validateAnnouncementMessage(validMessage);
       expect(result.isValid).toBe(true);
       expect(result.error).toBeNull();
     });
 
-    test('TC-004: should accept valid email format', () => {
-      const validEmail = 'test@example.com';
-      const result = validateEmail(validEmail);
+    test('TC-004: should accept valid author name', () => {
+      const validAuthor = 'Dr. Jane Smith';
+      const result = validateAnnouncementAuthor(validAuthor);
       expect(result.isValid).toBe(true);
       expect(result.error).toBeNull();
     });
 
-    test('TC-004: should display no error messages for valid input', () => {
-      const nameError = document.querySelector('.error-name');
-      const emailError = document.querySelector('.error-email');
+    test('TC-004: should accept valid email format for author', () => {
+      const validEmail = 'author@company.com';
+      const result = validateAnnouncementEmail(validEmail);
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeNull();
+    });
+
+    test('TC-004: should accept valid priority selection', () => {
+      const priorities = ['low', 'medium', 'high'];
+      priorities.forEach(priority => {
+        const result = validateAnnouncementPriority(priority);
+        expect(result.isValid).toBe(true);
+        expect(result.error).toBeNull();
+      });
+    });
+
+    test('TC-004: should accept valid future date', () => {
+      const futureDate = '2024-12-31';
+      const result = validateAnnouncementDate(futureDate);
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeNull();
+    });
+
+    test('TC-004: should display success message on valid submission', () => {
+      const successElement = document.querySelector('.success-message');
+      displaySuccessMessage(successElement, 'Announcement created successfully');
       
-      expect(nameError).not.toBeNull();
-      expect(emailError).not.toBeNull();
-      expect(nameError.style.display).toBe('none');
-      expect(emailError.style.display).toBe('none');
+      expect(successElement.textContent).toBe('Announcement created successfully');
+      expect(successElement.style.display).toBe('block');
     });
   });
 
-  // Error path tests
-  describe('Invalid input scenarios', () => {
-    test('TC-004: should reject null input', () => {
-      const invalidInput = null;
-      const result = validateInput(invalidInput);
+  // Error path tests for TC-004
+  describe('TC-004: Invalid announcement form submission scenarios', () => {
+    test('TC-004: should reject empty title field', () => {
+      const emptyTitle = '';
+      const result = validateAnnouncementTitle(emptyTitle);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Input cannot be null');
+      expect(result.error).toBe('Title is required');
     });
 
-    test('TC-004: should reject undefined input', () => {
-      const invalidInput = undefined;
-      const result = validateInput(invalidInput);
+    test('TC-004: should reject title that is too long', () => {
+      const longTitle = 'A'.repeat(101);
+      const result = validateAnnouncementTitle(longTitle);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Input is required');
+      expect(result.error).toBe('Title must be 100 characters or less');
     });
 
-    test('TC-004: should reject empty string input', () => {
-      const invalidInput = '';
-      const result = validateInput(invalidInput);
+    test('TC-004: should reject empty message field', () => {
+      const emptyMessage = '';
+      const result = validateAnnouncementMessage(emptyMessage);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Input cannot be empty');
+      expect(result.error).toBe('Message is required');
+    });
+
+    test('TC-004: should reject message that is too short', () => {
+      const shortMessage = 'Too short';
+      const result = validateAnnouncementMessage(shortMessage);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toBe('Message must be at least 20 characters');
+    });
+
+    test('TC-004: should reject message that is too long', () => {
+      const longMessage = 'A'.repeat(1001);
+      const result = validateAnnouncementMessage(longMessage);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toBe('Message must be 1000 characters or less');
+    });
+
+    test('TC-004: should reject empty author field', () => {
+      const emptyAuthor = '';
+      const result = validateAnnouncementAuthor(emptyAuthor);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toBe('Author name is required');
     });
 
     test('TC-004: should reject invalid email format', () => {
-      const invalidEmail = 'invalid-email';
-      const result = validateEmail(invalidEmail);
-      expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Invalid email format');
+      const invalidEmails = [
+        'invalid-email',
+        'missing@domain',
+        '@missing-local.com',
+        'spaces in@email.com',
+        'double@@domain.com'
+      ];
+
+      invalidEmails.forEach(email => {
+        const result = validateAnnouncementEmail(email);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toBe('Invalid email format');
+      });
     });
 
-    test('TC-004: should handle special characters properly', () => {
-      const specialCharsInput = '<script>alert("test")</script>';
-      const result = validateInput(specialCharsInput);
-      expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Invalid characters detected');
+    test('TC-004: should reject invalid priority selection', () => {
+      const invalidPriorities = ['', 'urgent', 'critical', null, undefined];
+      
+      invalidPriorities.forEach(priority => {
+        const result = validateAnnouncementPriority(priority);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toBe('Please select a valid priority');
+      });
     });
 
-    test('TC-004: should show error messages in DOM elements', () => {
-      const nameError = document.querySelector('.error-name');
+    test('TC-004: should reject past dates', () => {
+      const pastDate = '2020-01-01';
+      const result = validateAnnouncementDate(pastDate);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toBe('Date must be today or in the future');
+    });
+
+    test('TC-004: should reject invalid date format', () => {
+      const invalidDates = ['', '2024-13-01', '2024-01-32', 'invalid-date', null];
+      
+      invalidDates.forEach(date => {
+        const result = validateAnnouncementDate(date);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toBe('Please enter a valid date');
+      });
+    });
+
+    test('TC-004: should display error messages in DOM elements', () => {
+      const titleError = document.querySelector('.error-title');
       const emailError = document.querySelector('.error-email');
       
-      // Simulate showing errors
-      nameError.textContent = 'Name is required';
-      nameError.style.display = 'block';
-      emailError.textContent = 'Invalid email format';
-      emailError.style.display = 'block';
+      displayValidationError(titleError, 'Title is required');
+      displayValidationError(emailError, 'Invalid email format');
       
-      expect(nameError.textContent).toBe('Name is required');
+      expect(titleError.textContent).toBe('Title is required');
       expect(emailError.textContent).toBe('Invalid email format');
-      expect(nameError.style.display).toBe('block');
+      expect(titleError.style.display).toBe('block');
       expect(emailError.style.display).toBe('block');
+    });
+
+    test('TC-004: should handle XSS prevention in form fields', () => {
+      const xssAttempts = [
+        '<script>alert("xss")</script>',
+        '<img src=x onerror=alert(1)>',
+        'javascript:alert("xss")',
+        '<iframe src="javascript:alert(1)"></iframe>'
+      ];
+
+      xssAttempts.forEach(maliciousInput => {
+        const titleResult = validateAnnouncementTitle(maliciousInput);
+        const messageResult = validateAnnouncementMessage(maliciousInput);
+        
+        expect(titleResult.isValid).toBe(false);
+        expect(titleResult.error).toBe('Invalid characters detected');
+        expect(messageResult.isValid).toBe(false);
+        expect(messageResult.error).toBe('Invalid characters detected');
+      });
     });
   });
 
-  // Edge cases
-  describe('Edge case scenarios', () => {
-    test('TC-004: should handle maximum length input', () => {
-      const maxLengthInput = 'a'.repeat(1000);
-      const result = validateInput(maxLengthInput);
-      expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Input exceeds maximum length');
-    });
-
-    test('TC-004: should handle whitespace-only input', () => {
-      const whitespaceInput = '   ';
-      const result = validateInput(whitespaceInput);
-      expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Input cannot contain only whitespace');
-    });
-
-    test('TC-004: should handle various data types', () => {
-      const testCases = [
-        { input: [], expected: false, error: 'Invalid input type' },
-        { input: {}, expected: false, error: 'Invalid input type' },
-        { input: true, expected: true, error: null },
-        { input: false, expected: true, error: null },
-        { input: 0, expected: true, error: null }
-      ];
+  // Edge cases for TC-004
+  describe('TC-004: Edge case scenarios for announcement form', () => {
+    test('TC-004: should handle whitespace-only input in required fields', () => {
+      const whitespaceInputs = ['   ', '\t\t', '\n\n', '  \t  \n  '];
       
-      testCases.forEach(({ input, expected, error }) => {
-        const result = validateInput(input);
-        expect(result.isValid).toBe(expected);
-        expect(result.error).toBe(error);
+      whitespaceInputs.forEach(input => {
+        expect(validateAnnouncementTitle(input).isValid).toBe(false);
+        expect(validateAnnouncementMessage(input).isValid).toBe(false);
+        expect(validateAnnouncementAuthor(input).isValid).toBe(false);
       });
     });
 
-    test('TC-004: should validate email edge cases', () => {
-      const emailTestCases = [
-        { email: 'test@', expected: false },
-        { email: '@example.com', expected: false },
-        { email: 'test@example', expected: false },
-        { email: 'test.email@example.co.uk', expected: true },
-        { email: 'user+tag@example.com', expected: true },
-        { email: 'test space@example.com', expected: false }
-      ];
-
-      emailTestCases.forEach(({ email, expected }) => {
-        const result = validateEmail(email);
-        expect(result.isValid).toBe(expected);
-      });
+    test('TC-004: should handle boundary conditions for field lengths', () => {
+      // Title boundary tests
+      const title99 = 'A'.repeat(99);
+      const title100 = 'A'.repeat(100);
+      const title101 = 'A'.repeat(101);
+      
+      expect(validateAnnouncementTitle(title99).isValid).toBe(true);
+      expect(validateAnnouncementTitle(title100).isValid).toBe(true);
+      expect(validateAnnouncementTitle(title101).isValid).toBe(false);
+      
+      // Message boundary tests
+      const message19 = 'A'.repeat(19);
+      const message20 = 'A'.repeat(20);
+      const message1000 = 'A'.repeat(1000);
+      const message1001 = 'A'.repeat(1001);
+      
+      expect(validateAnnouncementMessage(message19).isValid).toBe(false);
+      expect(validateAnnouncementMessage(message20).isValid).toBe(true);
+      expect(validateAnnouncementMessage(message1000).isValid).toBe(true);
+      expect(validateAnnouncementMessage(message1001).isValid).toBe(false);
     });
 
-    test('TC-004: should handle DOM manipulation during validation', () => {
-      const nameInput = document.querySelector('#name-input');
-      const emailInput = document.querySelector('#email-input');
-      const form = document.querySelector('#test-form');
-      
-      expect(nameInput).not.toBeNull();
-      expect(emailInput).not.toBeNull();
-      expect(form).not.toBeNull();
-      
-      // Test form validation
-      nameInput.value = 'John Doe';
-      emailInput.value = 'john@example.com';
-      
-      expect(validateInput(nameInput.value).isValid).toBe(true);
-      expect(validateEmail(emailInput.value).isValid).toBe(true);
-    });
-  });
-
-  // DOM Integration tests
-  describe('DOM Integration scenarios', () => {
-    test('TC-004: should properly interact with error display elements', () => {
-      const nameError = document.querySelector('.error-name');
-      const emailError = document.querySelector('.error-email');
-      
-      // Test error display functionality
-      function showError(element, message) {
-        element.textContent = message;
-        element.style.display = 'block';
-      }
-      
-      function hideError(element) {
-        element.textContent = '';
-        element.style.display = 'none';
-      }
-      
-      // Show errors
-      showError(nameError, 'Name validation failed');
-      showError(emailError, 'Email validation failed');
-      
-      expect(nameError.textContent).toBe('Name validation failed');
-      expect(emailError.textContent).toBe('Email validation failed');
-      expect(nameError.style.display).toBe('block');
-      expect(emailError.style.display).toBe('block');
-      
-      // Hide errors
-      hideError(nameError);
-      hideError(emailError);
-      
-      expect(nameError.textContent).toBe('');
-      expect(emailError.textContent).toBe('');
-      expect(nameError.style.display).toBe('none');
-      expect(emailError.style.display).toBe('none');
-    });
-
-    test('TC-004: should validate form inputs and update error states', () => {
-      const form = document.querySelector('#test-form');
-      const nameError = document.querySelector('.error-name');
-      const emailError = document.querySelector('.error-email');
-      
-      function validateForm(formData) {
-        let isValid = true;
-        const errors = [];
-        
-        // Validate username
-        const usernameResult = validateInput(formData.username);
-        if (!usernameResult.isValid) {
-          nameError.textContent = usernameResult.error;
-          nameError.style.display = 'block';
-          isValid = false;
-          errors.push('username');
-        } else {
-          nameError.style.display = 'none';
-        }
-        
-        // Validate email
-        const emailResult = validateEmail(formData.email);
-        if (!emailResult.isValid) {
-          emailError.textContent = emailResult.error;
-          emailError.style.display = 'block';
-          isValid = false;
-          errors.push('email');
-        } else {
-          emailError.style.display = 'none';
-        }
-        
-        return { isValid, errors };
-      }
-      
-      // Test valid form data
-      let result = validateForm({ username: 'testuser', email: 'test@example.com' });
+    test('TC-004: should handle today\'s date as valid', () => {
+      const today = new Date().toISOString().split('T')[0];
+      const result = validateAnnouncementDate(today);
       expect(result.isValid).toBe(true);
-      expect(result.errors).toHaveLength(0);
-      
-      // Test invalid form data
-      result = validateForm({ username: '', email: 'invalid-email' });
+      expect(result.error).toBeNull();
+    });
+
+    test('TC-004: should validate complete form with mixed valid/invalid fields', () => {
+      const mixedFormData = {
+        title: 'Valid Title',
+        message: '', // Invalid - empty
+        author: 'Valid Author',
+        email: 'invalid-email', // Invalid - format
+        priority: 'medium',
+        date: '2024-12-31'
+      };
+
+      const result = validateAnnouncementForm(mixedFormData);
       expect(result.isValid).toBe(false);
-      expect(result.errors).toContain('username');
+      expect(result.errors).toContain('message');
       expect(result.errors).toContain('email');
+      expect(result.errors).toHaveLength(2);
+    });
+  });
+
+  // DOM Integration tests for TC-004
+  describe('TC-004: DOM Integration for announcement form', () => {
+    test('TC-004: should interact with form elements correctly', () => {
+      const form = document.querySelector('#announcement-form');
+      const titleInput = document.querySelector('#announcement-title');
+      const messageInput = document.querySelector('#announcement-message');
+      
+      expect(form).not.toBeNull();
+      expect(titleInput).not.toBeNull();
+      expect(messageInput).not.toBeNull();
+      
+      titleInput.value = 'Test Announcement';
+      messageInput.value = 'This is a test announcement message with sufficient length for validation.';
+      
+      expect(titleInput.value).toBe('Test Announcement');
+      expect(messageInput.value).toBe('This is a test announcement message with sufficient length for validation.');
+    });
+
+    test('TC-004: should handle form submission with validation', () => {
+      const form = document.querySelector('#announcement-form');
+      const formData = new FormData(form);
+      
+      // Set form values
+      form.querySelector('#announcement-title').value = 'Test Title';
+      form.querySelector('#announcement-message').value = 'This is a test message that meets the minimum length requirement.';
+      form.querySelector('#announcement-author').value = 'Test Author';
+      form.querySelector('#announcement-email').value = 'test@example.com';
+      form.querySelector('#announcement-priority').value = 'medium';
+      form.querySelector('#announcement-date').value = '2024-12-31';
+      
+      const validationResult = validateAnnouncementFormDOM(form);
+      expect(validationResult.isValid).toBe(true);
+    });
+
+    test('TC-004: should clear error messages when validation passes', () => {
+      const titleError = document.querySelector('.error-title');
+      const messageError = document.querySelector('.error-message');
+      
+      // Show errors first
+      displayValidationError(titleError, 'Title error');
+      displayValidationError(messageError, 'Message error');
+      
+      expect(titleError.style.display).toBe('block');
+      expect(messageError.style.display).toBe('block');
+      
+      // Clear errors
+      clearValidationError(titleError);
+      clearValidationError(messageError);
+      
+      expect(titleError.style.display).toBe('none');
+      expect(messageError.style.display).toBe('none');
+      expect(titleError.textContent).toBe('');
+      expect(messageError.textContent).toBe('');
     });
   });
 });
 
 /**
- * Input validation function with comprehensive type and content checking
- * Supports multiple input types and validates against common security risks
- * 
- * Implementation details:
- * - Performs null/undefined checks first to prevent runtime errors
- * - Uses strict type checking with typeof operator
- * - Implements trim() for whitespace validation to handle edge cases
- * - Uses includes() for basic XSS pattern detection
- * - Implements length validation with configurable maximum (999 chars)
- * - Returns consistent object structure with isValid boolean and error message
- * 
- * @param {*} input - The input value to validate (any type)
- * @returns {Object} - Validation result with isValid boolean and error message
+ * TC-004: Announcement form validation functions
  */
-function validateInput(input) {
-  // Handle null values explicitly to avoid TypeError
-  if (input === null) {
-    return { isValid: false, error: 'Input cannot be null' };
+
+function validateAnnouncementTitle(title) {
+  if (!title || typeof title !== 'string' || title.trim() === '') {
+    return { isValid: false, error: 'Title is required' };
   }
   
-  // Handle undefined values - required field validation
-  if (input === undefined) {
-    return { isValid: false, error: 'Input is required' };
+  if (title.trim().length > 100) {
+    return { isValid: false, error: 'Title must be 100 characters or less' };
   }
   
-  // Handle empty string validation
-  if (input === '') {
-    return { isValid: false, error: 'Input cannot be empty' };
+  if (containsXSSPatterns(title)) {
+    return { isValid: false, error: 'Invalid characters detected' };
   }
   
-  // Handle arrays and objects as invalid input types
-  if (Array.isArray(input) || (typeof input === 'object' && input !== null)) {
-    return { isValid: false, error: 'Invalid input type' };
-  }
-  
-  // String-specific validations
-  if (typeof input === 'string') {
-    // Whitespace-only validation using trim()
-    if (input.trim() === '') {
-      return { isValid: false, error: 'Input cannot contain only whitespace' };
-    }
-    
-    // Basic XSS protection - check for script tags
-    if (input.includes('<script>')) {
-      return { isValid: false, error: 'Invalid characters detected' };
-    }
-    
-    // Length validation with configurable maximum
-    if (input.length > 999) {
-      return { isValid: false, error: 'Input exceeds maximum length' };
-    }
-  }
-  
-  // Valid input - passes all checks
   return { isValid: true, error: null };
 }
 
-/**
- * Email validation function using regex pattern matching
- * 
- * Implementation details:
- * - Uses comprehensive regex pattern for email format validation
- * - Pattern breakdown: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
- *   - ^ : Start of string
- *   - [^\s@]+ : One or more characters that are not whitespace or @
- *   - @ : Literal @ symbol
- *   - [^\s@]+ : One or more characters that are not whitespace or @
- *   - \. : Literal dot (escaped)
- *   - [^\s@]+ : One or more characters that are not whitespace or @
- *   - $ : End of string
- * - Rejects emails with spaces, multiple @ symbols, or missing components
- * 
- * @param {string} email - The email string to validate
- * @returns {Object} - Validation result with isValid boolean and error message
- */
-function validateEmail(email) {
-  // Comprehensive email regex pattern
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function validateAnnouncementMessage(message) {
+  if (!message || typeof message !== 'string' || message.trim() === '') {
+    return { isValid: false, error: 'Message is required' };
+  }
   
-  // Test email against regex pattern
-  if (!emailRegex.test(email)) {
+  if (message.trim().length < 20) {
+    return { isValid: false, error: 'Message must be at least 20 characters' };
+  }
+  
+  if (message.trim().length > 1000) {
+    return { isValid: false, error: 'Message must be 1000 characters or less' };
+  }
+  
+  if (containsXSSPatterns(message)) {
+    return { isValid: false, error: 'Invalid characters detected' };
+  }
+  
+  return { isValid: true, error: null };
+}
+
+function validateAnnouncementAuthor(author) {
+  if (!author || typeof author !== 'string' || author.trim() === '') {
+    return { isValid: false, error: 'Author name is required' };
+  }
+  
+  if (containsXSSPatterns(author)) {
+    return { isValid: false, error: 'Invalid characters detected' };
+  }
+  
+  return { isValid: true, error: null };
+}
+
+function validateAnnouncementEmail(email) {
+  if (!email || typeof email !== 'string' || email.trim() === '') {
+    return { isValid: false, error: 'Email is required' };
+  }
+  
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email.trim())) {
     return { isValid: false, error: 'Invalid email format' };
   }
   
-  // Valid email format
   return { isValid: true, error: null };
 }
 
-// Additional helper functions for DOM manipulation and error handling
+function validateAnnouncementPriority(priority) {
+  const validPriorities = ['low', 'medium', 'high'];
+  if (!priority || !validPriorities.includes(priority)) {
+    return { isValid: false, error: 'Please select a valid priority' };
+  }
+  
+  return { isValid: true, error: null };
+}
+
+function validateAnnouncementDate(date) {
+  if (!date || typeof date !== 'string') {
+    return { isValid: false, error: 'Please enter a valid date' };
+  }
+  
+  const inputDate = new Date(date);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  if (isNaN(inputDate.getTime())) {
+    return { isValid: false, error: 'Please enter a valid date' };
+  }
+  
+  if (inputDate < today) {
+    return { isValid: false, error: 'Date must be today or in the future' };
+  }
+  
+  return { isValid: true, error: null };
+}
+
+function validateAnnouncementForm(formData) {
+  const errors = [];
+  
+  const titleResult = validateAnnouncementTitle(formData.title);
+  if (!titleResult.isValid) errors.push('title');
+  
+  const messageResult = validateAnnouncementMessage(formData.message);
+  if (!messageResult.isValid) errors.push('message');
+  
+  const authorResult = validateAnnouncementAuthor(formData.author);
+  if (!authorResult.isValid) errors.push('author');
+  
+  const emailResult = validateAnnouncementEmail(formData.email);
+  if (!emailResult.isValid) errors.push('email');
+  
+  const priorityResult = validateAnnouncementPriority(formData.priority);
+  if (!priorityResult.isValid) errors.push('priority');
+  
+  const dateResult = validateAnnouncementDate(formData.date);
+  if (!dateResult.isValid) errors.push('date');
+  
+  return {
+    isValid: errors.length === 0,
+    errors: errors
+  };
+}
+
+function validateAnnouncementFormDOM(form) {
+  const formData = {
+    title: form.querySelector('#announcement-title').value,
+    message: form.querySelector('#announcement-message').value,
+    author: form.querySelector('#announcement-author').value,
+    email: form.querySelector('#announcement-email').value,
+    priority: form.querySelector('#announcement-priority').value,
+    date: form.querySelector('#announcement-date').value
+  };
+  
+  return validateAnnouncementForm(formData);
+}
+
+function containsXSSPatterns(input) {
+  const xssPatterns = [
+    /<script/i,
+    /<iframe/i,
+    /<img[^>]+onerror/i,
+    /javascript:/i,
+    /<object/i,
+    /<embed/i
+  ];
+  
+  return xssPatterns.some(pattern => pattern.test(input));
+}
+
 function displayValidationError(errorElement, message) {
   if (errorElement) {
     errorElement.textContent = message;
     errorElement.style.display = 'block';
     errorElement.setAttribute('role', 'alert');
+    errorElement.setAttribute('aria-live', 'polite');
   }
 }
 
@@ -361,36 +500,33 @@ function clearValidationError(errorElement) {
     errorElement.textContent = '';
     errorElement.style.display = 'none';
     errorElement.removeAttribute('role');
+    errorElement.removeAttribute('aria-live');
   }
 }
 
-function validateFormField(fieldValue, fieldType, errorElement) {
-  let result;
-  
-  switch (fieldType) {
-    case 'email':
-      result = validateEmail(fieldValue);
-      break;
-    default:
-      result = validateInput(fieldValue);
+function displaySuccessMessage(successElement, message) {
+  if (successElement) {
+    successElement.textContent = message;
+    successElement.style.display = 'block';
+    successElement.setAttribute('role', 'status');
+    successElement.setAttribute('aria-live', 'polite');
   }
-  
-  if (result.isValid) {
-    clearValidationError(errorElement);
-  } else {
-    displayValidationError(errorElement, result.error);
-  }
-  
-  return result;
 }
 
 // Export functions for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    validateInput,
-    validateEmail,
+    validateAnnouncementTitle,
+    validateAnnouncementMessage,
+    validateAnnouncementAuthor,
+    validateAnnouncementEmail,
+    validateAnnouncementPriority,
+    validateAnnouncementDate,
+    validateAnnouncementForm,
+    validateAnnouncementFormDOM,
     displayValidationError,
     clearValidationError,
-    validateFormField
+    displaySuccessMessage,
+    containsXSSPatterns
   };
 }

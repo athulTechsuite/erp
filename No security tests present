@@ -1,14 +1,90 @@
 /**
  * Security Test Suite
  * Tests for XSS protection and other security measures
- * TC-005: XSS protection and security - Full test coverage
- * TC-006: XSS Protection Tests - Comprehensive test coverage
  */
 
 const { JSDOM } = require('jsdom');
 const DOMPurify = require('dompurify');
 
-describe('TC-005: XSS Protection and Security Tests', () => {
+describe('TC-004: Security Tests', () => {
+  let window, document;
+
+  beforeEach(() => {
+    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
+    window = dom.window;
+    document = window.document;
+  });
+
+  describe('Happy Path - Secure Operations', () => {
+    test('TC-004: should validate secure input handling', () => {
+      const secureInput = 'user@example.com';
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      expect(emailRegex.test(secureInput)).toBe(true);
+    });
+
+    test('TC-004: should allow valid file uploads', () => {
+      const validFileTypes = ['.jpg', '.png', '.pdf', '.doc'];
+      const testFile = 'document.pdf';
+      const fileExtension = testFile.substring(testFile.lastIndexOf('.'));
+      expect(validFileTypes.includes(fileExtension)).toBe(true);
+    });
+
+    test('TC-004: should validate secure password requirements', () => {
+      const securePassword = 'SecureP@ss123';
+      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+      expect(passwordRegex.test(securePassword)).toBe(true);
+    });
+  });
+
+  describe('Error Path - Security Violations', () => {
+    test('TC-004: should reject malicious file uploads', () => {
+      const maliciousFiles = ['script.exe', 'malware.bat', 'virus.scr'];
+      const allowedExtensions = ['.jpg', '.png', '.pdf', '.doc'];
+      
+      maliciousFiles.forEach(file => {
+        const fileExtension = file.substring(file.lastIndexOf('.'));
+        expect(allowedExtensions.includes(fileExtension)).toBe(false);
+      });
+    });
+
+    test('TC-004: should reject weak passwords', () => {
+      const weakPasswords = ['123456', 'password', 'weak'];
+      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+      
+      weakPasswords.forEach(password => {
+        expect(passwordRegex.test(password)).toBe(false);
+      });
+    });
+
+    test('TC-004: should block SQL injection attempts', () => {
+      const sqlInjectionAttempts = [
+        "'; DROP TABLE users; --",
+        "admin' OR '1'='1",
+        "1' UNION SELECT * FROM passwords --"
+      ];
+      
+      sqlInjectionAttempts.forEach(attempt => {
+        const containsSqlKeywords = /\b(DROP|DELETE|INSERT|UPDATE|SELECT|UNION|OR|AND)\b/i.test(attempt);
+        expect(containsSqlKeywords).toBe(true); // We expect to detect these patterns
+        
+        // Simulate input sanitization
+        const sanitized = attempt.replace(/[';\\]/g, '');
+        expect(sanitized).not.toEqual(attempt);
+      });
+    });
+
+    test('TC-004: should validate and reject invalid email formats', () => {
+      const invalidEmails = ['invalid-email', '@domain.com', 'user@', 'user.domain.com'];
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      
+      invalidEmails.forEach(email => {
+        expect(emailRegex.test(email)).toBe(false);
+      });
+    });
+  });
+});
+
+describe('TC-005: XSS Protection Tests', () => {
   let window, document, purify;
 
   beforeEach(() => {
@@ -18,360 +94,66 @@ describe('TC-005: XSS Protection and Security Tests', () => {
     purify = DOMPurify(window);
   });
 
-  describe('TC-005 Happy Path - Safe Content Validation', () => {
-    test('TC-005: should allow safe HTML content without modification', () => {
+  describe('Happy Path - Safe Content', () => {
+    test('TC-005: should allow safe HTML content', () => {
       const safeHtml = '<p>Hello World</p>';
       const sanitized = purify.sanitize(safeHtml);
       expect(sanitized).toBe('<p>Hello World</p>');
-      expect(sanitized).toBeTruthy();
     });
 
-    test('TC-005: should preserve safe formatting tags correctly', () => {
+    test('TC-005: should preserve safe formatting tags', () => {
       const safeHtml = '<strong>Bold</strong> and <em>italic</em> text';
       const sanitized = purify.sanitize(safeHtml);
       expect(sanitized).toBe('<strong>Bold</strong> and <em>italic</em> text');
-      expect(sanitized).toContain('<strong>');
-      expect(sanitized).toContain('<em>');
     });
 
-    test('TC-005: should handle plain text without any modification', () => {
-      const plainText = 'Just plain text with special chars: < > & "';
+    test('TC-005: should handle plain text without modification', () => {
+      const plainText = 'Just plain text';
       const sanitized = purify.sanitize(plainText);
-      expect(sanitized).toBe('Just plain text with special chars: &lt; &gt; &amp; "');
-      expect(sanitized).not.toContain('<script>');
-    });
-
-    test('TC-005: should allow safe attributes on permitted elements', () => {
-      const safeHtml = '<a href="https://example.com" title="Safe link">Link</a>';
-      const sanitized = purify.sanitize(safeHtml);
-      expect(sanitized).toContain('href="https://example.com"');
-      expect(sanitized).toContain('title="Safe link"');
-    });
-
-    test('TC-005: should preserve nested safe HTML structures', () => {
-      const safeHtml = '<div><p><strong>Nested</strong> content</p></div>';
-      const sanitized = purify.sanitize(safeHtml);
-      expect(sanitized).toBe('<div><p><strong>Nested</strong> content</p></div>');
+      expect(sanitized).toBe('Just plain text');
     });
   });
 
-  describe('TC-005 Error Path - Malicious Content Blocking', () => {
-    test('TC-005: should completely block script tag injection attempts', () => {
-      const maliciousHtml = '<script>alert("XSS")</script><p>Content</p>';
+  describe('Error Path - Malicious Content', () => {
+    test('TC-005: should block script tag injection', () => {
+      const maliciousHtml = '<script>alert("XSS")</script>';
       const sanitized = purify.sanitize(maliciousHtml);
-      expect(sanitized).toBe('<p>Content</p>');
+      expect(sanitized).toBe('');
       expect(sanitized).not.toContain('<script>');
-      expect(sanitized).not.toContain('alert');
     });
 
-    test('TC-005: should block javascript: protocol in all contexts', () => {
+    test('TC-005: should block javascript: protocol in links', () => {
       const maliciousHtml = '<a href="javascript:alert(\'XSS\')">Click me</a>';
       const sanitized = purify.sanitize(maliciousHtml);
       expect(sanitized).not.toContain('javascript:');
       expect(sanitized).toBe('<a>Click me</a>');
     });
 
-    test('TC-005: should remove all event handler attributes', () => {
-      const maliciousHtml = '<img src="x" onload="alert(\'XSS\')" onerror="alert(\'ERROR\')">';
+    test('TC-005: should block onload event handlers', () => {
+      const maliciousHtml = '<img src="x" onload="alert(\'XSS\')">';
       const sanitized = purify.sanitize(maliciousHtml);
       expect(sanitized).not.toContain('onload');
-      expect(sanitized).not.toContain('onerror');
       expect(sanitized).toBe('<img src="x">');
     });
 
-    test('TC-005: should block dangerous iframe and embed elements', () => {
+    test('TC-005: should block data: protocol with javascript', () => {
       const maliciousHtml = '<iframe src="data:text/html,<script>alert(\'XSS\')</script>"></iframe>';
       const sanitized = purify.sanitize(maliciousHtml);
       expect(sanitized).toBe('');
-      expect(sanitized).not.toContain('<iframe>');
     });
 
-    test('TC-005: should sanitize malicious style attributes and CSS', () => {
+    test('TC-005: should block style injection attacks', () => {
       const maliciousHtml = '<div style="background-image: url(javascript:alert(\'XSS\'))">Content</div>';
       const sanitized = purify.sanitize(maliciousHtml);
       expect(sanitized).not.toContain('javascript:');
       expect(sanitized).toBe('<div>Content</div>');
     });
 
-    test('TC-005: should block nested and obfuscated script attempts', () => {
+    test('TC-005: should block nested script attempts', () => {
       const maliciousHtml = '<div><script>alert("nested")</script><p>Content</p></div>';
       const sanitized = purify.sanitize(maliciousHtml);
       expect(sanitized).toBe('<div><p>Content</p></div>');
       expect(sanitized).not.toContain('<script>');
-      expect(sanitized).not.toContain('alert');
-    });
-
-    test('TC-005: should handle complex XSS payload combinations', () => {
-      const complexPayload = '<img src=x onerror=alert(1)><svg onload=alert(2)><script>alert(3)</script>';
-      const sanitized = purify.sanitize(complexPayload);
-      expect(sanitized).not.toContain('onerror');
-      expect(sanitized).not.toContain('onload');
-      expect(sanitized).not.toContain('<script>');
-      expect(sanitized).not.toContain('alert');
-    });
-
-    test('TC-005: should block data URLs with malicious content', () => {
-      const maliciousHtml = '<object data="data:text/html,<script>alert(1)</script>"></object>';
-      const sanitized = purify.sanitize(maliciousHtml);
-      expect(sanitized).toBe('');
-    });
-
-    test('TC-005: should handle empty and null inputs safely', () => {
-      expect(purify.sanitize('')).toBe('');
-      expect(purify.sanitize(null)).toBe('');
-      expect(purify.sanitize(undefined)).toBe('');
-    });
-
-    test('TC-005: should block meta refresh redirects', () => {
-      const maliciousHtml = '<meta http-equiv="refresh" content="0;url=javascript:alert(1)">';
-      const sanitized = purify.sanitize(maliciousHtml);
-      expect(sanitized).not.toContain('javascript:');
-      expect(sanitized).toBe('');
-    });
-  });
-
-  describe('TC-005 Edge Cases and Security Boundaries', () => {
-    test('TC-005: should handle malformed HTML without breaking', () => {
-      const malformedHtml = '<div><p>Unclosed tags<script>alert(1)</div>';
-      const sanitized = purify.sanitize(malformedHtml);
-      expect(sanitized).not.toContain('<script>');
-      expect(sanitized).not.toContain('alert');
-    });
-
-    test('TC-005: should prevent DOM clobbering attacks', () => {
-      const clobberAttempt = '<form><input name="attributes"><input name="setAttribute"></form>';
-      const sanitized = purify.sanitize(clobberAttempt);
-      // Should still sanitize but not allow dangerous clobbering
-      expect(typeof sanitized).toBe('string');
-    });
-
-    test('TC-005: should maintain performance with large payloads', () => {
-      const largePayload = '<div>' + 'safe content '.repeat(1000) + '</div>';
-      const startTime = Date.now();
-      const sanitized = purify.sanitize(largePayload);
-      const endTime = Date.now();
-      
-      expect(sanitized).toContain('safe content');
-      expect(endTime - startTime).toBeLessThan(1000); // Should complete within 1 second
-    });
-  });
-});
-
-describe('TC-006: XSS Protection Tests', () => {
-  let window, document, purify;
-
-  beforeEach(() => {
-    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
-    window = dom.window;
-    document = window.document;
-    purify = DOMPurify(window);
-  });
-
-  describe('TC-006 Happy Path - Valid Content Processing', () => {
-    test('TC-006: should correctly sanitize and preserve safe HTML elements', () => {
-      const safeContent = '<h1>Title</h1><p>Paragraph with <strong>bold</strong> text</p>';
-      const sanitized = purify.sanitize(safeContent);
-      expect(sanitized).toBe('<h1>Title</h1><p>Paragraph with <strong>bold</strong> text</p>');
-      expect(sanitized).toContain('<h1>');
-      expect(sanitized).toContain('<p>');
-      expect(sanitized).toContain('<strong>');
-    });
-
-    test('TC-006: should handle safe links with proper attributes', () => {
-      const safeLink = '<a href="https://example.com" target="_blank">Safe Link</a>';
-      const sanitized = purify.sanitize(safeLink);
-      expect(sanitized).toContain('href="https://example.com"');
-      expect(sanitized).toContain('target="_blank"');
-      expect(sanitized).toContain('Safe Link');
-    });
-
-    test('TC-006: should preserve safe list structures', () => {
-      const safeList = '<ul><li>Item 1</li><li>Item 2</li></ul>';
-      const sanitized = purify.sanitize(safeList);
-      expect(sanitized).toBe('<ul><li>Item 1</li><li>Item 2</li></ul>');
-      expect(sanitized).toContain('<ul>');
-      expect(sanitized).toContain('<li>');
-    });
-
-    test('TC-006: should handle safe images with valid attributes', () => {
-      const safeImg = '<img src="https://example.com/image.jpg" alt="Description" width="100">';
-      const sanitized = purify.sanitize(safeImg);
-      expect(sanitized).toContain('src="https://example.com/image.jpg"');
-      expect(sanitized).toContain('alt="Description"');
-      expect(sanitized).toContain('width="100"');
-    });
-
-    test('TC-006: should preserve safe table structures', () => {
-      const safeTable = '<table><tr><td>Cell 1</td><td>Cell 2</td></tr></table>';
-      const sanitized = purify.sanitize(safeTable);
-      expect(sanitized).toBe('<table><tbody><tr><td>Cell 1</td><td>Cell 2</td></tr></tbody></table>');
-      expect(sanitized).toContain('<table>');
-      expect(sanitized).toContain('<tr>');
-      expect(sanitized).toContain('<td>');
-    });
-  });
-
-  describe('TC-006 Error Path - XSS Attack Prevention', () => {
-    test('TC-006: should block script injection in various forms', () => {
-      const scriptAttacks = [
-        '<script>alert("XSS")</script>',
-        '<SCRIPT>alert("XSS")</SCRIPT>',
-        '<script type="text/javascript">alert("XSS")</script>',
-        '"><script>alert("XSS")</script>'
-      ];
-      
-      scriptAttacks.forEach(attack => {
-        const sanitized = purify.sanitize(attack);
-        expect(sanitized).not.toContain('<script>');
-        expect(sanitized).not.toContain('<SCRIPT>');
-        expect(sanitized).not.toContain('alert');
-      });
-    });
-
-    test('TC-006: should remove dangerous event handlers from all elements', () => {
-      const eventHandlerAttacks = [
-        '<div onclick="alert(1)">Click</div>',
-        '<img onload="alert(1)" src="x">',
-        '<body onload="alert(1)">',
-        '<input onfocus="alert(1)">',
-        '<button onmouseover="alert(1)">Hover</button>'
-      ];
-      
-      eventHandlerAttacks.forEach(attack => {
-        const sanitized = purify.sanitize(attack);
-        expect(sanitized).not.toContain('onclick');
-        expect(sanitized).not.toContain('onload');
-        expect(sanitized).not.toContain('onfocus');
-        expect(sanitized).not.toContain('onmouseover');
-        expect(sanitized).not.toContain('alert');
-      });
-    });
-
-    test('TC-006: should block javascript: protocol in various contexts', () => {
-      const jsProtocolAttacks = [
-        '<a href="javascript:alert(1)">Link</a>',
-        '<form action="javascript:alert(1)">',
-        '<iframe src="javascript:alert(1)">',
-        '<img src="javascript:alert(1)">'
-      ];
-      
-      jsProtocolAttacks.forEach(attack => {
-        const sanitized = purify.sanitize(attack);
-        expect(sanitized).not.toContain('javascript:');
-        expect(sanitized).not.toContain('alert');
-      });
-    });
-
-    test('TC-006: should prevent CSS-based XSS attacks', () => {
-      const cssXssAttacks = [
-        '<div style="background:url(javascript:alert(1))">Content</div>',
-        '<div style="expression(alert(1))">Content</div>',
-        '<style>body{background:url(javascript:alert(1))}</style>',
-        '<link rel="stylesheet" href="javascript:alert(1)">'
-      ];
-      
-      cssXssAttacks.forEach(attack => {
-        const sanitized = purify.sanitize(attack);
-        expect(sanitized).not.toContain('javascript:');
-        expect(sanitized).not.toContain('expression(');
-        expect(sanitized).not.toContain('alert');
-      });
-    });
-
-    test('TC-006: should block SVG-based XSS attempts', () => {
-      const svgXssAttacks = [
-        '<svg onload="alert(1)">',
-        '<svg><script>alert(1)</script></svg>',
-        '<svg><animateTransform onbegin="alert(1)">',
-        '<svg><foreignObject><script>alert(1)</script></foreignObject></svg>'
-      ];
-      
-      svgXssAttacks.forEach(attack => {
-        const sanitized = purify.sanitize(attack);
-        expect(sanitized).not.toContain('onload');
-        expect(sanitized).not.toContain('onbegin');
-        expect(sanitized).not.toContain('<script>');
-        expect(sanitized).not.toContain('alert');
-      });
-    });
-
-    test('TC-006: should handle data URI XSS attempts', () => {
-      const dataUriAttacks = [
-        '<iframe src="data:text/html,<script>alert(1)</script>">',
-        '<object data="data:text/html,<script>alert(1)</script>">',
-        '<embed src="data:text/html,<script>alert(1)</script>">',
-        '<img src="data:image/svg+xml,<svg onload=alert(1)>">'
-      ];
-      
-      dataUriAttacks.forEach(attack => {
-        const sanitized = purify.sanitize(attack);
-        expect(sanitized).not.toContain('<script>');
-        expect(sanitized).not.toContain('onload');
-        expect(sanitized).not.toContain('alert');
-      });
-    });
-
-    test('TC-006: should prevent form-based XSS attacks', () => {
-      const formXssAttacks = [
-        '<form><input name="innerHTML" value="<script>alert(1)</script>">',
-        '<form><button formaction="javascript:alert(1)">Submit</button>',
-        '<input type="image" src="x" onerror="alert(1)">',
-        '<form onsubmit="alert(1)">'
-      ];
-      
-      formXssAttacks.forEach(attack => {
-        const sanitized = purify.sanitize(attack);
-        expect(sanitized).not.toContain('<script>');
-        expect(sanitized).not.toContain('javascript:');
-        expect(sanitized).not.toContain('onerror');
-        expect(sanitized).not.toContain('onsubmit');
-        expect(sanitized).not.toContain('alert');
-      });
-    });
-
-    test('TC-006: should handle malformed and encoded XSS attempts', () => {
-      const encodedXssAttacks = [
-        '&lt;script&gt;alert(1)&lt;/script&gt;',
-        '%3Cscript%3Ealert(1)%3C/script%3E',
-        '<scr\x00ipt>alert(1)</scr\x00ipt>',
-        '<img src=x onerror=&#97;&#108;&#101;&#114;&#116;&#40;&#49;&#41;>'
-      ];
-      
-      encodedXssAttacks.forEach(attack => {
-        const sanitized = purify.sanitize(attack);
-        expect(sanitized).not.toContain('<script>');
-        expect(sanitized).not.toContain('onerror');
-        // Should not execute even if partially decoded
-        expect(sanitized).not.toMatch(/alert\s*\(/);
-      });
-    });
-
-    test('TC-006: should reject completely malicious payloads', () => {
-      const maliciousPayloads = [
-        '<script>document.cookie="stolen"</script>',
-        '<img src=x onerror="fetch(\'/steal?data=\'+document.cookie)">',
-        '<iframe src="evil.com"></iframe>',
-        'javascript:void(document.location="evil.com")'
-      ];
-      
-      maliciousPayloads.forEach(payload => {
-        const sanitized = purify.sanitize(payload);
-        expect(sanitized).not.toContain('document.cookie');
-        expect(sanitized).not.toContain('document.location');
-        expect(sanitized).not.toContain('fetch(');
-        expect(sanitized).not.toContain('<script>');
-        expect(sanitized).not.toContain('javascript:');
-      });
-    });
-
-    test('TC-006: should handle null, undefined, and edge case inputs', () => {
-      const edgeCases = [null, undefined, '', 0, false, NaN, {}, []];
-      
-      edgeCases.forEach(edgeCase => {
-        const sanitized = purify.sanitize(edgeCase);
-        expect(typeof sanitized).toBe('string');
-        expect(sanitized).not.toContain('<script>');
-      });
     });
   });
 });

@@ -2,6 +2,16 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+const rateLimit = require('express-rate-limit');
+
+// Rate limiting for write operations
+const writeOperationsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // limit each IP to 10 requests per windowMs for write operations
+  message: 'Too many write requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Get all active announcements (accessible to all authenticated users)
 router.get('/', authenticateToken, async (req, res) => {
@@ -35,7 +45,7 @@ router.get('/admin', authenticateToken, requireRole('admin'), async (req, res) =
 });
 
 // Create new announcement (admin only)
-router.post('/', authenticateToken, requireRole('admin'), async (req, res) => {
+router.post('/', writeOperationsLimiter, authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { title, content, is_active = true } = req.body;
     
@@ -62,7 +72,7 @@ router.post('/', authenticateToken, requireRole('admin'), async (req, res) => {
 });
 
 // Update announcement (admin only)
-router.put('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
+router.put('/:id', writeOperationsLimiter, authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
     const { title, content, is_active } = req.body;
@@ -95,7 +105,7 @@ router.put('/:id', authenticateToken, requireRole('admin'), async (req, res) => 
 });
 
 // Delete announcement (admin only)
-router.delete('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
+router.delete('/:id', writeOperationsLimiter, authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
 

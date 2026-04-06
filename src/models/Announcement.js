@@ -1,9 +1,5 @@
 const mongoose = require('mongoose');
 
-// Define valid enums for validation
-const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
-const VALID_CATEGORIES = ['general', 'maintenance', 'event', 'policy', 'emergency'];
-
 const announcementSchema = new mongoose.Schema({
   title: {
     type: String,
@@ -15,16 +11,7 @@ const announcementSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Announcement content is required'],
     trim: true,
-    minlength: [10, 'Content must be at least 10 characters long'],
-    maxlength: [5000, 'Content cannot exceed 5000 characters'],
-    validate: {
-      validator: function(value) {
-        // Validate content format - should contain meaningful text, not just whitespace or special chars
-        const cleanContent = value.replace(/[^a-zA-Z0-9\s]/g, '').trim();
-        return cleanContent.length >= 5;
-      },
-      message: 'Content must contain at least 5 meaningful characters'
-    }
+    maxlength: [5000, 'Content cannot exceed 5000 characters']
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -41,31 +28,8 @@ const announcementSchema = new mongoose.Schema({
   },
   priority: {
     type: String,
-    enum: {
-      values: VALID_PRIORITIES,
-      message: `Priority must be one of: ${VALID_PRIORITIES.join(', ')}`
-    },
-    default: 'medium',
-    validate: {
-      validator: function(value) {
-        return VALID_PRIORITIES.includes(value);
-      },
-      message: props => `${props.value} is not a valid priority. Valid priorities are: ${VALID_PRIORITIES.join(', ')}`
-    }
-  },
-  category: {
-    type: String,
-    enum: {
-      values: VALID_CATEGORIES,
-      message: `Category must be one of: ${VALID_CATEGORIES.join(', ')}`
-    },
-    default: 'general',
-    validate: {
-      validator: function(value) {
-        return VALID_CATEGORIES.includes(value);
-      },
-      message: props => `${props.value} is not a valid category. Valid categories are: ${VALID_CATEGORIES.join(', ')}`
-    }
+    enum: ['low', 'medium', 'high', 'urgent'],
+    default: 'medium'
   }
 }, {
   timestamps: true
@@ -95,14 +59,47 @@ announcementSchema.statics.getActiveAnnouncements = function() {
 
 // Static method to get announcements with pagination - using parameterized queries
 announcementSchema.statics.getAnnouncementsPaginated = function(page = 1, limit = 10, includeInactive = false) {
+  // Input validation to prevent injection attacks
+  const validatedPage = Math.max(1, parseInt(page) || 1);
+  const validatedLimit = Math.min(100, Math.max(1, parseInt(limit) || 10));
+  
   const filter = includeInactive ? {} : { isActive: true };
-  const skip = (page - 1) * limit;
+  const skip = (validatedPage - 1) * validatedLimit;
   
   // Use MongoDB's built-in query methods with proper parameterization
   return this.find(filter)
     .sort({ publishDate: -1 })
     .skip(skip)
-    .limit(limit)
+    .limit(validatedLimit)
+    .populate('createdBy', 'name email')
+    .lean();
+};
+
+// Static method to find announcements by search criteria with input validation
+announcementSchema.statics.findBySearchCriteria = function(searchCriteria) {
+  // Validate and sanitize search criteria
+  const validCriteria = {};
+  
+  if (searchCriteria.title && typeof searchCriteria.title === 'string') {
+    // Use MongoDB's regex with escaped input to prevent injection
+    const escapedTitle = searchCriteria.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    validCriteria.title = { $regex: new RegExp(escapedTitle, 'i') };
+  }
+  
+  if (searchCriteria.priority && ['low', 'medium', 'high', 'urgent'].includes(searchCriteria.priority)) {
+    validCriteria.priority = searchCriteria.priority;
+  }
+  
+  if (typeof searchCriteria.isActive === 'boolean') {
+    validCriteria.isActive = searchCriteria.isActive;
+  }
+  
+  if (searchCriteria.createdBy && mongoose.Types.ObjectId.isValid(searchCriteria.createdBy)) {
+    validCriteria.createdBy = new mongoose.Types.ObjectId(searchCriteria.createdBy);
+  }
+  
+  return this.find(validCriteria)
+    .sort({ publishDate: -1 })
     .populate('createdBy', 'name email')
     .lean();
 };
@@ -117,6 +114,11 @@ announcementSchema.methods.toggleActive = function() {
 announcementSchema.pre('save', async function(next) {
   if (this.isNew || this.isModified('createdBy')) {
     try {
+      // Validate ObjectId format to prevent injection
+      if (!mongoose.Types.ObjectId.isValid(this.createdBy)) {
+        return next(new Error('Invalid user ID format'));
+      }
+      
       const User = mongoose.model('User');
       // Use parameterized query with findById to prevent injection
       const user = await User.findById(this.createdBy);
@@ -148,7 +150,4 @@ announcementSchema.set('toJSON', {
 
 const Announcement = mongoose.model('Announcement', announcementSchema);
 
-// Export the model along with the valid enum values for external validation
 module.exports = Announcement;
-module.exports.VALID_PRIORITIES = VALID_PRIORITIES;
-module.exports.VALID_CATEGORIES = VALID_CATEGORIES;

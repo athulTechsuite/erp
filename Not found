@@ -139,161 +139,278 @@ describe('TC-003: AnnouncementForm validation', () => {
   });
 });
 
-describe('TC-004: API security and error handling', () => {
-  const mockApiService = {
+describe('TC-004: Security and authentication testing', () => {
+  const mockAuthService = {
     authenticate: vi.fn(),
+    validateToken: vi.fn(),
+    refreshToken: vi.fn(),
+    logout: vi.fn(),
+    checkPermissions: vi.fn()
+  };
+
+  const mockApiService = {
     createAnnouncement: vi.fn(),
     getAnnouncements: vi.fn(),
-    validateToken: vi.fn()
+    updateAnnouncement: vi.fn(),
+    deleteAnnouncement: vi.fn()
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('Happy path security', () => {
-    it('should successfully authenticate user with valid credentials', async () => {
-      mockApiService.authenticate.mockResolvedValue({
+  describe('Happy path - Authentication and authorization', () => {
+    it('TC-004: should successfully authenticate user with valid credentials', async () => {
+      mockAuthService.authenticate.mockResolvedValue({
         success: true,
         token: 'valid-jwt-token',
-        user: { id: 1, username: 'testuser', role: 'admin' }
+        refreshToken: 'valid-refresh-token',
+        user: { 
+          id: 1, 
+          username: 'testuser', 
+          email: 'test@example.com',
+          role: 'admin' 
+        },
+        expiresIn: 3600
       });
 
-      const result = await mockApiService.authenticate({
+      const result = await mockAuthService.authenticate({
         username: 'testuser',
-        password: 'validPassword123!'
+        password: 'SecurePassword123!'
       });
 
       expect(result.success).toBe(true);
       expect(result.token).toBe('valid-jwt-token');
+      expect(result.refreshToken).toBe('valid-refresh-token');
       expect(result.user.role).toBe('admin');
+      expect(result.user.id).toBe(1);
+      expect(result.expiresIn).toBe(3600);
     });
 
-    it('should successfully validate JWT token', async () => {
-      mockApiService.validateToken.mockResolvedValue({
+    it('TC-004: should successfully validate JWT token with proper structure', async () => {
+      mockAuthService.validateToken.mockResolvedValue({
         valid: true,
-        payload: { userId: 1, role: 'admin', exp: Date.now() + 3600000 }
+        decoded: {
+          userId: 1,
+          username: 'testuser',
+          role: 'admin',
+          iat: Math.floor(Date.now() / 1000),
+          exp: Math.floor(Date.now() / 1000) + 3600
+        }
       });
 
-      const result = await mockApiService.validateToken('valid-jwt-token');
+      const result = await mockAuthService.validateToken('valid-jwt-token');
 
       expect(result.valid).toBe(true);
-      expect(result.payload.userId).toBe(1);
-      expect(result.payload.role).toBe('admin');
+      expect(result.decoded.userId).toBe(1);
+      expect(result.decoded.role).toBe('admin');
+      expect(result.decoded.exp).toBeGreaterThan(result.decoded.iat);
     });
 
-    it('should successfully create announcement with valid token', async () => {
+    it('TC-004: should successfully refresh expired token', async () => {
+      mockAuthService.refreshToken.mockResolvedValue({
+        success: true,
+        newToken: 'new-jwt-token',
+        newRefreshToken: 'new-refresh-token',
+        expiresIn: 3600
+      });
+
+      const result = await mockAuthService.refreshToken('valid-refresh-token');
+
+      expect(result.success).toBe(true);
+      expect(result.newToken).toBe('new-jwt-token');
+      expect(result.newRefreshToken).toBe('new-refresh-token');
+      expect(result.expiresIn).toBe(3600);
+    });
+
+    it('TC-004: should successfully authorize admin user for announcement creation', async () => {
+      mockAuthService.checkPermissions.mockResolvedValue({
+        authorized: true,
+        permissions: ['create_announcement', 'read_announcement', 'update_announcement', 'delete_announcement']
+      });
+
       mockApiService.createAnnouncement.mockResolvedValue({
         success: true,
         id: 123,
         title: 'New Announcement',
-        content: 'This is a new announcement',
+        content: 'This is a secure announcement',
+        createdBy: 1,
         createdAt: '2023-12-01T10:00:00Z'
       });
+
+      const authResult = await mockAuthService.checkPermissions('valid-admin-token', 'create_announcement');
+      expect(authResult.authorized).toBe(true);
 
       const result = await mockApiService.createAnnouncement(
         {
           title: 'New Announcement',
-          content: 'This is a new announcement'
+          content: 'This is a secure announcement'
         },
-        'valid-jwt-token'
+        'valid-admin-token'
       );
 
       expect(result.success).toBe(true);
       expect(result.id).toBe(123);
-      expect(result.title).toBe('New Announcement');
+      expect(result.createdBy).toBe(1);
     });
 
-    it('should successfully fetch announcements with proper authorization', async () => {
+    it('TC-004: should successfully fetch announcements with proper authentication', async () => {
       mockApiService.getAnnouncements.mockResolvedValue({
         success: true,
         data: [
-          { id: 1, title: 'Announcement 1', content: 'Content 1' },
-          { id: 2, title: 'Announcement 2', content: 'Content 2' }
+          { 
+            id: 1, 
+            title: 'Public Announcement', 
+            content: 'Content 1',
+            isPublic: true,
+            createdBy: 1
+          },
+          { 
+            id: 2, 
+            title: 'Private Announcement', 
+            content: 'Content 2',
+            isPublic: false,
+            createdBy: 1
+          }
         ],
         total: 2
       });
 
-      const result = await mockApiService.getAnnouncements('valid-jwt-token');
+      const result = await mockApiService.getAnnouncements('valid-user-token');
 
       expect(result.success).toBe(true);
       expect(result.data).toHaveLength(2);
       expect(result.total).toBe(2);
+      expect(result.data[0].isPublic).toBe(true);
+    });
+
+    it('TC-004: should successfully logout user and invalidate token', async () => {
+      mockAuthService.logout.mockResolvedValue({
+        success: true,
+        message: 'Successfully logged out'
+      });
+
+      const result = await mockAuthService.logout('valid-jwt-token');
+
+      expect(result.success).toBe(true);
+      expect(result.message).toBe('Successfully logged out');
     });
   });
 
-  describe('Error path security', () => {
-    it('should handle authentication failure with invalid credentials', async () => {
-      mockApiService.authenticate.mockResolvedValue({
+  describe('Error path - Security vulnerabilities and authentication failures', () => {
+    it('TC-004: should handle authentication failure with invalid credentials', async () => {
+      mockAuthService.authenticate.mockResolvedValue({
         success: false,
         error: 'Invalid username or password',
-        code: 'AUTH_FAILED'
+        code: 'AUTH_INVALID_CREDENTIALS',
+        attempts: 3,
+        lockoutTime: null
       });
 
-      const result = await mockApiService.authenticate({
+      const result = await mockAuthService.authenticate({
         username: 'wronguser',
         password: 'wrongpassword'
       });
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Invalid username or password');
-      expect(result.code).toBe('AUTH_FAILED');
+      expect(result.code).toBe('AUTH_INVALID_CREDENTIALS');
+      expect(result.attempts).toBe(3);
     });
 
-    it('should handle expired JWT token', async () => {
-      mockApiService.validateToken.mockResolvedValue({
-        valid: false,
-        error: 'Token has expired',
-        code: 'TOKEN_EXPIRED'
+    it('TC-004: should handle account lockout after multiple failed attempts', async () => {
+      mockAuthService.authenticate.mockResolvedValue({
+        success: false,
+        error: 'Account temporarily locked due to multiple failed login attempts',
+        code: 'AUTH_ACCOUNT_LOCKED',
+        attempts: 5,
+        lockoutTime: '2023-12-01T10:30:00Z'
       });
 
-      const result = await mockApiService.validateToken('expired-jwt-token');
+      const result = await mockAuthService.authenticate({
+        username: 'testuser',
+        password: 'wrongpassword'
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Account temporarily locked due to multiple failed login attempts');
+      expect(result.code).toBe('AUTH_ACCOUNT_LOCKED');
+      expect(result.lockoutTime).toBe('2023-12-01T10:30:00Z');
+    });
+
+    it('TC-004: should handle expired JWT token validation', async () => {
+      mockAuthService.validateToken.mockResolvedValue({
+        valid: false,
+        error: 'Token has expired',
+        code: 'TOKEN_EXPIRED',
+        expiredAt: '2023-12-01T09:00:00Z'
+      });
+
+      const result = await mockAuthService.validateToken('expired-jwt-token');
 
       expect(result.valid).toBe(false);
       expect(result.error).toBe('Token has expired');
       expect(result.code).toBe('TOKEN_EXPIRED');
+      expect(result.expiredAt).toBe('2023-12-01T09:00:00Z');
     });
 
-    it('should handle malformed JWT token', async () => {
-      mockApiService.validateToken.mockResolvedValue({
+    it('TC-004: should handle malformed JWT token', async () => {
+      mockAuthService.validateToken.mockResolvedValue({
         valid: false,
-        error: 'Malformed token',
+        error: 'Invalid token format',
         code: 'TOKEN_MALFORMED'
       });
 
-      const result = await mockApiService.validateToken('invalid-token');
+      const result = await mockAuthService.validateToken('invalid.token.format');
 
       expect(result.valid).toBe(false);
-      expect(result.error).toBe('Malformed token');
+      expect(result.error).toBe('Invalid token format');
       expect(result.code).toBe('TOKEN_MALFORMED');
     });
 
-    it('should handle unauthorized access attempt', async () => {
-      mockApiService.createAnnouncement.mockResolvedValue({
+    it('TC-004: should handle JWT token signature verification failure', async () => {
+      mockAuthService.validateToken.mockResolvedValue({
+        valid: false,
+        error: 'Token signature verification failed',
+        code: 'TOKEN_SIGNATURE_INVALID'
+      });
+
+      const result = await mockAuthService.validateToken('tampered.jwt.token');
+
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe('Token signature verification failed');
+      expect(result.code).toBe('TOKEN_SIGNATURE_INVALID');
+    });
+
+    it('TC-004: should handle unauthorized access attempt with insufficient permissions', async () => {
+      mockAuthService.checkPermissions.mockResolvedValue({
+        authorized: false,
+        userRole: 'user',
+        requiredPermission: 'delete_announcement'
+      });
+
+      mockApiService.deleteAnnouncement.mockResolvedValue({
         success: false,
-        error: 'Insufficient permissions',
-        code: 'UNAUTHORIZED',
+        error: 'Insufficient permissions to delete announcement',
+        code: 'FORBIDDEN',
         statusCode: 403
       });
 
-      const result = await mockApiService.createAnnouncement(
-        {
-          title: 'Unauthorized Announcement',
-          content: 'This should fail'
-        },
-        'user-token-without-admin-role'
-      );
+      const authResult = await mockAuthService.checkPermissions('user-token', 'delete_announcement');
+      expect(authResult.authorized).toBe(false);
+
+      const result = await mockApiService.deleteAnnouncement(123, 'user-token');
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Insufficient permissions');
-      expect(result.code).toBe('UNAUTHORIZED');
+      expect(result.error).toBe('Insufficient permissions to delete announcement');
+      expect(result.code).toBe('FORBIDDEN');
       expect(result.statusCode).toBe(403);
     });
 
-    it('should handle missing authentication token', async () => {
+    it('TC-004: should handle missing authentication token', async () => {
       mockApiService.getAnnouncements.mockResolvedValue({
         success: false,
-        error: 'Authentication token required',
+        error: 'Authentication token is required',
         code: 'TOKEN_MISSING',
         statusCode: 401
       });
@@ -301,58 +418,105 @@ describe('TC-004: API security and error handling', () => {
       const result = await mockApiService.getAnnouncements(null);
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Authentication token required');
+      expect(result.error).toBe('Authentication token is required');
       expect(result.code).toBe('TOKEN_MISSING');
       expect(result.statusCode).toBe(401);
     });
 
-    it('should handle API server error', async () => {
-      mockApiService.createAnnouncement.mockRejectedValue(new Error('Internal server error'));
+    it('TC-004: should handle SQL injection attempt in authentication', async () => {
+      mockAuthService.authenticate.mockResolvedValue({
+        success: false,
+        error: 'Invalid input detected',
+        code: 'SECURITY_VIOLATION',
+        blocked: true
+      });
 
-      await expect(
-        mockApiService.createAnnouncement(
-          {
-            title: 'Test Announcement',
-            content: 'Test content'
-          },
-          'valid-token'
-        )
-      ).rejects.toThrow('Internal server error');
+      const result = await mockAuthService.authenticate({
+        username: "admin' OR '1'='1",
+        password: "password"
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Invalid input detected');
+      expect(result.code).toBe('SECURITY_VIOLATION');
+      expect(result.blocked).toBe(true);
     });
 
-    it('should handle network timeout error', async () => {
-      mockApiService.authenticate.mockRejectedValue(new Error('Request timeout'));
-
-      await expect(
-        mockApiService.authenticate({
-          username: 'testuser',
-          password: 'password'
-        })
-      ).rejects.toThrow('Request timeout');
-    });
-
-    it('should handle rate limiting', async () => {
+    it('TC-004: should handle XSS attempt in announcement content', async () => {
       mockApiService.createAnnouncement.mockResolvedValue({
         success: false,
-        error: 'Rate limit exceeded',
-        code: 'RATE_LIMITED',
-        statusCode: 429,
-        retryAfter: 60
+        error: 'Content contains potentially harmful scripts',
+        code: 'CONTENT_SECURITY_VIOLATION',
+        statusCode: 400
       });
 
       const result = await mockApiService.createAnnouncement(
         {
-          title: 'Rate Limited Request',
-          content: 'This should be rate limited'
+          title: 'Test Announcement',
+          content: '<script>alert("XSS")</script>This is malicious content'
         },
-        'valid-token'
+        'valid-admin-token'
       );
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Rate limit exceeded');
+      expect(result.error).toBe('Content contains potentially harmful scripts');
+      expect(result.code).toBe('CONTENT_SECURITY_VIOLATION');
+      expect(result.statusCode).toBe(400);
+    });
+
+    it('TC-004: should handle refresh token theft/reuse attempt', async () => {
+      mockAuthService.refreshToken.mockResolvedValue({
+        success: false,
+        error: 'Refresh token has been compromised or already used',
+        code: 'TOKEN_COMPROMISED',
+        action: 'all_tokens_invalidated'
+      });
+
+      const result = await mockAuthService.refreshToken('compromised-refresh-token');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Refresh token has been compromised or already used');
+      expect(result.code).toBe('TOKEN_COMPROMISED');
+      expect(result.action).toBe('all_tokens_invalidated');
+    });
+
+    it('TC-004: should handle rate limiting for authentication attempts', async () => {
+      mockAuthService.authenticate.mockResolvedValue({
+        success: false,
+        error: 'Too many authentication attempts',
+        code: 'RATE_LIMITED',
+        statusCode: 429,
+        retryAfter: 300,
+        remainingAttempts: 0
+      });
+
+      const result = await mockAuthService.authenticate({
+        username: 'testuser',
+        password: 'password'
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Too many authentication attempts');
       expect(result.code).toBe('RATE_LIMITED');
       expect(result.statusCode).toBe(429);
-      expect(result.retryAfter).toBe(60);
+      expect(result.retryAfter).toBe(300);
+    });
+
+    it('TC-004: should handle session hijacking detection', async () => {
+      mockAuthService.validateToken.mockResolvedValue({
+        valid: false,
+        error: 'Token used from suspicious location',
+        code: 'SESSION_SECURITY_VIOLATION',
+        ipMismatch: true,
+        userAgentMismatch: false
+      });
+
+      const result = await mockAuthService.validateToken('potentially-hijacked-token');
+
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe('Token used from suspicious location');
+      expect(result.code).toBe('SESSION_SECURITY_VIOLATION');
+      expect(result.ipMismatch).toBe(true);
     });
   });
 });

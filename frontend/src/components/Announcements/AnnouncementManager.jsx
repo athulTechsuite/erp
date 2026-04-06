@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import PropTypes from 'prop-types';
 import { toast } from 'react-toastify';
 import './AnnouncementManager.css';
 
 const AnnouncementManager = () => {
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
     content: '',
@@ -15,13 +15,9 @@ const AnnouncementManager = () => {
   const [showForm, setShowForm] = useState(false);
   const requestQueueRef = useRef([]);
   const isProcessingRef = useRef(false);
-  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-    };
+    fetchAnnouncements();
   }, []);
 
   // Input sanitization utility
@@ -36,15 +32,8 @@ const AnnouncementManager = () => {
       .slice(0, input === formData.title ? 200 : 2000); // Enforce length limits
   };
 
-  // Safe state update utility
-  const safeSetState = useCallback((setter, value) => {
-    if (isMountedRef.current) {
-      setter(value);
-    }
-  }, []);
-
   // Request queue processor to handle race conditions
-  const processRequestQueue = useCallback(async () => {
+  const processRequestQueue = async () => {
     if (isProcessingRef.current || requestQueueRef.current.length === 0) {
       return;
     }
@@ -57,17 +46,14 @@ const AnnouncementManager = () => {
         await request();
       } catch (error) {
         console.error('Request failed:', error);
-        if (isMountedRef.current) {
-          toast.error('Operation failed. Please try again.');
-        }
       }
     }
     
     isProcessingRef.current = false;
-  }, []);
+  };
 
   // Add request to queue
-  const queueRequest = useCallback((requestFn) => {
+  const queueRequest = (requestFn) => {
     return new Promise((resolve, reject) => {
       requestQueueRef.current.push(async () => {
         try {
@@ -79,13 +65,11 @@ const AnnouncementManager = () => {
       });
       processRequestQueue();
     });
-  }, [processRequestQueue]);
+  };
 
-  const fetchAnnouncements = useCallback(async () => {
-    if (!isMountedRef.current) return;
-    
+  const fetchAnnouncements = async () => {
     try {
-      safeSetState(setLoading, true);
+      setLoading(true);
       // TODO: Consider using httpOnly cookies for token storage to prevent XSS attacks
       const token = localStorage.getItem('token');
       const response = await fetch('/api/announcements/admin', {
@@ -97,33 +81,20 @@ const AnnouncementManager = () => {
 
       if (!response.ok) {
         if (response.status === 403) {
-          if (isMountedRef.current) {
-            toast.error('Access denied. Admin privileges required.');
-          }
+          toast.error('Access denied. Admin privileges required.');
           return;
         }
         throw new Error('Failed to fetch announcements');
       }
 
       const data = await response.json();
-      if (isMountedRef.current) {
-        setAnnouncements(data);
-      }
+      setAnnouncements(data);
     } catch (error) {
-      if (isMountedRef.current) {
-        toast.error('Error loading announcements: ' + error.message);
-        setAnnouncements([]);
-      }
+      toast.error('Error loading announcements: ' + error.message);
     } finally {
-      if (isMountedRef.current) {
-        safeSetState(setLoading, false);
-      }
+      setLoading(false);
     }
-  }, [safeSetState]);
-
-  useEffect(() => {
-    fetchAnnouncements();
-  }, [fetchAnnouncements]);
+  };
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -135,8 +106,6 @@ const AnnouncementManager = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (submitting || !isMountedRef.current) return;
     
     // Sanitize inputs
     const sanitizedTitle = sanitizeInput(formData.title);
@@ -165,66 +134,53 @@ const AnnouncementManager = () => {
     };
 
     const submitRequest = async () => {
-      if (!isMountedRef.current) return;
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      const url = editingId 
+        ? `/api/announcements/${editingId}` 
+        : '/api/announcements';
       
-      safeSetState(setSubmitting, true);
-      try {
-        const token = localStorage.getItem('token');
-        const url = editingId 
-          ? `/api/announcements/${editingId}` 
-          : '/api/announcements';
-        
-        const method = editingId ? 'PUT' : 'POST';
+      const method = editingId ? 'PUT' : 'POST';
 
-        const response = await fetch(url, {
-          method,
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(sanitizedFormData)
-        });
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(sanitizedFormData)
+      });
 
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.message || 'Failed to save announcement');
-        }
-
-        const savedAnnouncement = await response.json();
-        
-        if (!isMountedRef.current) return;
-        
-        if (editingId) {
-          setAnnouncements(prev => 
-            prev.map(ann => ann.id === editingId ? savedAnnouncement : ann)
-          );
-          toast.success('Announcement updated successfully');
-        } else {
-          setAnnouncements(prev => [savedAnnouncement, ...prev]);
-          toast.success('Announcement created successfully');
-        }
-
-        resetForm();
-      } finally {
-        if (isMountedRef.current) {
-          safeSetState(setSubmitting, false);
-        }
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to save announcement');
       }
+
+      const savedAnnouncement = await response.json();
+      
+      if (editingId) {
+        setAnnouncements(prev => 
+          prev.map(ann => ann.id === editingId ? savedAnnouncement : ann)
+        );
+        toast.success('Announcement updated successfully');
+      } else {
+        setAnnouncements(prev => [savedAnnouncement, ...prev]);
+        toast.success('Announcement created successfully');
+      }
+
+      resetForm();
+      setLoading(false);
     };
 
     try {
       await queueRequest(submitRequest);
     } catch (error) {
-      if (isMountedRef.current) {
-        toast.error(error.message);
-        safeSetState(setSubmitting, false);
-      }
+      toast.error(error.message);
+      setLoading(false);
     }
   };
 
   const handleEdit = (announcement) => {
-    if (submitting) return;
-    
     setFormData({
       title: announcement.title,
       content: announcement.content,
@@ -235,94 +191,65 @@ const AnnouncementManager = () => {
   };
 
   const handleDelete = async (id) => {
-    if (submitting || !isMountedRef.current) return;
-    
     if (!window.confirm('Are you sure you want to delete this announcement?')) {
       return;
     }
 
     const deleteRequest = async () => {
-      if (!isMountedRef.current) return;
-      
-      safeSetState(setSubmitting, true);
-      try {
-        const token = localStorage.getItem('token');
-        const response = await fetch(`/api/announcements/${id}`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/announcements/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
 
-        if (!response.ok) {
-          throw new Error('Failed to delete announcement');
-        }
-
-        if (isMountedRef.current) {
-          setAnnouncements(prev => prev.filter(ann => ann.id !== id));
-          toast.success('Announcement deleted successfully');
-        }
-      } finally {
-        if (isMountedRef.current) {
-          safeSetState(setSubmitting, false);
-        }
+      if (!response.ok) {
+        throw new Error('Failed to delete announcement');
       }
+
+      setAnnouncements(prev => prev.filter(ann => ann.id !== id));
+      toast.success('Announcement deleted successfully');
+      setLoading(false);
     };
 
     try {
       await queueRequest(deleteRequest);
     } catch (error) {
-      if (isMountedRef.current) {
-        toast.error(error.message);
-        safeSetState(setSubmitting, false);
-      }
+      toast.error(error.message);
+      setLoading(false);
     }
   };
 
   const toggleStatus = async (id, currentStatus) => {
-    if (submitting || !isMountedRef.current) return;
-    
     const toggleRequest = async () => {
-      if (!isMountedRef.current) return;
-      
-      safeSetState(setSubmitting, true);
-      try {
-        const token = localStorage.getItem('token');
-        const response = await fetch(`/api/announcements/${id}`, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ isActive: !currentStatus })
-        });
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/announcements/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ isActive: !currentStatus })
+      });
 
-        if (!response.ok) {
-          throw new Error('Failed to update announcement status');
-        }
-
-        const updatedAnnouncement = await response.json();
-        
-        if (isMountedRef.current) {
-          setAnnouncements(prev => 
-            prev.map(ann => ann.id === id ? updatedAnnouncement : ann)
-          );
-          toast.success(`Announcement ${!currentStatus ? 'activated' : 'deactivated'}`);
-        }
-      } finally {
-        if (isMountedRef.current) {
-          safeSetState(setSubmitting, false);
-        }
+      if (!response.ok) {
+        throw new Error('Failed to update announcement status');
       }
+
+      const updatedAnnouncement = await response.json();
+      setAnnouncements(prev => 
+        prev.map(ann => ann.id === id ? updatedAnnouncement : ann)
+      );
+      
+      toast.success(`Announcement ${!currentStatus ? 'activated' : 'deactivated'}`);
     };
 
     try {
       await queueRequest(toggleRequest);
     } catch (error) {
-      if (isMountedRef.current) {
-        toast.error(error.message);
-        safeSetState(setSubmitting, false);
-      }
+      toast.error(error.message);
     }
   };
 
@@ -340,8 +267,6 @@ const AnnouncementManager = () => {
     return new Date(dateString).toLocaleString();
   };
 
-  const isFormDisabled = loading || submitting;
-
   return (
     <div className="announcement-manager">
       <div className="announcement-manager-header">
@@ -349,7 +274,7 @@ const AnnouncementManager = () => {
         <button
           className="btn btn-primary"
           onClick={() => setShowForm(!showForm)}
-          disabled={isFormDisabled}
+          disabled={loading}
         >
           {showForm ? 'Cancel' : 'Create New Announcement'}
         </button>
@@ -370,7 +295,6 @@ const AnnouncementManager = () => {
                 required
                 maxLength="200"
                 placeholder="Enter announcement title"
-                disabled={isFormDisabled}
               />
             </div>
 
@@ -385,7 +309,6 @@ const AnnouncementManager = () => {
                 rows="6"
                 maxLength="2000"
                 placeholder="Enter announcement content"
-                disabled={isFormDisabled}
               />
             </div>
 
@@ -396,7 +319,6 @@ const AnnouncementManager = () => {
                   name="isActive"
                   checked={formData.isActive}
                   onChange={handleInputChange}
-                  disabled={isFormDisabled}
                 />
                 <span>Publish immediately</span>
               </label>
@@ -406,15 +328,15 @@ const AnnouncementManager = () => {
               <button
                 type="submit"
                 className="btn btn-primary"
-                disabled={isFormDisabled}
+                disabled={loading}
               >
-                {submitting ? 'Saving...' : editingId ? 'Update' : 'Publish'}
+                {loading ? 'Saving...' : editingId ? 'Update' : 'Publish'}
               </button>
               <button
                 type="button"
                 className="btn btn-secondary"
                 onClick={resetForm}
-                disabled={isFormDisabled}
+                disabled={loading}
               >
                 Cancel
               </button>
@@ -462,21 +384,21 @@ const AnnouncementManager = () => {
               <button
                 className="btn btn-sm btn-secondary"
                 onClick={() => handleEdit(announcement)}
-                disabled={isFormDisabled}
+                disabled={loading}
               >
                 Edit
               </button>
               <button
                 className={`btn btn-sm ${announcement.isActive ? 'btn-warning' : 'btn-success'}`}
                 onClick={() => toggleStatus(announcement.id, announcement.isActive)}
-                disabled={isFormDisabled}
+                disabled={loading}
               >
                 {announcement.isActive ? 'Deactivate' : 'Activate'}
               </button>
               <button
                 className="btn btn-sm btn-danger"
                 onClick={() => handleDelete(announcement.id)}
-                disabled={isFormDisabled}
+                disabled={loading}
               >
                 Delete
               </button>
@@ -487,5 +409,8 @@ const AnnouncementManager = () => {
     </div>
   );
 };
+
+// PropTypes for type checking
+AnnouncementManager.propTypes = {};
 
 export default AnnouncementManager;

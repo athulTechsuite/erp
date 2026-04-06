@@ -1,0 +1,185 @@
+// TC-004: Input validation and error handling tests for announcements
+const { expect } = require('chai');
+const request = require('supertest');
+const app = require('../src/app');
+
+describe('TC-004: Announcement Input Validation and Error Handling', () => {
+  
+  describe('Happy Path - Valid Input', () => {
+    it('should accept valid announcement data', async () => {
+      const validAnnouncement = {
+        title: 'Test Announcement',
+        content: 'This is a valid test announcement content.',
+        priority: 'medium',
+        startDate: '2024-01-01T00:00:00Z',
+        endDate: '2024-12-31T23:59:59Z'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(validAnnouncement)
+        .expect(201);
+
+      expect(response.body).to.have.property('id');
+      expect(response.body.title).to.equal(validAnnouncement.title);
+    });
+
+    it('should accept announcement with optional fields', async () => {
+      const minimalAnnouncement = {
+        title: 'Minimal Announcement',
+        content: 'Required content only.'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(minimalAnnouncement)
+        .expect(201);
+
+      expect(response.body).to.have.property('id');
+      expect(response.body.title).to.equal(minimalAnnouncement.title);
+    });
+  });
+
+  describe('Error Path - Invalid Input', () => {
+    it('should reject announcement without required title', async () => {
+      const invalidAnnouncement = {
+        content: 'Content without title'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(invalidAnnouncement)
+        .expect(400);
+
+      expect(response.body).to.have.property('error');
+      expect(response.body.error).to.include('title');
+    });
+
+    it('should reject announcement without required content', async () => {
+      const invalidAnnouncement = {
+        title: 'Title without content'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(invalidAnnouncement)
+        .expect(400);
+
+      expect(response.body).to.have.property('error');
+      expect(response.body.error).to.include('content');
+    });
+
+    it('should reject announcement with invalid priority', async () => {
+      const invalidAnnouncement = {
+        title: 'Test Title',
+        content: 'Test content',
+        priority: 'invalid_priority'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(invalidAnnouncement)
+        .expect(400);
+
+      expect(response.body).to.have.property('error');
+      expect(response.body.error).to.include('priority');
+    });
+
+    it('should reject announcement with invalid date format', async () => {
+      const invalidAnnouncement = {
+        title: 'Test Title',
+        content: 'Test content',
+        startDate: 'invalid-date'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(invalidAnnouncement)
+        .expect(400);
+
+      expect(response.body).to.have.property('error');
+      expect(response.body.error).to.include('date');
+    });
+
+    it('should reject announcement with end date before start date', async () => {
+      const invalidAnnouncement = {
+        title: 'Test Title',
+        content: 'Test content',
+        startDate: '2024-12-31T00:00:00Z',
+        endDate: '2024-01-01T00:00:00Z'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(invalidAnnouncement)
+        .expect(400);
+
+      expect(response.body).to.have.property('error');
+      expect(response.body.error).to.include('end date must be after start date');
+    });
+
+    it('should reject announcement with title exceeding maximum length', async () => {
+      const invalidAnnouncement = {
+        title: 'A'.repeat(256), // Assuming 255 is max length
+        content: 'Test content'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(invalidAnnouncement)
+        .expect(400);
+
+      expect(response.body).to.have.property('error');
+      expect(response.body.error).to.include('title');
+    });
+
+    it('should reject empty request body', async () => {
+      const response = await request(app)
+        .post('/api/announcements')
+        .send({})
+        .expect(400);
+
+      expect(response.body).to.have.property('error');
+    });
+
+    it('should handle malformed JSON gracefully', async () => {
+      const response = await request(app)
+        .post('/api/announcements')
+        .set('Content-Type', 'application/json')
+        .send('{"title": "Test", "content":}') // Malformed JSON
+        .expect(400);
+
+      expect(response.body).to.have.property('error');
+    });
+  });
+
+  describe('Update Validation', () => {
+    it('should validate input when updating announcements', async () => {
+      // First create an announcement
+      const announcement = {
+        title: 'Original Title',
+        content: 'Original content'
+      };
+
+      const createResponse = await request(app)
+        .post('/api/announcements')
+        .send(announcement)
+        .expect(201);
+
+      const announcementId = createResponse.body.id;
+
+      // Try to update with invalid data
+      const invalidUpdate = {
+        priority: 'invalid_priority'
+      };
+
+      const response = await request(app)
+        .put(`/api/announcements/${announcementId}`)
+        .send(invalidUpdate)
+        .expect(400);
+
+      expect(response.body).to.have.property('error');
+      expect(response.body.error).to.include('priority');
+    });
+  });
+});

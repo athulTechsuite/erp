@@ -18,6 +18,7 @@ const AnnouncementForm = ({
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
+  const [csrfToken, setCsrfToken] = useState('');
 
   useEffect(() => {
     if (announcement) {
@@ -26,6 +27,11 @@ const AnnouncementForm = ({
         content: announcement.content || ''
       });
     }
+    
+    // Get CSRF token from meta tag or API
+    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                  document.cookie.split('; ').find(row => row.startsWith('csrftoken='))?.split('=')[1] || '';
+    setCsrfToken(token);
   }, [announcement]);
 
   const validateField = (name, value) => {
@@ -98,7 +104,8 @@ const AnnouncementForm = ({
       await onSave({
         ...formData,
         title: formData.title.trim(),
-        content: formData.content.trim()
+        content: formData.content.trim(),
+        csrfToken: csrfToken
       });
     } catch (error) {
       console.error('Error saving announcement:', error);
@@ -124,6 +131,8 @@ const AnnouncementForm = ({
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
+          <input type="hidden" name="csrfToken" value={csrfToken} />
+          
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />

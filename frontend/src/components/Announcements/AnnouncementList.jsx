@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardContent } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Trash2, Edit, Calendar } from 'lucide-react';
@@ -12,7 +11,6 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const { user } = useAuth();
-  const navigate = useNavigate();
 
   useEffect(() => {
     fetchAnnouncements();
@@ -34,7 +32,19 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
     }
   };
 
+  const canEditAnnouncement = (announcement) => {
+    if (!user) return false;
+    // Allow if user is admin or the author of the announcement
+    return user.role === 'admin' || user.id === announcement.authorId;
+  };
+
   const handleDelete = async (id) => {
+    const announcement = announcements.find(a => a.id === id);
+    if (!announcement || !canEditAnnouncement(announcement)) {
+      setError('You do not have permission to delete this announcement');
+      return;
+    }
+
     if (!window.confirm('Are you sure you want to delete this announcement?')) {
       return;
     }
@@ -46,6 +56,14 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
       setError('Failed to delete announcement');
       console.error('Error deleting announcement:', err);
     }
+  };
+
+  const handleEdit = (announcement) => {
+    if (!canEditAnnouncement(announcement)) {
+      setError('You do not have permission to edit this announcement');
+      return;
+    }
+    window.location.href = `/admin/announcements/edit/${announcement.id}`;
   };
 
   const formatDate = (dateString) => {
@@ -60,7 +78,22 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
 
   const sanitizeContent = (content) => {
     return DOMPurify.sanitize(content, {
-      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u'],
+      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'a', 'ul', 'ol', 'li'],
+      ALLOWED_ATTR: ['href', 'target'],
+      ALLOW_DATA_ATTR: false
+    });
+  };
+
+  const sanitizeTitle = (title) => {
+    return DOMPurify.sanitize(title, {
+      ALLOWED_TAGS: [],
+      ALLOWED_ATTR: []
+    });
+  };
+
+  const sanitizeAuthorName = (name) => {
+    return DOMPurify.sanitize(name, {
+      ALLOWED_TAGS: [],
       ALLOWED_ATTR: []
     });
   };
@@ -108,20 +141,20 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                  {announcement.title}
+                  {sanitizeTitle(announcement.title)}
                 </h3>
                 <div className="flex items-center text-sm text-gray-500">
                   <Calendar className="h-4 w-4 mr-1" />
                   <span>Published {formatDate(announcement.createdAt)}</span>
                   {announcement.author && (
-                    <span className="ml-2">by {announcement.author.name}</span>
+                    <span className="ml-2">by {sanitizeAuthorName(announcement.author.name)}</span>
                   )}
                 </div>
               </div>
-              {showActions && (
+              {showActions && canEditAnnouncement(announcement) && (
                 <div className="flex items-center space-x-2 ml-4">
                   <button
-                    onClick={() => navigate(`/admin/announcements/edit/${announcement.id}`)}
+                    onClick={() => handleEdit(announcement)}
                     className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                     title="Edit announcement"
                   >

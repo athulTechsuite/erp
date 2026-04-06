@@ -1,0 +1,104 @@
+const { expect } = require('chai');
+const sinon = require('sinon');
+const authService = require('../src/auth/authService');
+const { AuthError } = require('../src/auth/errors');
+
+describe('TC-001: Authentication and authorization', () => {
+  let authStub;
+
+  beforeEach(() => {
+    authStub = sinon.stub(authService, 'authenticate');
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  describe('Happy path scenarios', () => {
+    it('should successfully authenticate user with valid credentials', async () => {
+      // Arrange
+      const validCredentials = {
+        username: 'testuser',
+        password: 'validPassword123'
+      };
+      const expectedToken = 'jwt-token-123';
+      authStub.resolves({ token: expectedToken, user: { id: 1, username: 'testuser' } });
+
+      // Act
+      const result = await authService.authenticate(validCredentials);
+
+      // Assert
+      expect(result).to.have.property('token', expectedToken);
+      expect(result.user).to.have.property('username', 'testuser');
+      expect(authStub.calledOnceWith(validCredentials)).to.be.true;
+    });
+
+    it('should successfully authorize user with valid token', async () => {
+      // Arrange
+      const validToken = 'Bearer jwt-token-123';
+      const expectedUser = { id: 1, username: 'testuser', role: 'user' };
+      const authorizeStub = sinon.stub(authService, 'authorize').resolves(expectedUser);
+
+      // Act
+      const result = await authService.authorize(validToken);
+
+      // Assert
+      expect(result).to.deep.equal(expectedUser);
+      expect(authorizeStub.calledOnceWith(validToken)).to.be.true;
+
+      authorizeStub.restore();
+    });
+  });
+
+  describe('Error path scenarios', () => {
+    it('should reject authentication with invalid credentials', async () => {
+      // Arrange
+      const invalidCredentials = {
+        username: 'testuser',
+        password: 'wrongPassword'
+      };
+      authStub.rejects(new AuthError('Invalid credentials'));
+
+      // Act & Assert
+      await expect(authService.authenticate(invalidCredentials))
+        .to.be.rejectedWith(AuthError, 'Invalid credentials');
+      expect(authStub.calledOnceWith(invalidCredentials)).to.be.true;
+    });
+
+    it('should reject authorization with invalid token', async () => {
+      // Arrange
+      const invalidToken = 'Bearer invalid-token';
+      const authorizeStub = sinon.stub(authService, 'authorize')
+        .rejects(new AuthError('Invalid or expired token'));
+
+      // Act & Assert
+      await expect(authService.authorize(invalidToken))
+        .to.be.rejectedWith(AuthError, 'Invalid or expired token');
+      expect(authorizeStub.calledOnceWith(invalidToken)).to.be.true;
+
+      authorizeStub.restore();
+    });
+
+    it('should reject authentication with missing credentials', async () => {
+      // Arrange
+      const missingCredentials = {};
+      authStub.rejects(new AuthError('Username and password are required'));
+
+      // Act & Assert
+      await expect(authService.authenticate(missingCredentials))
+        .to.be.rejectedWith(AuthError, 'Username and password are required');
+    });
+
+    it('should reject authorization with missing token', async () => {
+      // Arrange
+      const authorizeStub = sinon.stub(authService, 'authorize')
+        .rejects(new AuthError('Authorization token is required'));
+
+      // Act & Assert
+      await expect(authService.authorize(null))
+        .to.be.rejectedWith(AuthError, 'Authorization token is required');
+
+      authorizeStub.restore();
+    });
+  });
+});

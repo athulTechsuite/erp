@@ -20,6 +20,8 @@ CREATE TABLE announcements (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     
     -- Foreign key constraint to users table
+    -- NOTE: Backend code MUST use parameterized queries when inserting/updating created_by
+    -- to prevent SQL injection and ensure data integrity with this constraint
     CONSTRAINT fk_announcements_created_by 
         FOREIGN KEY (created_by) 
         REFERENCES users(id) 

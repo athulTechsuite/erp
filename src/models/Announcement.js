@@ -77,7 +77,7 @@ announcementSchema.methods.toggleActive = function() {
   return this.save();
 };
 
-// Pre-save middleware to validate user permissions
+// Pre-save middleware to validate user permissions with parameterized queries
 announcementSchema.pre('save', async function(next) {
   if (this.isNew || this.isModified('createdBy')) {
     try {

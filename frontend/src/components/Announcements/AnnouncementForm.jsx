@@ -145,7 +145,7 @@ const AnnouncementForm = ({
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{errors.submit}</AlertDescription>
+              <AlertDescription dangerouslySetInnerHTML={{ __html: errors.submit }}></AlertDescription>
             </Alert>
           )}
           

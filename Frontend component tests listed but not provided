@@ -15,8 +15,8 @@ describe('Announcement Component', () => {
     jest.clearAllMocks();
   });
 
-  // TC-002: Announcement component integration - Happy path
-  describe('TC-002: Announcement component integration - Happy path', () => {
+  // TC-002: Component integration testing - Happy path
+  describe('TC-002: Component integration testing - Happy path', () => {
     test('should render announcements successfully when API returns data', async () => {
       // Arrange
       const mockAnnouncements = [
@@ -81,10 +81,40 @@ describe('Announcement Component', () => {
         expect(screen.getByText(/no announcements/i)).toBeInTheDocument();
       });
     });
+
+    test('should handle component state updates correctly', async () => {
+      // Arrange
+      const mockAnnouncements = [
+        {
+          id: 1,
+          title: 'Dynamic Announcement',
+          content: 'Content updates correctly',
+          priority: 'low',
+          createdAt: '2023-01-01T00:00:00Z'
+        }
+      ];
+
+      getAnnouncements.mockResolvedValue({
+        data: mockAnnouncements,
+        status: 200
+      });
+
+      // Act
+      render(<Announcement />);
+
+      // Assert initial loading state
+      expect(screen.getByText(/loading/i)).toBeInTheDocument();
+
+      // Assert data loaded state
+      await waitFor(() => {
+        expect(screen.getByText('Dynamic Announcement')).toBeInTheDocument();
+        expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
+      });
+    });
   });
 
-  // TC-002: Announcement component integration - Error path
-  describe('TC-002: Announcement component integration - Error path', () => {
+  // TC-002: Component integration testing - Error path
+  describe('TC-002: Component integration testing - Error path', () => {
     test('should display error message when API call fails', async () => {
       // Arrange
       const mockError = new Error('Failed to fetch announcements');
@@ -168,6 +198,44 @@ describe('Announcement Component', () => {
       });
 
       expect(getAnnouncements).toHaveBeenCalledTimes(2);
+    });
+
+    test('should handle malformed API response data', async () => {
+      // Arrange
+      getAnnouncements.mockResolvedValue({
+        data: { invalid: 'structure' }, // Not an array
+        status: 200
+      });
+
+      // Act
+      render(<Announcement />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText(/error loading announcements/i)).toBeInTheDocument();
+      });
+    });
+
+    test('should handle component unmounting during API call', async () => {
+      // Arrange
+      let resolvePromise;
+      const promise = new Promise((resolve) => {
+        resolvePromise = resolve;
+      });
+      getAnnouncements.mockReturnValue(promise);
+
+      // Act
+      const { unmount } = render(<Announcement />);
+      unmount();
+
+      // Resolve the promise after unmount
+      resolvePromise({
+        data: [],
+        status: 200
+      });
+
+      // Assert - no errors should be thrown
+      expect(getAnnouncements).toHaveBeenCalledTimes(1);
     });
   });
 });

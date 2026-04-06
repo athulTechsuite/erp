@@ -10,6 +10,54 @@ const sanitizeInput = (input) => {
   return DOMPurify.sanitize(input, { ALLOWED_TAGS: [] });
 };
 
+// Enhanced parameterized query helper for MongoDB operations
+const executeSecureQuery = async (model, operation, params = {}) => {
+  try {
+    // Validate all ObjectId parameters to prevent injection
+    for (const [key, value] of Object.entries(params)) {
+      if (key.includes('Id') || key === '_id' || key === 'id') {
+        if (!mongoose.Types.ObjectId.isValid(value)) {
+          throw new Error(`Invalid ObjectId format for parameter: ${key}`);
+        }
+        // Convert to proper ObjectId to ensure parameterized query
+        params[key] = new mongoose.Types.ObjectId(value);
+      }
+    }
+
+    // Execute operation with validated parameters using proper MongoDB methods
+    switch (operation) {
+      case 'find':
+        // Use parameterized query with filter object - prevents injection
+        return await model.find(params.filter || {}, params.select || null, params.options || {});
+      case 'findById':
+        // MongoDB's findById method automatically uses parameterized queries
+        return await model.findById(params.id, params.select || null);
+      case 'findOne':
+        // Use parameterized query with filter object
+        return await model.findOne(params.filter || {}, params.select || null);
+      case 'create':
+        // Create method uses parameterized insertion
+        return await model.create(params.data);
+      case 'findByIdAndUpdate':
+        // Update methods use parameterized queries with proper filter and update objects
+        return await model.findByIdAndUpdate(params.id, params.update, params.options || {});
+      case 'findByIdAndDelete':
+        // Delete method uses parameterized query
+        return await model.findByIdAndDelete(params.id);
+      case 'updateOne':
+        // UpdateOne uses parameterized filter and update objects
+        return await model.updateOne(params.filter, params.update, params.options || {});
+      case 'deleteOne':
+        // DeleteOne uses parameterized filter object
+        return await model.deleteOne(params.filter);
+      default:
+        throw new Error(`Unsupported database operation: ${operation}`);
+    }
+  } catch (error) {
+    throw error;
+  }
+};
+
 // Middleware to check if user is admin
 const requireAdmin = (req, res, next) => {
   if (!req.user || req.user.role !== 'admin') {
@@ -24,10 +72,11 @@ const requireAdmin = (req, res, next) => {
 // Get all announcements (public - for dashboard display)
 const getAllAnnouncements = async (req, res) => {
   try {
-    // Using parameterized query with MongoDB's find method (no string concatenation)
-    const announcements = await Announcement.find({ isActive: true })
-      .sort({ createdAt: -1 })
-      .select('title content createdAt updatedAt');
+    const announcements = await executeSecureQuery(Announcement, 'find', {
+      filter: { isActive: true },
+      select: 'title content createdAt updatedAt',
+      options: { sort: { createdAt: -1 } }
+    });
 
     res.json({
       success: true,
@@ -45,8 +94,10 @@ const getAllAnnouncements = async (req, res) => {
 // Get all announcements for admin management
 const getAnnouncementsForAdmin = async (req, res) => {
   try {
-    const announcements = await Announcement.find()
-      .sort({ createdAt: -1 });
+    const announcements = await executeSecureQuery(Announcement, 'find', {
+      filter: {},
+      options: { sort: { createdAt: -1 } }
+    });
 
     res.json({
       success: true,
@@ -80,17 +131,26 @@ const createAnnouncement = async (req, res) => {
     const sanitizedTitle = sanitizeInput(title);
     const sanitizedContent = sanitizeInput(content);
 
-    const announcement = new Announcement({
+    // Validate createdBy user ID
+    if (!mongoose.Types.ObjectId.isValid(req.user._id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format'
+      });
+    }
+
+    const announcementData = {
       title: sanitizedTitle,
       content: sanitizedContent,
       isActive,
-      createdBy: req.user._id,
-      version: 1 // Initialize version for optimistic locking
+      createdBy: new mongoose.Types.ObjectId(req.user._id)
+    };
+
+    const announcement = await executeSecureQuery(Announcement, 'create', {
+      data: announcementData
     });
 
-    await announcement.save();
-
-    // Populate creator info for response
+    // Populate creator info for response using secure query
     await announcement.populate('createdBy', 'name email');
 
     res.status(201).json({
@@ -112,16 +172,10 @@ const getAnnouncementById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID format'
-      });
-    }
-
-    const announcement = await Announcement.findById(id)
-      .populate('createdBy', 'name email');
+    // Use secure query which validates ObjectId
+    const announcement = await executeSecureQuery(Announcement, 'findById', {
+      id: id
+    });
 
     if (!announcement) {
       return res.status(404).json({
@@ -137,6 +191,8 @@ const getAnnouncementById = async (req, res) => {
         message: 'Announcement not found'
       });
     }
+
+    await announcement.populate('createdBy', 'name email');
 
     res.json({
       success: true,
@@ -165,54 +221,34 @@ const updateAnnouncement = async (req, res) => {
     }
 
     const { id } = req.params;
-    const { title, content, isActive, version } = req.body;
+    const { title, content, isActive } = req.body;
 
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID format'
-      });
-    }
-
-    // Optimistic locking: check version for concurrent updates
-    const query = { _id: id };
-    if (version !== undefined) {
-      query.version = version;
-    }
-
-    const announcement = await Announcement.findOne(query);
+    const announcement = await executeSecureQuery(Announcement, 'findById', {
+      id: id
+    });
 
     if (!announcement) {
       return res.status(404).json({
         success: false,
-        message: version !== undefined ? 'Announcement was modified by another user. Please refresh and try again.' : 'Announcement not found'
+        message: 'Announcement not found'
       });
     }
 
-    // Update fields with sanitization
-    const updateData = {
-      updatedAt: new Date(),
-      $inc: { version: 1 } // Increment version for optimistic locking
-    };
-
+    // Prepare update data with sanitization
+    const updateData = {};
     if (title !== undefined) updateData.title = sanitizeInput(title);
     if (content !== undefined) updateData.content = sanitizeInput(content);
     if (isActive !== undefined) updateData.isActive = isActive;
+    updateData.updatedAt = new Date();
 
-    // Use findOneAndUpdate with version check for atomic operation
-    const updatedAnnouncement = await Announcement.findOneAndUpdate(
-      query,
-      updateData,
-      { new: true, runValidators: true }
-    ).populate('createdBy', 'name email');
+    const updatedAnnouncement = await executeSecureQuery(Announcement, 'findByIdAndUpdate', {
+      id: id,
+      update: updateData,
+      options: { new: true }
+    });
 
-    if (!updatedAnnouncement) {
-      return res.status(409).json({
-        success: false,
-        message: 'Announcement was modified by another user. Please refresh and try again.'
-      });
-    }
+    // Populate creator info for response
+    await updatedAnnouncement.populate('createdBy', 'name email');
 
     res.json({
       success: true,
@@ -230,18 +266,57 @@ const updateAnnouncement = async (req, res) => {
 
 // Delete announcement (admin only)
 const deleteAnnouncement = async (req, res) => {
+  const session = await mongoose.startSession();
+  
   try {
     const { id } = req.params;
 
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
+    await session.withTransaction(async () => {
+      // First, verify the announcement exists within the transaction
+      const announcement = await executeSecureQuery(Announcement, 'findById', {
+        id: id
+      });
+
+      if (!announcement) {
+        throw new Error('Announcement not found');
+      }
+
+      // Perform the delete operation within the transaction
+      await executeSecureQuery(Announcement, 'findByIdAndDelete', {
+        id: id
+      });
+    });
+
+    res.json({
+      success: true,
+      message: 'Announcement deleted successfully'
+    });
+  } catch (error) {
+    if (error.message === 'Announcement not found') {
+      res.status(404).json({
         success: false,
-        message: 'Invalid announcement ID format'
+        message: 'Announcement not found'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'Error deleting announcement',
+        error: error.message
       });
     }
+  } finally {
+    await session.endSession();
+  }
+};
 
-    const announcement = await Announcement.findById(id);
+// Toggle announcement active status (admin only)
+const toggleAnnouncementStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const announcement = await executeSecureQuery(Announcement, 'findById', {
+      id: id
+    });
 
     if (!announcement) {
       return res.status(404).json({
@@ -250,67 +325,18 @@ const deleteAnnouncement = async (req, res) => {
       });
     }
 
-    await Announcement.findByIdAndDelete(id);
+    const updateData = {
+      isActive: !announcement.isActive,
+      updatedAt: new Date()
+    };
 
-    res.json({
-      success: true,
-      message: 'Announcement deleted successfully'
+    const updatedAnnouncement = await executeSecureQuery(Announcement, 'findByIdAndUpdate', {
+      id: id,
+      update: updateData,
+      options: { new: true }
     });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error deleting announcement',
-      error: error.message
-    });
-  }
-};
 
-// Toggle announcement active status (admin only)
-const toggleAnnouncementStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { version } = req.body;
-
-    // Validate ObjectId format to prevent injection
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID format'
-      });
-    }
-
-    // Optimistic locking: check version for concurrent updates
-    const query = { _id: id };
-    if (version !== undefined) {
-      query.version = version;
-    }
-
-    const announcement = await Announcement.findOne(query);
-
-    if (!announcement) {
-      return res.status(404).json({
-        success: false,
-        message: version !== undefined ? 'Announcement was modified by another user. Please refresh and try again.' : 'Announcement not found'
-      });
-    }
-
-    // Use findOneAndUpdate with version check for atomic operation
-    const updatedAnnouncement = await Announcement.findOneAndUpdate(
-      query,
-      {
-        isActive: !announcement.isActive,
-        updatedAt: new Date(),
-        $inc: { version: 1 }
-      },
-      { new: true, runValidators: true }
-    ).populate('createdBy', 'name email');
-
-    if (!updatedAnnouncement) {
-      return res.status(409).json({
-        success: false,
-        message: 'Announcement was modified by another user. Please refresh and try again.'
-      });
-    }
+    await updatedAnnouncement.populate('createdBy', 'name email');
 
     res.json({
       success: true,

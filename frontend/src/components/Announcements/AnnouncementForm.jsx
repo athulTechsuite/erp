@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import DOMPurify from 'dompurify';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -23,11 +22,19 @@ const AnnouncementForm = ({
   useEffect(() => {
     if (announcement) {
       setFormData({
-        title: DOMPurify.sanitize(announcement.title || ''),
-        content: DOMPurify.sanitize(announcement.content || '')
+        title: announcement.title || '',
+        content: announcement.content || ''
       });
     }
   }, [announcement]);
+
+  const sanitizeErrorMessage = (message) => {
+    if (typeof message !== 'string') {
+      return 'An error occurred. Please try again.';
+    }
+    // Remove HTML tags and return plain text
+    return message.replace(/<[^>]*>/g, '');
+  };
 
   const validateField = (name, value) => {
     const fieldErrors = {};
@@ -98,13 +105,14 @@ const AnnouncementForm = ({
     try {
       await onSave({
         ...formData,
-        title: DOMPurify.sanitize(formData.title.trim()),
-        content: DOMPurify.sanitize(formData.content.trim())
+        title: formData.title.trim(),
+        content: formData.content.trim()
       });
     } catch (error) {
       console.error('Error saving announcement:', error);
+      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to save announcement. Please try again.';
       setErrors({ 
-        submit: 'Failed to save announcement. Please try again.' 
+        submit: sanitizeErrorMessage(errorMessage)
       });
     }
   };
@@ -128,7 +136,9 @@ const AnnouncementForm = ({
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{DOMPurify.sanitize(errors.submit)}</AlertDescription>
+              <AlertDescription>
+                {sanitizeErrorMessage(errors.submit)}
+              </AlertDescription>
             </Alert>
           )}
           
@@ -149,7 +159,7 @@ const AnnouncementForm = ({
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.title && touched.title && (
-                  <span className="text-red-500">{DOMPurify.sanitize(errors.title)}</span>
+                  <span className="text-red-500">{errors.title}</span>
                 )}
               </span>
               <span>{formData.title.length}/200</span>
@@ -174,7 +184,7 @@ const AnnouncementForm = ({
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.content && touched.content && (
-                  <span className="text-red-500">{DOMPurify.sanitize(errors.content)}</span>
+                  <span className="text-red-500">{errors.content}</span>
                 )}
               </span>
               <span>{formData.content.length}/5000</span>

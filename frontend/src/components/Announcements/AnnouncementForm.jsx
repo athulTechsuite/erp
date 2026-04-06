@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { useAuth } from '../../hooks/useAuth';
+import React, { useState, useContext } from 'react';
+import { AuthContext } from '../../contexts/AuthContext';
 
 const AnnouncementForm = ({ onAnnouncementCreated, editingAnnouncement, onEditComplete }) => {
-  const { user } = useAuth();
+  const { user } = useContext(AuthContext);
   const [formData, setFormData] = useState({
     title: editingAnnouncement?.title || '',
     content: editingAnnouncement?.content || ''

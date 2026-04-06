@@ -5,7 +5,6 @@ import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Save, X, AlertCircle } from 'lucide-react';
-import DOMPurify from 'dompurify';
 
 const AnnouncementForm = ({ 
   announcement = null, 
@@ -23,18 +22,48 @@ const AnnouncementForm = ({
   useEffect(() => {
     if (announcement) {
       setFormData({
-        title: DOMPurify.sanitize(announcement.title || ''),
-        content: DOMPurify.sanitize(announcement.content || '')
+        title: announcement.title || '',
+        content: announcement.content || ''
       });
     }
   }, [announcement]);
+
+  const sanitizeInput = (input) => {
+    if (typeof input !== 'string') {
+      return '';
+    }
+    
+    // Remove potentially dangerous characters and patterns
+    return input
+      // Remove HTML tags
+      .replace(/<[^>]*>/g, '')
+      // Remove script tags and content
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      // Remove javascript: and data: URLs
+      .replace(/javascript:|data:/gi, '')
+      // Remove null bytes
+      .replace(/\0/g, '')
+      // Limit to printable ASCII and common unicode characters
+      .replace(/[^\x20-\x7E\u00A0-\u024F\u1E00-\u1EFF]/g, '')
+      // Trim whitespace
+      .trim();
+  };
 
   const sanitizeErrorMessage = (message) => {
     if (typeof message !== 'string') {
       return 'An error occurred. Please try again.';
     }
-    // Use DOMPurify to sanitize error messages
-    return DOMPurify.sanitize(message, { ALLOWED_TAGS: [] });
+    // Remove HTML tags and escape special characters
+    return message.replace(/<[^>]*>/g, '').replace(/[<>&"']/g, (match) => {
+      const htmlEntities = {
+        '<': '&lt;',
+        '>': '&gt;',
+        '&': '&amp;',
+        '"': '&quot;',
+        "'": '&#x27;'
+      };
+      return htmlEntities[match];
+    });
   };
 
   const validateField = (name, value) => {
@@ -45,6 +74,8 @@ const AnnouncementForm = ({
         fieldErrors.title = 'Title is required';
       } else if (value.length > 200) {
         fieldErrors.title = 'Title must be less than 200 characters';
+      } else if (value.length < 3) {
+        fieldErrors.title = 'Title must be at least 3 characters';
       }
     }
     
@@ -53,6 +84,8 @@ const AnnouncementForm = ({
         fieldErrors.content = 'Content is required';
       } else if (value.length > 5000) {
         fieldErrors.content = 'Content must be less than 5000 characters';
+      } else if (value.length < 10) {
+        fieldErrors.content = 'Content must be at least 10 characters';
       }
     }
     
@@ -60,8 +93,13 @@ const AnnouncementForm = ({
   };
 
   const validateForm = () => {
-    const titleErrors = validateField('title', formData.title);
-    const contentErrors = validateField('content', formData.content);
+    const sanitizedData = {
+      title: sanitizeInput(formData.title),
+      content: sanitizeInput(formData.content)
+    };
+    
+    const titleErrors = validateField('title', sanitizedData.title);
+    const contentErrors = validateField('content', sanitizedData.content);
     
     const allErrors = { ...titleErrors, ...contentErrors };
     setErrors(allErrors);
@@ -72,9 +110,12 @@ const AnnouncementForm = ({
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     
+    // Sanitize input in real-time
+    const sanitizedValue = sanitizeInput(value);
+    
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: sanitizedValue
     }));
 
     // Clear errors for this field when user starts typing
@@ -90,7 +131,8 @@ const AnnouncementForm = ({
     const { name, value } = e.target;
     setTouched(prev => ({ ...prev, [name]: true }));
     
-    const fieldErrors = validateField(name, value);
+    const sanitizedValue = sanitizeInput(value);
+    const fieldErrors = validateField(name, sanitizedValue);
     setErrors(prev => ({ ...prev, ...fieldErrors }));
   };
 
@@ -99,15 +141,24 @@ const AnnouncementForm = ({
     
     setTouched({ title: true, content: true });
     
+    // Sanitize form data before validation
+    const sanitizedData = {
+      title: sanitizeInput(formData.title),
+      content: sanitizeInput(formData.content)
+    };
+    
+    // Update form data with sanitized values
+    setFormData(sanitizedData);
+    
     if (!validateForm()) {
       return;
     }
 
     try {
       await onSave({
-        ...formData,
-        title: DOMPurify.sanitize(formData.title.trim()),
-        content: DOMPurify.sanitize(formData.content.trim())
+        ...sanitizedData,
+        title: sanitizedData.title.trim(),
+        content: sanitizedData.content.trim()
       });
     } catch (error) {
       console.error('Error saving announcement:', error);
@@ -137,7 +188,7 @@ const AnnouncementForm = ({
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription dangerouslySetInnerHTML={{ __html: errors.submit }}></AlertDescription>
+              <AlertDescription>{errors.submit}</AlertDescription>
             </Alert>
           )}
           
@@ -158,7 +209,7 @@ const AnnouncementForm = ({
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.title && touched.title && (
-                  <span className="text-red-500" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(errors.title) }}></span>
+                  <span className="text-red-500">{errors.title}</span>
                 )}
               </span>
               <span>{formData.title.length}/200</span>
@@ -183,7 +234,7 @@ const AnnouncementForm = ({
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.content && touched.content && (
-                  <span className="text-red-500" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(errors.content) }}></span>
+                  <span className="text-red-500">{errors.content}</span>
                 )}
               </span>
               <span>{formData.content.length}/5000</span>

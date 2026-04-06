@@ -1,17 +1,12 @@
 const mongoose = require('mongoose');
+const validator = require('validator');
 
 const announcementSchema = new mongoose.Schema({
   title: {
     type: String,
     required: [true, 'Announcement title is required'],
     trim: true,
-    maxlength: [200, 'Title cannot exceed 200 characters'],
-    validate: {
-      validator: function(v) {
-        return v && v.trim().length > 0;
-      },
-      message: 'Title cannot be empty or contain only whitespace'
-    }
+    maxlength: [200, 'Title cannot exceed 200 characters']
   },
   content: {
     type: String,
@@ -20,9 +15,14 @@ const announcementSchema = new mongoose.Schema({
     maxlength: [5000, 'Content cannot exceed 5000 characters'],
     validate: {
       validator: function(v) {
-        return v && v.trim().length > 0;
+        // Sanitize content to prevent XSS attacks
+        return validator.escape(v);
       },
-      message: 'Content cannot be empty or contain only whitespace'
+      message: 'Content contains invalid characters'
+    },
+    set: function(v) {
+      // Sanitize content on save to prevent XSS
+      return validator.escape(v);
     }
   },
   createdBy: {

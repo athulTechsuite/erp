@@ -2,11 +2,16 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { jest } from '@jest/globals';
 import AnnouncementForm from '../components/AnnouncementForm';
+import AnnouncementList from '../components/AnnouncementList';
+import AnnouncementDetail from '../components/AnnouncementDetail';
 import { AuthProvider } from '../contexts/AuthContext';
 import { act } from 'react-dom/test-utils';
 
 // Mock dependencies
 const mockSubmit = jest.fn();
+const mockUpdate = jest.fn();
+const mockDelete = jest.fn();
+const mockFetch = jest.fn();
 const mockAuthContext = {
   user: { id: 'user123', role: 'admin' },
   isAuthenticated: true,
@@ -20,124 +25,390 @@ const TestWrapper = ({ children, authContext = mockAuthContext }) => (
   </AuthProvider>
 );
 
-describe('TC-003: AnnouncementForm component validation and submission', () => {
+const mockAnnouncements = [
+  {
+    id: '1',
+    title: 'Test Announcement 1',
+    content: 'This is test content for announcement 1',
+    category: 'general',
+    createdAt: '2024-01-01T00:00:00Z',
+    author: { id: 'admin1', name: 'Admin User' }
+  },
+  {
+    id: '2',
+    title: 'Test Announcement 2',
+    content: 'This is test content for announcement 2',
+    category: 'important',
+    createdAt: '2024-01-02T00:00:00Z',
+    author: { id: 'admin2', name: 'Admin User 2' }
+  }
+];
+
+describe('TC-003: Announcement CRUD Operations', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('TC-003 Happy Path - Form validation and successful submission', () => {
-    it('should validate required fields and submit successfully with valid data', async () => {
+  describe('TC-003 Happy Path - Successful CRUD operations', () => {
+    it('should create a new announcement successfully', async () => {
       const user = userEvent.setup();
+      const mockCreateSubmit = jest.fn().mockResolvedValue({
+        id: '3',
+        title: 'New Announcement',
+        content: 'This is new announcement content',
+        category: 'general'
+      });
+
       render(
         <TestWrapper>
-          <AnnouncementForm onSubmit={mockSubmit} />
+          <AnnouncementForm onSubmit={mockCreateSubmit} mode="create" />
         </TestWrapper>
       );
 
-      // Fill form with valid data
-      const titleInput = screen.getByLabelText(/title/i);
-      const contentInput = screen.getByLabelText(/content/i);
-      const submitButton = screen.getByRole('button', { name: /submit/i });
+      // Fill form with valid data for CREATE operation
+      await user.type(screen.getByLabelText(/title/i), 'New Announcement');
+      await user.type(screen.getByLabelText(/content/i), 'This is new announcement content');
+      await user.selectOptions(screen.getByLabelText(/category/i), 'general');
 
-      await user.type(titleInput, 'Test Announcement Title');
-      await user.type(contentInput, 'This is a test announcement content with sufficient length');
-
-      // Submit form
-      await user.click(submitButton);
+      // Submit form to CREATE announcement
+      await user.click(screen.getByRole('button', { name: /create|submit/i }));
 
       await waitFor(() => {
-        expect(mockSubmit).toHaveBeenCalledWith({
-          title: 'Test Announcement Title',
-          content: 'This is a test announcement content with sufficient length'
+        expect(mockCreateSubmit).toHaveBeenCalledWith({
+          title: 'New Announcement',
+          content: 'This is new announcement content',
+          category: 'general'
         });
       });
 
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 
-    it('should handle optional fields correctly during submission', async () => {
-      const user = userEvent.setup();
+    it('should read and display announcements successfully', async () => {
+      const mockFetchAnnouncements = jest.fn().mockResolvedValue(mockAnnouncements);
+
       render(
         <TestWrapper>
-          <AnnouncementForm onSubmit={mockSubmit} />
+          <AnnouncementList fetchAnnouncements={mockFetchAnnouncements} />
         </TestWrapper>
       );
 
-      await user.type(screen.getByLabelText(/title/i), 'Test Title');
-      await user.type(screen.getByLabelText(/content/i), 'Test content');
-      
-      const categorySelect = screen.getByLabelText(/category/i);
-      await user.selectOptions(categorySelect, 'general');
+      // Wait for announcements to be READ/fetched and displayed
+      await waitFor(() => {
+        expect(mockFetchAnnouncements).toHaveBeenCalled();
+        expect(screen.getByText('Test Announcement 1')).toBeInTheDocument();
+        expect(screen.getByText('Test Announcement 2')).toBeInTheDocument();
+      });
 
-      await user.click(screen.getByRole('button', { name: /submit/i }));
+      // Verify READ operation displays correct content
+      expect(screen.getByText('This is test content for announcement 1')).toBeInTheDocument();
+      expect(screen.getByText('This is test content for announcement 2')).toBeInTheDocument();
+    });
+
+    it('should update an existing announcement successfully', async () => {
+      const user = userEvent.setup();
+      const existingAnnouncement = mockAnnouncements[0];
+      const mockUpdateSubmit = jest.fn().mockResolvedValue({
+        ...existingAnnouncement,
+        title: 'Updated Announcement Title',
+        content: 'Updated announcement content'
+      });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm 
+            onSubmit={mockUpdateSubmit} 
+            mode="update"
+            initialData={existingAnnouncement}
+          />
+        </TestWrapper>
+      );
+
+      // Verify form is pre-populated for UPDATE
+      expect(screen.getByDisplayValue('Test Announcement 1')).toBeInTheDocument();
+      
+      // Modify fields for UPDATE operation
+      const titleInput = screen.getByLabelText(/title/i);
+      const contentInput = screen.getByLabelText(/content/i);
+      
+      await user.clear(titleInput);
+      await user.clear(contentInput);
+      await user.type(titleInput, 'Updated Announcement Title');
+      await user.type(contentInput, 'Updated announcement content');
+
+      // Submit UPDATE
+      await user.click(screen.getByRole('button', { name: /update|save/i }));
 
       await waitFor(() => {
-        expect(mockSubmit).toHaveBeenCalledWith({
-          title: 'Test Title',
-          content: 'Test content',
-          category: 'general'
+        expect(mockUpdateSubmit).toHaveBeenCalledWith({
+          id: '1',
+          title: 'Updated Announcement Title',
+          content: 'Updated announcement content',
+          category: 'general',
+          createdAt: '2024-01-01T00:00:00Z',
+          author: { id: 'admin1', name: 'Admin User' }
         });
+      });
+    });
+
+    it('should delete an announcement successfully', async () => {
+      const user = userEvent.setup();
+      const mockDeleteAction = jest.fn().mockResolvedValue({ success: true });
+
+      render(
+        <TestWrapper>
+          <AnnouncementDetail 
+            announcement={mockAnnouncements[0]}
+            onDelete={mockDeleteAction}
+            canDelete={true}
+          />
+        </TestWrapper>
+      );
+
+      // Find and click DELETE button
+      const deleteButton = screen.getByRole('button', { name: /delete/i });
+      await user.click(deleteButton);
+
+      // Confirm deletion in modal/dialog
+      const confirmButton = await screen.findByRole('button', { name: /confirm|yes/i });
+      await user.click(confirmButton);
+
+      await waitFor(() => {
+        expect(mockDeleteAction).toHaveBeenCalledWith('1');
+      });
+    });
+
+    it('should handle batch operations on multiple announcements', async () => {
+      const user = userEvent.setup();
+      const mockBatchDelete = jest.fn().mockResolvedValue({ deleted: 2 });
+
+      render(
+        <TestWrapper>
+          <AnnouncementList 
+            announcements={mockAnnouncements}
+            onBatchDelete={mockBatchDelete}
+            allowBatchOperations={true}
+          />
+        </TestWrapper>
+      );
+
+      // Select multiple announcements for batch operations
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[0]); // Select first announcement
+      await user.click(checkboxes[1]); // Select second announcement
+
+      // Perform batch DELETE operation
+      const batchDeleteButton = screen.getByRole('button', { name: /delete selected/i });
+      await user.click(batchDeleteButton);
+
+      // Confirm batch deletion
+      const confirmButton = await screen.findByRole('button', { name: /confirm/i });
+      await user.click(confirmButton);
+
+      await waitFor(() => {
+        expect(mockBatchDelete).toHaveBeenCalledWith(['1', '2']);
       });
     });
   });
 
-  describe('TC-003 Error Path - Form validation failures', () => {
-    it('should display validation errors for empty required fields', async () => {
+  describe('TC-003 Error Path - CRUD operation failures', () => {
+    it('should handle CREATE operation failures gracefully', async () => {
       const user = userEvent.setup();
+      const mockCreateError = jest.fn().mockRejectedValue(new Error('Failed to create announcement'));
+
       render(
         <TestWrapper>
-          <AnnouncementForm onSubmit={mockSubmit} />
+          <AnnouncementForm onSubmit={mockCreateError} mode="create" />
         </TestWrapper>
       );
 
-      const submitButton = screen.getByRole('button', { name: /submit/i });
-      await user.click(submitButton);
+      await user.type(screen.getByLabelText(/title/i), 'Failed Create Test');
+      await user.type(screen.getByLabelText(/content/i), 'This create operation will fail');
+      await user.click(screen.getByRole('button', { name: /create|submit/i }));
 
       await waitFor(() => {
-        expect(screen.getByText(/title is required/i)).toBeInTheDocument();
-        expect(screen.getByText(/content is required/i)).toBeInTheDocument();
+        expect(screen.getByText(/failed to create announcement/i)).toBeInTheDocument();
       });
-
-      expect(mockSubmit).not.toHaveBeenCalled();
     });
 
-    it('should validate minimum length requirements', async () => {
-      const user = userEvent.setup();
+    it('should handle READ operation failures and display error state', async () => {
+      const mockFetchError = jest.fn().mockRejectedValue(new Error('Failed to fetch announcements'));
+
       render(
         <TestWrapper>
-          <AnnouncementForm onSubmit={mockSubmit} />
+          <AnnouncementList fetchAnnouncements={mockFetchError} />
         </TestWrapper>
       );
 
-      await user.type(screen.getByLabelText(/title/i), 'ab'); // Too short
-      await user.type(screen.getByLabelText(/content/i), 'short'); // Too short
-      await user.click(screen.getByRole('button', { name: /submit/i }));
-
       await waitFor(() => {
-        expect(screen.getByText(/title must be at least 3 characters/i)).toBeInTheDocument();
-        expect(screen.getByText(/content must be at least 10 characters/i)).toBeInTheDocument();
+        expect(mockFetchError).toHaveBeenCalled();
+        expect(screen.getByText(/failed to load announcements/i)).toBeInTheDocument();
       });
 
-      expect(mockSubmit).not.toHaveBeenCalled();
+      // Should show retry option
+      expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
     });
 
-    it('should handle submission errors gracefully', async () => {
+    it('should handle UPDATE operation failures with proper error messaging', async () => {
       const user = userEvent.setup();
-      const mockSubmitError = jest.fn().mockRejectedValue(new Error('Server error'));
-      
+      const mockUpdateError = jest.fn().mockRejectedValue(new Error('Update failed: Server error'));
+
       render(
         <TestWrapper>
-          <AnnouncementForm onSubmit={mockSubmitError} />
+          <AnnouncementForm 
+            onSubmit={mockUpdateError} 
+            mode="update"
+            initialData={mockAnnouncements[0]}
+          />
         </TestWrapper>
       );
 
-      await user.type(screen.getByLabelText(/title/i), 'Valid Title');
-      await user.type(screen.getByLabelText(/content/i), 'Valid content for testing');
-      await user.click(screen.getByRole('button', { name: /submit/i }));
+      // Attempt to update
+      const titleInput = screen.getByLabelText(/title/i);
+      await user.clear(titleInput);
+      await user.type(titleInput, 'Failed Update');
+      await user.click(screen.getByRole('button', { name: /update|save/i }));
 
       await waitFor(() => {
-        expect(screen.getByText(/failed to submit announcement/i)).toBeInTheDocument();
+        expect(screen.getByText(/failed to update announcement/i)).toBeInTheDocument();
       });
+
+      // Form should remain populated for retry
+      expect(screen.getByDisplayValue('Failed Update')).toBeInTheDocument();
+    });
+
+    it('should handle DELETE operation failures and prevent data loss', async () => {
+      const user = userEvent.setup();
+      const mockDeleteError = jest.fn().mockRejectedValue(new Error('Delete operation failed'));
+
+      render(
+        <TestWrapper>
+          <AnnouncementDetail 
+            announcement={mockAnnouncements[0]}
+            onDelete={mockDeleteError}
+            canDelete={true}
+          />
+        </TestWrapper>
+      );
+
+      await user.click(screen.getByRole('button', { name: /delete/i }));
+      const confirmButton = await screen.findByRole('button', { name: /confirm|yes/i });
+      await user.click(confirmButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/failed to delete announcement/i)).toBeInTheDocument();
+      });
+
+      // Announcement should still be visible after failed delete
+      expect(screen.getByText('Test Announcement 1')).toBeInTheDocument();
+    });
+
+    it('should validate data integrity during CRUD operations', async () => {
+      const user = userEvent.setup();
+      const mockValidationError = jest.fn().mockRejectedValue({
+        response: { 
+          status: 422, 
+          data: { 
+            message: 'Validation failed',
+            errors: {
+              title: 'Title contains invalid characters',
+              content: 'Content exceeds maximum length'
+            }
+          }
+        }
+      });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockValidationError} mode="create" />
+        </TestWrapper>
+      );
+
+      // Submit invalid data
+      await user.type(screen.getByLabelText(/title/i), '<script>alert("xss")</script>');
+      await user.type(screen.getByLabelText(/content/i), 'x'.repeat(10000)); // Exceeds limit
+      await user.click(screen.getByRole('button', { name: /create|submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/title contains invalid characters/i)).toBeInTheDocument();
+        expect(screen.getByText(/content exceeds maximum length/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should handle network errors during CRUD operations', async () => {
+      const user = userEvent.setup();
+      const mockNetworkError = jest.fn().mockRejectedValue(new Error('Network Error'));
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockNetworkError} mode="create" />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'Network Error Test');
+      await user.type(screen.getByLabelText(/content/i), 'Testing network error handling');
+      await user.click(screen.getByRole('button', { name: /create|submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/network error.*please check your connection/i)).toBeInTheDocument();
+      });
+
+      // Should offer retry option
+      expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+    });
+
+    it('should handle concurrent modification conflicts', async () => {
+      const user = userEvent.setup();
+      const mockConflictError = jest.fn().mockRejectedValue({
+        response: {
+          status: 409,
+          data: { message: 'Announcement was modified by another user' }
+        }
+      });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm 
+            onSubmit={mockConflictError} 
+            mode="update"
+            initialData={mockAnnouncements[0]}
+          />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/content/i), ' - Modified');
+      await user.click(screen.getByRole('button', { name: /update|save/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/announcement was modified by another user/i)).toBeInTheDocument();
+      });
+
+      // Should offer option to reload or force update
+      expect(screen.getByRole('button', { name: /reload/i })).toBeInTheDocument();
+    });
+
+    it('should handle authorization errors during CRUD operations', async () => {
+      const user = userEvent.setup();
+      const unauthorizedContext = {
+        user: { id: 'user123', role: 'user' },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      const mockAuthError = jest.fn().mockRejectedValue({
+        response: { status: 403, data: { message: 'Insufficient privileges' } }
+      });
+
+      render(
+        <TestWrapper authContext={unauthorizedContext}>
+          <AnnouncementForm onSubmit={mockAuthError} mode="create" />
+        </TestWrapper>
+      );
+
+      // Should show insufficient privileges message
+      expect(screen.getByText(/insufficient privileges/i)).toBeInTheDocument();
+      expect(screen.queryByRole('form')).not.toBeInTheDocument();
     });
   });
 });

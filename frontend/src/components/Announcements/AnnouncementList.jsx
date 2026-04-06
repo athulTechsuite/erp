@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardContent } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Trash2, Edit, Calendar } from 'lucide-react';
@@ -11,6 +12,7 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchAnnouncements();
@@ -32,26 +34,7 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
     }
   };
 
-  const canDeleteAnnouncement = (announcement) => {
-    if (!user) return false;
-    // Admin can delete any announcement, authors can delete their own
-    return user.role === 'admin' || user.id === announcement.authorId;
-  };
-
-  const canEditAnnouncement = (announcement) => {
-    if (!user) return false;
-    // Admin can edit any announcement, authors can edit their own
-    return user.role === 'admin' || user.id === announcement.authorId;
-  };
-
   const handleDelete = async (id) => {
-    const announcement = announcements.find(a => a.id === id);
-    
-    if (!canDeleteAnnouncement(announcement)) {
-      setError('You do not have permission to delete this announcement');
-      return;
-    }
-
     if (!window.confirm('Are you sure you want to delete this announcement?')) {
       return;
     }
@@ -63,6 +46,10 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
       setError('Failed to delete announcement');
       console.error('Error deleting announcement:', err);
     }
+  };
+
+  const handleEdit = (announcementId) => {
+    navigate(`/admin/announcements/edit/${announcementId}`);
   };
 
   const formatDate = (dateString) => {
@@ -77,7 +64,7 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
 
   const sanitizeContent = (content) => {
     return DOMPurify.sanitize(content, {
-      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'a', 'ul', 'ol', 'li'],
+      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'a'],
       ALLOWED_ATTR: ['href', 'target'],
       ALLOW_DATA_ATTR: false
     });
@@ -87,30 +74,12 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
     return (
       <div className="space-y-4">
         {[...Array(3)].map((_, index) => (
-          <Card key={index} className="animate-pulse border-l-4 border-l-gray-200">
-            <CardHeader className="pb-2">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="h-6 bg-gray-200 rounded w-3/4 mb-2"></div>
-                  <div className="flex items-center">
-                    <div className="h-4 w-4 bg-gray-200 rounded mr-1"></div>
-                    <div className="h-4 bg-gray-200 rounded w-40"></div>
-                  </div>
-                </div>
-                {showActions && (
-                  <div className="flex items-center space-x-2 ml-4">
-                    <div className="h-8 w-8 bg-gray-200 rounded-lg"></div>
-                    <div className="h-8 w-8 bg-gray-200 rounded-lg"></div>
-                  </div>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="space-y-2">
-                <div className="h-4 bg-gray-200 rounded w-full"></div>
-                <div className="h-4 bg-gray-200 rounded w-5/6"></div>
-                <div className="h-4 bg-gray-200 rounded w-2/3"></div>
-              </div>
+          <Card key={index} className="animate-pulse">
+            <CardContent className="p-4">
+              <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+              <div className="h-3 bg-gray-200 rounded w-1/2 mb-3"></div>
+              <div className="h-3 bg-gray-200 rounded w-full mb-2"></div>
+              <div className="h-3 bg-gray-200 rounded w-2/3"></div>
             </CardContent>
           </Card>
         ))}
@@ -154,26 +123,22 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
                   )}
                 </div>
               </div>
-              {showActions && (
+              {showActions && user?.role === 'admin' && (
                 <div className="flex items-center space-x-2 ml-4">
-                  {canEditAnnouncement(announcement) && (
-                    <button
-                      onClick={() => window.location.href = `/admin/announcements/edit/${announcement.id}`}
-                      className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="Edit announcement"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </button>
-                  )}
-                  {canDeleteAnnouncement(announcement) && (
-                    <button
-                      onClick={() => handleDelete(announcement.id)}
-                      className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Delete announcement"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => handleEdit(announcement.id)}
+                    className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    title="Edit announcement"
+                  >
+                    <Edit className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(announcement.id)}
+                    className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Delete announcement"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
               )}
             </div>

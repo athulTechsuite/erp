@@ -82,6 +82,108 @@ describe('TC-004: Input validation and error handling', () => {
   });
 });
 
+// TC-005: Authentication and Authorization test coverage
+describe('TC-005: Authentication and Authorization', () => {
+  // Authentication tests
+  describe('User authentication', () => {
+    test('TC-005: should authenticate valid user credentials', () => {
+      const credentials = { username: 'testuser', password: 'password123' };
+      const result = authenticateUser(credentials);
+      expect(result.authenticated).toBe(true);
+      expect(result.token).toBeDefined();
+      expect(result.user.role).toBeDefined();
+    });
+
+    test('TC-005: should reject invalid credentials', () => {
+      const credentials = { username: 'testuser', password: 'wrongpassword' };
+      const result = authenticateUser(credentials);
+      expect(result.authenticated).toBe(false);
+      expect(result.error).toBe('Invalid credentials');
+      expect(result.token).toBeUndefined();
+    });
+
+    test('TC-005: should reject missing credentials', () => {
+      const credentials = { username: '', password: '' };
+      const result = authenticateUser(credentials);
+      expect(result.authenticated).toBe(false);
+      expect(result.error).toBe('Username and password are required');
+    });
+
+    test('TC-005: should handle expired tokens', () => {
+      const expiredToken = 'expired.jwt.token';
+      const result = validateToken(expiredToken);
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe('Token expired');
+    });
+  });
+
+  // Role-based authorization tests
+  describe('Role-based authorization', () => {
+    test('TC-005: should allow admin access to all endpoints', () => {
+      const user = { id: 1, role: 'admin' };
+      const endpoint = '/admin/users';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(true);
+    });
+
+    test('TC-005: should allow user access to own resources', () => {
+      const user = { id: 1, role: 'user' };
+      const endpoint = '/user/1/profile';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(true);
+    });
+
+    test('TC-005: should deny user access to other user resources', () => {
+      const user = { id: 1, role: 'user' };
+      const endpoint = '/user/2/profile';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(false);
+      expect(result.error).toBe('Access denied: insufficient permissions');
+    });
+
+    test('TC-005: should deny guest access to protected endpoints', () => {
+      const user = { id: null, role: 'guest' };
+      const endpoint = '/user/profile';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(false);
+      expect(result.error).toBe('Authentication required');
+    });
+
+    test('TC-005: should allow moderator access to moderation endpoints', () => {
+      const user = { id: 1, role: 'moderator' };
+      const endpoint = '/moderate/content';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(true);
+    });
+
+    test('TC-005: should deny regular user access to admin endpoints', () => {
+      const user = { id: 1, role: 'user' };
+      const endpoint = '/admin/settings';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(false);
+      expect(result.error).toBe('Access denied: admin role required');
+    });
+  });
+
+  // Permission-based access tests
+  describe('Permission-based access control', () => {
+    test('TC-005: should grant access with sufficient permissions', () => {
+      const user = { id: 1, role: 'user', permissions: ['read', 'write'] };
+      const requiredPermissions = ['read'];
+      const result = checkPermissions(user, requiredPermissions);
+      expect(result.authorized).toBe(true);
+    });
+
+    test('TC-005: should deny access with insufficient permissions', () => {
+      const user = { id: 1, role: 'user', permissions: ['read'] };
+      const requiredPermissions = ['read', 'write', 'delete'];
+      const result = checkPermissions(user, requiredPermissions);
+      expect(result.authorized).toBe(false);
+      expect(result.error).toBe('Insufficient permissions');
+    });
+  });
+});
+
 // Mock functions for testing
 function validateInput(input) {
   if (input === null) {
@@ -111,4 +213,69 @@ function validateEmail(email) {
     return { isValid: false, error: 'Invalid email format' };
   }
   return { isValid: true, error: null };
+}
+
+// Mock authentication and authorization functions
+function authenticateUser(credentials) {
+  if (!credentials.username || !credentials.password) {
+    return { authenticated: false, error: 'Username and password are required' };
+  }
+  if (credentials.username === 'testuser' && credentials.password === 'password123') {
+    return { 
+      authenticated: true, 
+      token: 'mock.jwt.token',
+      user: { id: 1, username: 'testuser', role: 'user' }
+    };
+  }
+  return { authenticated: false, error: 'Invalid credentials' };
+}
+
+function validateToken(token) {
+  if (token === 'expired.jwt.token') {
+    return { valid: false, error: 'Token expired' };
+  }
+  if (token === 'mock.jwt.token') {
+    return { valid: true, user: { id: 1, username: 'testuser', role: 'user' } };
+  }
+  return { valid: false, error: 'Invalid token' };
+}
+
+function checkAuthorization(user, endpoint) {
+  if (!user.id && user.role === 'guest') {
+    return { authorized: false, error: 'Authentication required' };
+  }
+  
+  if (user.role === 'admin') {
+    return { authorized: true };
+  }
+  
+  if (endpoint.startsWith('/admin/')) {
+    return { authorized: false, error: 'Access denied: admin role required' };
+  }
+  
+  if (endpoint.startsWith('/moderate/') && user.role !== 'moderator' && user.role !== 'admin') {
+    return { authorized: false, error: 'Access denied: moderator role required' };
+  }
+  
+  if (endpoint.includes('/user/')) {
+    const userIdMatch = endpoint.match(/\/user\/(\d+)\//);
+    if (userIdMatch && parseInt(userIdMatch[1]) !== user.id) {
+      return { authorized: false, error: 'Access denied: insufficient permissions' };
+    }
+  }
+  
+  return { authorized: true };
+}
+
+function checkPermissions(user, requiredPermissions) {
+  const userPermissions = user.permissions || [];
+  const hasAllPermissions = requiredPermissions.every(permission => 
+    userPermissions.includes(permission)
+  );
+  
+  if (!hasAllPermissions) {
+    return { authorized: false, error: 'Insufficient permissions' };
+  }
+  
+  return { authorized: true };
 }

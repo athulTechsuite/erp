@@ -1,6 +1,7 @@
 const Announcement = require('../models/Announcement');
 const { validationResult } = require('express-validator');
 const DOMPurify = require('isomorphic-dompurify');
+const mongoose = require('mongoose');
 
 // Input sanitization middleware
 const sanitizeInput = (input) => {
@@ -108,6 +109,15 @@ const createAnnouncement = async (req, res) => {
 const getAnnouncementById = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
+
     const announcement = await Announcement.findById(id)
       .populate('createdBy', 'name email');
 
@@ -155,6 +165,14 @@ const updateAnnouncement = async (req, res) => {
     const { id } = req.params;
     const { title, content, isActive } = req.body;
 
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
+
     const announcement = await Announcement.findById(id);
 
     if (!announcement) {
@@ -194,6 +212,14 @@ const deleteAnnouncement = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
+
     const announcement = await Announcement.findById(id);
 
     if (!announcement) {
@@ -222,6 +248,14 @@ const deleteAnnouncement = async (req, res) => {
 const toggleAnnouncementStatus = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
 
     const announcement = await Announcement.findById(id);
 

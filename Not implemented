@@ -1,0 +1,329 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { jest } from '@jest/globals';
+import AnnouncementForm from '../components/AnnouncementForm';
+import { AuthProvider } from '../contexts/AuthContext';
+import { act } from 'react-dom/test-utils';
+
+// Mock dependencies
+const mockSubmit = jest.fn();
+const mockAuthContext = {
+  user: { id: 'user123', role: 'admin' },
+  isAuthenticated: true,
+  login: jest.fn(),
+  logout: jest.fn()
+};
+
+const TestWrapper = ({ children, authContext = mockAuthContext }) => (
+  <AuthProvider value={authContext}>
+    {children}
+  </AuthProvider>
+);
+
+describe('TC-003: AnnouncementForm component validation and submission', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('TC-003 Happy Path - Form validation and successful submission', () => {
+    it('should validate required fields and submit successfully with valid data', async () => {
+      const user = userEvent.setup();
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      // Fill form with valid data
+      const titleInput = screen.getByLabelText(/title/i);
+      const contentInput = screen.getByLabelText(/content/i);
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+
+      await user.type(titleInput, 'Test Announcement Title');
+      await user.type(contentInput, 'This is a test announcement content with sufficient length');
+
+      // Submit form
+      await user.click(submitButton);
+
+      await waitFor(() => {
+        expect(mockSubmit).toHaveBeenCalledWith({
+          title: 'Test Announcement Title',
+          content: 'This is a test announcement content with sufficient length'
+        });
+      });
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('should handle optional fields correctly during submission', async () => {
+      const user = userEvent.setup();
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'Test Title');
+      await user.type(screen.getByLabelText(/content/i), 'Test content');
+      
+      const categorySelect = screen.getByLabelText(/category/i);
+      await user.selectOptions(categorySelect, 'general');
+
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSubmit).toHaveBeenCalledWith({
+          title: 'Test Title',
+          content: 'Test content',
+          category: 'general'
+        });
+      });
+    });
+  });
+
+  describe('TC-003 Error Path - Form validation failures', () => {
+    it('should display validation errors for empty required fields', async () => {
+      const user = userEvent.setup();
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+      await user.click(submitButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/title is required/i)).toBeInTheDocument();
+        expect(screen.getByText(/content is required/i)).toBeInTheDocument();
+      });
+
+      expect(mockSubmit).not.toHaveBeenCalled();
+    });
+
+    it('should validate minimum length requirements', async () => {
+      const user = userEvent.setup();
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'ab'); // Too short
+      await user.type(screen.getByLabelText(/content/i), 'short'); // Too short
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/title must be at least 3 characters/i)).toBeInTheDocument();
+        expect(screen.getByText(/content must be at least 10 characters/i)).toBeInTheDocument();
+      });
+
+      expect(mockSubmit).not.toHaveBeenCalled();
+    });
+
+    it('should handle submission errors gracefully', async () => {
+      const user = userEvent.setup();
+      const mockSubmitError = jest.fn().mockRejectedValue(new Error('Server error'));
+      
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitError} />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'Valid Title');
+      await user.type(screen.getByLabelText(/content/i), 'Valid content for testing');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/failed to submit announcement/i)).toBeInTheDocument();
+      });
+    });
+  });
+});
+
+describe('TC-004: Authorization and security tests', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('TC-004 Happy Path - Authorized access and operations', () => {
+    it('should allow authenticated admin users to access AnnouncementForm', () => {
+      const adminAuthContext = {
+        user: { id: 'admin123', role: 'admin' },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={adminAuthContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      expect(screen.getByRole('form')).toBeInTheDocument();
+      expect(screen.getByLabelText(/title/i)).toBeEnabled();
+      expect(screen.getByLabelText(/content/i)).toBeEnabled();
+      expect(screen.getByRole('button', { name: /submit/i })).toBeEnabled();
+    });
+
+    it('should allow authenticated moderator users to access AnnouncementForm', () => {
+      const moderatorAuthContext = {
+        user: { id: 'mod123', role: 'moderator' },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={moderatorAuthContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      expect(screen.getByRole('form')).toBeInTheDocument();
+      expect(screen.queryByText(/unauthorized/i)).not.toBeInTheDocument();
+    });
+
+    it('should validate user permissions for sensitive operations', async () => {
+      const user = userEvent.setup();
+      const mockSubmitWithAuth = jest.fn().mockResolvedValue({ success: true });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitWithAuth} />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'Authorized Announcement');
+      await user.type(screen.getByLabelText(/content/i), 'This announcement is created by authorized user');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSubmitWithAuth).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: 'Authorized Announcement',
+            content: 'This announcement is created by authorized user'
+          })
+        );
+      });
+    });
+  });
+
+  describe('TC-004 Error Path - Unauthorized access and security violations', () => {
+    it('should deny access to unauthenticated users', () => {
+      const unauthenticatedContext = {
+        user: null,
+        isAuthenticated: false,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={unauthenticatedContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      expect(screen.getByText(/please log in to access this feature/i)).toBeInTheDocument();
+      expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    });
+
+    it('should deny access to users with insufficient privileges', () => {
+      const regularUserContext = {
+        user: { id: 'user123', role: 'user' },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={regularUserContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      expect(screen.getByText(/insufficient privileges/i)).toBeInTheDocument();
+      expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    });
+
+    it('should handle token expiration gracefully', async () => {
+      const user = userEvent.setup();
+      const expiredTokenContext = {
+        user: { id: 'admin123', role: 'admin' },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      const mockSubmitTokenError = jest.fn().mockRejectedValue({
+        response: { status: 401, data: { message: 'Token expired' } }
+      });
+
+      render(
+        <TestWrapper authContext={expiredTokenContext}>
+          <AnnouncementForm onSubmit={mockSubmitTokenError} />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'Test Title');
+      await user.type(screen.getByLabelText(/content/i), 'Test content');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/session expired.*please log in again/i)).toBeInTheDocument();
+      });
+
+      expect(expiredTokenContext.logout).toHaveBeenCalled();
+    });
+
+    it('should prevent CSRF attacks by validating request tokens', async () => {
+      const user = userEvent.setup();
+      const mockSubmitCSRF = jest.fn().mockRejectedValue({
+        response: { status: 403, data: { message: 'CSRF token mismatch' } }
+      });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitCSRF} />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'CSRF Test');
+      await user.type(screen.getByLabelText(/content/i), 'Testing CSRF protection');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/security validation failed/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should sanitize user input to prevent XSS attacks', async () => {
+      const user = userEvent.setup();
+      const mockSubmitSanitized = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitSanitized} />
+        </TestWrapper>
+      );
+
+      const maliciousTitle = '<script>alert("xss")</script>Announcement';
+      const maliciousContent = '<img src="x" onerror="alert(\'xss\')" />Content';
+
+      await user.type(screen.getByLabelText(/title/i), maliciousTitle);
+      await user.type(screen.getByLabelText(/content/i), maliciousContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSubmitSanitized).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: expect.not.stringContaining('<script>'),
+            content: expect.not.stringContaining('<img')
+          })
+        );
+      });
+    });
+  });
+});

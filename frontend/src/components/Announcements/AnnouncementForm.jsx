@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Save, X, AlertCircle } from 'lucide-react';
-import DOMPurify from 'dompurify';
 
 const AnnouncementForm = ({ 
   announcement = null, 
@@ -97,8 +97,9 @@ const AnnouncementForm = ({
 
     try {
       await onSave({
-        title: DOMPurify.sanitize(formData.title.trim()),
-        content: DOMPurify.sanitize(formData.content.trim())
+        ...formData,
+        title: formData.title.trim(),
+        content: formData.content.trim()
       });
     } catch (error) {
       console.error('Error saving announcement:', error);
@@ -115,6 +116,12 @@ const AnnouncementForm = ({
     onCancel();
   };
 
+  const sanitizeAndRenderError = (errorMessage) => {
+    if (!errorMessage) return null;
+    const sanitizedError = DOMPurify.sanitize(errorMessage);
+    return <span className="text-red-500" dangerouslySetInnerHTML={{ __html: sanitizedError }} />;
+  };
+
   return (
     <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
@@ -127,7 +134,7 @@ const AnnouncementForm = ({
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{errors.submit}</AlertDescription>
+              <AlertDescription dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(errors.submit) }} />
             </Alert>
           )}
           
@@ -147,9 +154,7 @@ const AnnouncementForm = ({
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
-                {errors.title && touched.title && (
-                  <span className="text-red-500">{errors.title}</span>
-                )}
+                {errors.title && touched.title && sanitizeAndRenderError(errors.title)}
               </span>
               <span>{formData.title.length}/200</span>
             </div>
@@ -172,9 +177,7 @@ const AnnouncementForm = ({
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
-                {errors.content && touched.content && (
-                  <span className="text-red-500">{errors.content}</span>
-                )}
+                {errors.content && touched.content && sanitizeAndRenderError(errors.content)}
               </span>
               <span>{formData.content.length}/5000</span>
             </div>

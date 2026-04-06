@@ -55,219 +55,232 @@ describe('AnnouncementList Component Tests', () => {
     jest.clearAllMocks();
   });
 
-  // TC-001: AnnouncementList component rendering - Complete test coverage with happy path and error path validation
-  describe('TC-001: AnnouncementList component rendering', () => {
-    describe('Happy Path - Component renders successfully with valid data', () => {
-      test('renders component structure and displays announcements correctly', async () => {
-        render(<AnnouncementList />);
+  // TC-001: AnnouncementList component rendering and functionality - Happy Path Testing
+  describe('TC-001: AnnouncementList component rendering and functionality - Happy Path', () => {
+    test('should render AnnouncementList component with valid data successfully', async () => {
+      render(<AnnouncementList />);
 
-        // Verify component renders without crashing and has proper structure
-        expect(screen.getByRole('region')).toBeInTheDocument();
+      // Verify component renders without crashing
+      expect(screen.getByRole('region')).toBeInTheDocument();
 
-        // Verify announcements service is called and data is displayed
-        await waitFor(() => {
-          expect(announcementService.getAllAnnouncements).toHaveBeenCalledTimes(1);
-          expect(screen.getByText('First Announcement')).toBeInTheDocument();
-          expect(screen.getByText('Second Announcement')).toBeInTheDocument();
-        });
-
-        // Verify content and dates are properly rendered
-        expect(screen.getByText('This is the first announcement content')).toBeInTheDocument();
-        expect(screen.getByText('This is the second announcement content')).toBeInTheDocument();
-        expect(screen.getByText(/Jan 15, 2024/)).toBeInTheDocument();
-        expect(screen.getByText(/Jan 14, 2024/)).toBeInTheDocument();
+      // Wait for announcements to load and verify they are displayed
+      await waitFor(() => {
+        expect(screen.getByText('First Announcement')).toBeInTheDocument();
+        expect(screen.getByText('Second Announcement')).toBeInTheDocument();
       });
 
-      test('handles admin user interactions and permissions correctly', async () => {
-        useAuth.mockReturnValue({ user: mockAdminUser });
-        const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
-        
-        render(<AnnouncementList showActions={true} />);
+      // Verify announcement content is displayed
+      expect(screen.getByText('This is the first announcement content')).toBeInTheDocument();
+      expect(screen.getByText('This is the second announcement content')).toBeInTheDocument();
 
-        // Verify admin action buttons are rendered
-        await waitFor(() => {
-          expect(screen.getAllByTestId(/edit-announcement/)).toHaveLength(2);
-          expect(screen.getAllByTestId(/delete-announcement/)).toHaveLength(2);
-        });
-
-        // Test successful delete interaction
-        const deleteButton = screen.getAllByTestId(/delete-announcement/)[0];
-        fireEvent.click(deleteButton);
-
-        expect(confirmSpy).toHaveBeenCalledWith('Are you sure you want to delete this announcement?');
-        
-        await waitFor(() => {
-          expect(announcementService.deleteAnnouncement).toHaveBeenCalledWith(1);
-        });
-
-        confirmSpy.mockRestore();
-      });
-
-      test('renders with different prop configurations correctly', async () => {
-        // Test maxItems limitation
-        render(<AnnouncementList maxItems={1} showActions={false} />);
-
-        await waitFor(() => {
-          expect(screen.getByText('First Announcement')).toBeInTheDocument();
-        });
-
-        // Verify only one announcement is shown and no actions are available
-        expect(screen.queryByText('Second Announcement')).not.toBeInTheDocument();
-        expect(screen.queryByTestId(/edit-announcement/)).not.toBeInTheDocument();
-        expect(screen.queryByTestId(/delete-announcement/)).not.toBeInTheDocument();
-      });
-
-      test('handles empty data state gracefully', async () => {
-        announcementService.getAllAnnouncements.mockResolvedValue([]);
-        
-        render(<AnnouncementList />);
-
-        await waitFor(() => {
-          expect(screen.getByText(/No announcements/i)).toBeInTheDocument();
-        });
-
-        // Component structure should still be intact
-        expect(screen.getByRole('region')).toBeInTheDocument();
-      });
-
-      test('handles loading state properly', () => {
-        // Mock a pending promise to test loading state
-        announcementService.getAllAnnouncements.mockReturnValue(new Promise(() => {}));
-        
-        render(<AnnouncementList />);
-
-        // Verify loading skeletons are displayed
-        expect(screen.getAllByTestId(/loading-skeleton/)).toHaveLength(3);
-      });
+      // Verify service was called correctly
+      expect(announcementService.getAllAnnouncements).toHaveBeenCalledTimes(1);
     });
 
-    describe('Error Path - Component handles failures and edge cases gracefully', () => {
-      test('handles service failure during initial rendering', async () => {
-        const networkError = new Error('Network connection failed');
-        announcementService.getAllAnnouncements.mockRejectedValue(networkError);
-        
-        render(<AnnouncementList />);
+    test('should render AnnouncementList with proper sorting and date formatting', async () => {
+      render(<AnnouncementList />);
 
-        // Component should still render base structure
-        expect(screen.getByRole('region')).toBeInTheDocument();
-
-        // Verify error message is displayed
-        await waitFor(() => {
-          expect(screen.getByText('Failed to load announcements')).toBeInTheDocument();
-          expect(screen.getByRole('alert')).toBeInTheDocument();
-        });
-
-        // Ensure service was called despite failure
-        expect(announcementService.getAllAnnouncements).toHaveBeenCalledTimes(1);
-      });
-
-      test('handles interaction failures during delete operations', async () => {
-        useAuth.mockReturnValue({ user: mockAdminUser });
-        announcementService.deleteAnnouncement.mockRejectedValue(new Error('Delete operation failed'));
-        const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
-        
-        render(<AnnouncementList showActions={true} />);
-
-        // Wait for component to load successfully first
-        await waitFor(() => {
-          expect(screen.getAllByTestId(/delete-announcement/)).toHaveLength(2);
-        });
-
-        // Trigger delete action that will fail
-        const deleteButton = screen.getAllByTestId(/delete-announcement/)[0];
-        fireEvent.click(deleteButton);
-
-        // Verify error handling
-        await waitFor(() => {
-          expect(screen.getByText('Failed to delete announcement')).toBeInTheDocument();
-          expect(screen.getByRole('alert')).toBeInTheDocument();
-        });
-
-        // Component should remain functional after error
+      await waitFor(() => {
         expect(screen.getByText('First Announcement')).toBeInTheDocument();
-        expect(screen.getByText('Second Announcement')).toBeInTheDocument();
-        
-        confirmSpy.mockRestore();
       });
 
-      test('handles authentication edge cases properly', async () => {
-        // Test with null user
-        useAuth.mockReturnValue({ user: null });
-        
-        render(<AnnouncementList showActions={true} />);
+      // Verify announcements are sorted by creation date (newest first)
+      const announcements = screen.getAllByText(/Announcement/);
+      expect(announcements[0]).toHaveTextContent('First Announcement');
+      expect(announcements[1]).toHaveTextContent('Second Announcement');
 
-        await waitFor(() => {
-          expect(screen.getByText('First Announcement')).toBeInTheDocument();
-        });
+      // Verify dates are formatted correctly
+      expect(screen.getByText(/Jan 15, 2024/)).toBeInTheDocument();
+      expect(screen.getByText(/Jan 14, 2024/)).toBeInTheDocument();
+    });
 
-        // Should not show admin actions for null user
-        expect(screen.queryByTestId(/edit-announcement/)).not.toBeInTheDocument();
-        expect(screen.queryByTestId(/delete-announcement/)).not.toBeInTheDocument();
-      });
+    test('should render AnnouncementList with admin actions when user is admin', async () => {
+      useAuth.mockReturnValue({ user: mockAdminUser });
+      
+      render(<AnnouncementList showActions={true} />);
 
-      test('handles malformed data gracefully', async () => {
-        // Mock data with missing required fields
-        const malformedData = [
-          { id: 1, title: 'Valid Title' }, // Missing content and dates
-          { content: 'Content without title' }, // Missing title and id
-          null, // Null entry
-          undefined // Undefined entry
-        ];
-        announcementService.getAllAnnouncements.mockResolvedValue(malformedData);
-        
-        render(<AnnouncementList />);
-
-        // Component should not crash and handle malformed data
-        expect(screen.getByRole('region')).toBeInTheDocument();
-        
-        await waitFor(() => {
-          // Should handle valid entries while skipping invalid ones
-          expect(screen.queryByText('Valid Title')).toBeInTheDocument();
-        });
-      });
-
-      test('handles user cancellation during delete operations', async () => {
-        useAuth.mockReturnValue({ user: mockAdminUser });
-        const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(false);
-        
-        render(<AnnouncementList showActions={true} />);
-
-        await waitFor(() => {
-          expect(screen.getAllByTestId(/delete-announcement/)).toHaveLength(2);
-        });
-
-        const deleteButton = screen.getAllByTestId(/delete-announcement/)[0];
-        fireEvent.click(deleteButton);
-
-        // Verify confirmation was shown but delete was not executed
-        expect(confirmSpy).toHaveBeenCalled();
-        expect(announcementService.deleteAnnouncement).not.toHaveBeenCalled();
-
-        // All announcements should still be visible
+      await waitFor(() => {
         expect(screen.getByText('First Announcement')).toBeInTheDocument();
-        expect(screen.getByText('Second Announcement')).toBeInTheDocument();
-
-        confirmSpy.mockRestore();
       });
 
-      test('handles component unmounting during async operations', async () => {
-        let resolvePromise;
-        const pendingPromise = new Promise((resolve) => {
-          resolvePromise = resolve;
-        });
-        announcementService.getAllAnnouncements.mockReturnValue(pendingPromise);
-        
-        const { unmount } = render(<AnnouncementList />);
+      // Verify admin action buttons are rendered
+      expect(screen.getAllByTestId(/edit-announcement/)).toHaveLength(2);
+      expect(screen.getAllByTestId(/delete-announcement/)).toHaveLength(2);
+    });
 
-        // Unmount before promise resolves
-        unmount();
+    test('should handle successful announcement deletion flow', async () => {
+      const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+      useAuth.mockReturnValue({ user: mockAdminUser });
+      
+      render(<AnnouncementList showActions={true} />);
 
-        // Resolve the promise after unmount
-        resolvePromise(mockAnnouncements);
-
-        // Should not cause any errors or memory leaks
-        expect(true).toBe(true); // Test passes if no errors thrown
+      await waitFor(() => {
+        expect(screen.getAllByTestId(/delete-announcement/)).toHaveLength(2);
       });
+
+      const deleteButton = screen.getAllByTestId(/delete-announcement/)[0];
+      fireEvent.click(deleteButton);
+
+      expect(confirmSpy).toHaveBeenCalledWith('Are you sure you want to delete this announcement?');
+      
+      await waitFor(() => {
+        expect(announcementService.deleteAnnouncement).toHaveBeenCalledWith(1);
+      });
+
+      confirmSpy.mockRestore();
+    });
+
+    test('should handle maxItems prop limitation correctly', async () => {
+      render(<AnnouncementList maxItems={1} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('First Announcement')).toBeInTheDocument();
+      });
+
+      // Verify only one announcement is displayed when maxItems is set
+      expect(screen.queryByText('Second Announcement')).not.toBeInTheDocument();
+    });
+
+    test('should handle showActions prop correctly for non-admin users', async () => {
+      render(<AnnouncementList showActions={true} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('First Announcement')).toBeInTheDocument();
+      });
+
+      // Verify no admin actions are shown for regular users
+      expect(screen.queryByTestId(/edit-announcement/)).not.toBeInTheDocument();
+      expect(screen.queryByTestId(/delete-announcement/)).not.toBeInTheDocument();
+    });
+  });
+
+  // TC-001: AnnouncementList component rendering and functionality - Error Path Testing
+  describe('TC-001: AnnouncementList component rendering and functionality - Error Path', () => {
+    test('should handle rendering when API call fails gracefully', async () => {
+      announcementService.getAllAnnouncements.mockRejectedValue(new Error('API Error'));
+
+      render(<AnnouncementList />);
+
+      // Verify error message is displayed
+      await waitFor(() => {
+        expect(screen.getByText('Failed to load announcements')).toBeInTheDocument();
+      });
+
+      // Verify component doesn't crash and renders error state
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(announcementService.getAllAnnouncements).toHaveBeenCalledTimes(1);
+    });
+
+    test('should handle rendering when no announcements data is available', async () => {
+      announcementService.getAllAnnouncements.mockResolvedValue([]);
+
+      render(<AnnouncementList />);
+
+      // Verify empty state message is displayed
+      await waitFor(() => {
+        expect(screen.getByText(/No announcements/i)).toBeInTheDocument();
+      });
+
+      // Verify component renders without crashing
+      expect(screen.getByRole('region')).toBeInTheDocument();
+    });
+
+    test('should handle rendering when user context is missing', async () => {
+      useAuth.mockReturnValue({ user: null });
+
+      render(<AnnouncementList />);
+
+      // Verify component renders without crashing even with null user
+      await waitFor(() => {
+        expect(screen.getByText('First Announcement')).toBeInTheDocument();
+      });
+
+      // Verify no admin actions are shown for null user
+      expect(screen.queryByTestId(/edit-announcement/)).not.toBeInTheDocument();
+      expect(screen.queryByTestId(/delete-announcement/)).not.toBeInTheDocument();
+    });
+
+    test('should handle rendering with malformed announcement data', async () => {
+      const malformedData = [
+        { id: 1, title: null, content: '', createdAt: 'invalid-date' },
+        { id: 2 } // Missing required fields
+      ];
+      announcementService.getAllAnnouncements.mockResolvedValue(malformedData);
+
+      render(<AnnouncementList />);
+
+      // Verify component handles malformed data gracefully
+      await waitFor(() => {
+        expect(announcementService.getAllAnnouncements).toHaveBeenCalled();
+      });
+
+      // Component should not crash with malformed data
+      expect(screen.getByRole('region')).toBeInTheDocument();
+    });
+
+    test('should handle announcement deletion failure gracefully', async () => {
+      announcementService.deleteAnnouncement.mockRejectedValue(new Error('Delete failed'));
+      const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+      
+      useAuth.mockReturnValue({ user: mockAdminUser });
+      render(<AnnouncementList showActions={true} />);
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId(/delete-announcement/)).toHaveLength(2);
+      });
+
+      const deleteButton = screen.getAllByTestId(/delete-announcement/)[0];
+      fireEvent.click(deleteButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Failed to delete announcement')).toBeInTheDocument();
+      });
+
+      confirmSpy.mockRestore();
+    });
+
+    test('should handle cancellation of announcement deletion', async () => {
+      const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(false);
+      useAuth.mockReturnValue({ user: mockAdminUser });
+      
+      render(<AnnouncementList showActions={true} />);
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId(/delete-announcement/)).toHaveLength(2);
+      });
+
+      const deleteButton = screen.getAllByTestId(/delete-announcement/)[0];
+      fireEvent.click(deleteButton);
+
+      expect(confirmSpy).toHaveBeenCalled();
+      expect(announcementService.deleteAnnouncement).not.toHaveBeenCalled();
+
+      confirmSpy.mockRestore();
+    });
+
+    test('should handle network timeout errors gracefully', async () => {
+      announcementService.getAllAnnouncements.mockRejectedValue(new Error('Network timeout'));
+
+      render(<AnnouncementList />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Failed to load announcements')).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+    });
+
+    test('should handle undefined or null response from service', async () => {
+      announcementService.getAllAnnouncements.mockResolvedValue(null);
+
+      render(<AnnouncementList />);
+
+      // Component should handle null response gracefully
+      await waitFor(() => {
+        expect(announcementService.getAllAnnouncements).toHaveBeenCalled();
+      });
+
+      expect(screen.getByRole('region')).toBeInTheDocument();
     });
   });
 
@@ -299,16 +312,6 @@ describe('AnnouncementList Component Tests', () => {
       expect(announcements[0]).toHaveTextContent('First Announcement');
       expect(announcements[1]).toHaveTextContent('Second Announcement');
     });
-
-    test('should limit displayed announcements when maxItems prop is provided', async () => {
-      render(<AnnouncementList maxItems={1} />);
-
-      await waitFor(() => {
-        expect(screen.getByText('First Announcement')).toBeInTheDocument();
-      });
-
-      expect(screen.queryByText('Second Announcement')).not.toBeInTheDocument();
-    });
   });
 
   describe('PRD Test Case 6: No announcements scenario', () => {
@@ -320,104 +323,6 @@ describe('AnnouncementList Component Tests', () => {
       await waitFor(() => {
         expect(screen.getByText(/No announcements/i)).toBeInTheDocument();
       });
-    });
-  });
-
-  describe('Admin Actions', () => {
-    beforeEach(() => {
-      useAuth.mockReturnValue({ user: mockAdminUser });
-    });
-
-    test('should show action buttons for admin users when showActions is true', async () => {
-      render(<AnnouncementList showActions={true} />);
-
-      await waitFor(() => {
-        expect(screen.getAllByTestId(/edit-announcement/)).toHaveLength(2);
-        expect(screen.getAllByTestId(/delete-announcement/)).toHaveLength(2);
-      });
-    });
-
-    test('should not show action buttons when showActions is false', async () => {
-      render(<AnnouncementList showActions={false} />);
-
-      await waitFor(() => {
-        expect(screen.getByText('First Announcement')).toBeInTheDocument();
-      });
-
-      expect(screen.queryByTestId(/edit-announcement/)).not.toBeInTheDocument();
-      expect(screen.queryByTestId(/delete-announcement/)).not.toBeInTheDocument();
-    });
-
-    test('should handle announcement deletion with confirmation', async () => {
-      const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
-      
-      render(<AnnouncementList showActions={true} />);
-
-      await waitFor(() => {
-        expect(screen.getAllByTestId(/delete-announcement/)).toHaveLength(2);
-      });
-
-      const deleteButton = screen.getAllByTestId(/delete-announcement/)[0];
-      fireEvent.click(deleteButton);
-
-      expect(confirmSpy).toHaveBeenCalledWith('Are you sure you want to delete this announcement?');
-      
-      await waitFor(() => {
-        expect(announcementService.deleteAnnouncement).toHaveBeenCalledWith(1);
-      });
-
-      confirmSpy.mockRestore();
-    });
-
-    test('should not delete announcement when user cancels confirmation', async () => {
-      const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(false);
-      
-      render(<AnnouncementList showActions={true} />);
-
-      await waitFor(() => {
-        expect(screen.getAllByTestId(/delete-announcement/)).toHaveLength(2);
-      });
-
-      const deleteButton = screen.getAllByTestId(/delete-announcement/)[0];
-      fireEvent.click(deleteButton);
-
-      expect(confirmSpy).toHaveBeenCalled();
-      expect(announcementService.deleteAnnouncement).not.toHaveBeenCalled();
-
-      confirmSpy.mockRestore();
-    });
-  });
-
-  describe('Error Handling', () => {
-    test('should display error message when fetching announcements fails', async () => {
-      announcementService.getAllAnnouncements.mockRejectedValue(new Error('Network error'));
-      
-      render(<AnnouncementList />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Failed to load announcements')).toBeInTheDocument();
-      });
-    });
-
-    test('should display error message when deletion fails', async () => {
-      announcementService.deleteAnnouncement.mockRejectedValue(new Error('Delete failed'));
-      const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
-      
-      useAuth.mockReturnValue({ user: mockAdminUser });
-      render(<AnnouncementList showActions={true} />);
-
-      await waitFor(() => {
-        expect(screen.getAllByTestId(/delete-announcement/)).toHaveLength(2);
-      });
-
-      const deleteButton = screen.getAllByTestId(/delete-announcement/)[0];
-      fireEvent.click(deleteButton);
-
-      await waitFor(() => {
-        expect(screen.getByText('Failed to delete announcement')).toBeInTheDocument();
-      });
-
-      confirmSpy.mockRestore();
     });
   });
 

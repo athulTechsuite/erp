@@ -1,17 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import DOMPurify from 'dompurify';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Save, X, AlertCircle } from 'lucide-react';
-
-// Validation constants
-const VALIDATION_LIMITS = {
-  TITLE_MAX_LENGTH: 200,
-  CONTENT_MAX_LENGTH: 5000
-};
 
 const AnnouncementForm = ({ 
   announcement = null, 
@@ -35,30 +28,22 @@ const AnnouncementForm = ({
     }
   }, [announcement]);
 
-  const sanitizeErrorMessage = (message) => {
-    if (typeof message !== 'string') {
-      return 'An error occurred. Please try again.';
-    }
-    // Sanitize HTML content using DOMPurify
-    return DOMPurify.sanitize(message, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
-  };
-
   const validateField = (name, value) => {
     const fieldErrors = {};
     
     if (name === 'title') {
       if (!value.trim()) {
         fieldErrors.title = 'Title is required';
-      } else if (value.length > VALIDATION_LIMITS.TITLE_MAX_LENGTH) {
-        fieldErrors.title = `Title must be less than ${VALIDATION_LIMITS.TITLE_MAX_LENGTH} characters`;
+      } else if (value.length > 200) {
+        fieldErrors.title = 'Title must be less than 200 characters';
       }
     }
     
     if (name === 'content') {
       if (!value.trim()) {
         fieldErrors.content = 'Content is required';
-      } else if (value.length > VALIDATION_LIMITS.CONTENT_MAX_LENGTH) {
-        fieldErrors.content = `Content must be less than ${VALIDATION_LIMITS.CONTENT_MAX_LENGTH} characters`;
+      } else if (value.length > 5000) {
+        fieldErrors.content = 'Content must be less than 5000 characters';
       }
     }
     
@@ -117,9 +102,8 @@ const AnnouncementForm = ({
       });
     } catch (error) {
       console.error('Error saving announcement:', error);
-      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to save announcement. Please try again.';
       setErrors({ 
-        submit: sanitizeErrorMessage(errorMessage)
+        submit: 'Failed to save announcement. Please try again.' 
       });
     }
   };
@@ -159,7 +143,7 @@ const AnnouncementForm = ({
               onBlur={handleBlur}
               placeholder="Enter announcement title..."
               className={errors.title && touched.title ? 'border-red-500' : ''}
-              maxLength={VALIDATION_LIMITS.TITLE_MAX_LENGTH}
+              maxLength={200}
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
@@ -167,7 +151,7 @@ const AnnouncementForm = ({
                   <span className="text-red-500">{errors.title}</span>
                 )}
               </span>
-              <span>{formData.title.length}/{VALIDATION_LIMITS.TITLE_MAX_LENGTH}</span>
+              <span>{formData.title.length}/200</span>
             </div>
           </div>
 
@@ -184,7 +168,7 @@ const AnnouncementForm = ({
               placeholder="Enter announcement content..."
               rows={8}
               className={errors.content && touched.content ? 'border-red-500' : ''}
-              maxLength={VALIDATION_LIMITS.CONTENT_MAX_LENGTH}
+              maxLength={5000}
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
@@ -192,7 +176,7 @@ const AnnouncementForm = ({
                   <span className="text-red-500">{errors.content}</span>
                 )}
               </span>
-              <span>{formData.content.length}/{VALIDATION_LIMITS.CONTENT_MAX_LENGTH}</span>
+              <span>{formData.content.length}/5000</span>
             </div>
           </div>
 

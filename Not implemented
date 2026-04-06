@@ -20,7 +20,7 @@ const TestWrapper = ({ children, authContext = mockAuthContext }) => (
   </AuthProvider>
 );
 
-describe('TC-003: AnnouncementForm component validation and submission', () => {
+describe('TC-003: Security input validation - AnnouncementForm component validation and submission', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -79,9 +79,36 @@ describe('TC-003: AnnouncementForm component validation and submission', () => {
         });
       });
     });
+
+    it('should sanitize user input to prevent XSS attacks', async () => {
+      const user = userEvent.setup();
+      const mockSubmitSanitized = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitSanitized} />
+        </TestWrapper>
+      );
+
+      const maliciousTitle = '<script>alert("xss")</script>Announcement';
+      const maliciousContent = '<img src="x" onerror="alert(\'xss\')" />Content';
+
+      await user.type(screen.getByLabelText(/title/i), maliciousTitle);
+      await user.type(screen.getByLabelText(/content/i), maliciousContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSubmitSanitized).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: expect.not.stringContaining('<script>'),
+            content: expect.not.stringContaining('<img')
+          })
+        );
+      });
+    });
   });
 
-  describe('TC-003 Error Path - Form validation failures', () => {
+  describe('TC-003 Error Path - Form validation failures and security violations', () => {
     it('should display validation errors for empty required fields', async () => {
       const user = userEvent.setup();
       render(
@@ -139,10 +166,58 @@ describe('TC-003: AnnouncementForm component validation and submission', () => {
         expect(screen.getByText(/failed to submit announcement/i)).toBeInTheDocument();
       });
     });
+
+    it('should prevent CSRF attacks by validating request tokens', async () => {
+      const user = userEvent.setup();
+      const mockSubmitCSRF = jest.fn().mockRejectedValue({
+        response: { status: 403, data: { message: 'CSRF token mismatch' } }
+      });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitCSRF} />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'CSRF Test');
+      await user.type(screen.getByLabelText(/content/i), 'Testing CSRF protection');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/security validation failed/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should reject SQL injection attempts in input fields', async () => {
+      const user = userEvent.setup();
+      const mockSubmitSQL = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitSQL} />
+        </TestWrapper>
+      );
+
+      const sqlInjectionTitle = "'; DROP TABLE announcements; --";
+      const sqlInjectionContent = "Content'; DELETE FROM users WHERE '1'='1";
+
+      await user.type(screen.getByLabelText(/title/i), sqlInjectionTitle);
+      await user.type(screen.getByLabelText(/content/i), sqlInjectionContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSubmitSQL).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: expect.not.stringContaining('DROP TABLE'),
+            content: expect.not.stringContaining('DELETE FROM')
+          })
+        );
+      });
+    });
   });
 });
 
-describe('TC-004: Authorization and security tests', () => {
+describe('TC-004: Authorization and access control - Security authorization tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -208,6 +283,37 @@ describe('TC-004: Authorization and security tests', () => {
           })
         );
       });
+    });
+
+    it('should maintain session integrity for authorized users', async () => {
+      const user = userEvent.setup();
+      const validAuthContext = {
+        user: { id: 'admin123', role: 'admin', sessionToken: 'valid-token-123' },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={validAuthContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'Session Test');
+      await user.type(screen.getByLabelText(/content/i), 'Testing session integrity');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSubmit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: 'Session Test',
+            content: 'Testing session integrity'
+          })
+        );
+      });
+
+      expect(validAuthContext.logout).not.toHaveBeenCalled();
     });
   });
 
@@ -278,52 +384,71 @@ describe('TC-004: Authorization and security tests', () => {
       expect(expiredTokenContext.logout).toHaveBeenCalled();
     });
 
-    it('should prevent CSRF attacks by validating request tokens', async () => {
-      const user = userEvent.setup();
-      const mockSubmitCSRF = jest.fn().mockRejectedValue({
-        response: { status: 403, data: { message: 'CSRF token mismatch' } }
-      });
+    it('should prevent privilege escalation attempts', () => {
+      const compromisedUserContext = {
+        user: { id: 'user123', role: 'user', injectedRole: 'admin' },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
 
       render(
-        <TestWrapper>
-          <AnnouncementForm onSubmit={mockSubmitCSRF} />
+        <TestWrapper authContext={compromisedUserContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
         </TestWrapper>
       );
 
-      await user.type(screen.getByLabelText(/title/i), 'CSRF Test');
-      await user.type(screen.getByLabelText(/content/i), 'Testing CSRF protection');
-      await user.click(screen.getByRole('button', { name: /submit/i }));
-
-      await waitFor(() => {
-        expect(screen.getByText(/security validation failed/i)).toBeInTheDocument();
-      });
+      // Should still deny access based on actual role, not injected role
+      expect(screen.getByText(/insufficient privileges/i)).toBeInTheDocument();
+      expect(screen.queryByRole('form')).not.toBeInTheDocument();
     });
 
-    it('should sanitize user input to prevent XSS attacks', async () => {
-      const user = userEvent.setup();
-      const mockSubmitSanitized = jest.fn();
+    it('should block access when user account is disabled', () => {
+      const disabledUserContext = {
+        user: { id: 'admin123', role: 'admin', status: 'disabled' },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
 
       render(
-        <TestWrapper>
-          <AnnouncementForm onSubmit={mockSubmitSanitized} />
+        <TestWrapper authContext={disabledUserContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
         </TestWrapper>
       );
 
-      const maliciousTitle = '<script>alert("xss")</script>Announcement';
-      const maliciousContent = '<img src="x" onerror="alert(\'xss\')" />Content';
+      expect(screen.getByText(/account has been disabled/i)).toBeInTheDocument();
+      expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    });
 
-      await user.type(screen.getByLabelText(/title/i), maliciousTitle);
-      await user.type(screen.getByLabelText(/content/i), maliciousContent);
+    it('should prevent session hijacking by validating user identity', async () => {
+      const user = userEvent.setup();
+      const suspiciousSessionContext = {
+        user: { id: 'admin123', role: 'admin' },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      const mockSubmitSessionError = jest.fn().mockRejectedValue({
+        response: { status: 403, data: { message: 'Session validation failed' } }
+      });
+
+      render(
+        <TestWrapper authContext={suspiciousSessionContext}>
+          <AnnouncementForm onSubmit={mockSubmitSessionError} />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'Hijack Test');
+      await user.type(screen.getByLabelText(/content/i), 'Testing session security');
       await user.click(screen.getByRole('button', { name: /submit/i }));
 
       await waitFor(() => {
-        expect(mockSubmitSanitized).toHaveBeenCalledWith(
-          expect.objectContaining({
-            title: expect.not.stringContaining('<script>'),
-            content: expect.not.stringContaining('<img')
-          })
-        );
+        expect(screen.getByText(/session validation failed/i)).toBeInTheDocument();
       });
+
+      expect(suspiciousSessionContext.logout).toHaveBeenCalled();
     });
   });
 });

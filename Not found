@@ -138,3 +138,120 @@ describe('TC-003: AnnouncementForm validation', () => {
     });
   });
 });
+
+describe('TC-008: Database migration testing', () => {
+  const mockMigrationService = {
+    runMigration: vi.fn(),
+    rollbackMigration: vi.fn(),
+    checkMigrationStatus: vi.fn()
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('Happy path migration', () => {
+    it('should successfully run database migration', async () => {
+      mockMigrationService.runMigration.mockResolvedValue({
+        success: true,
+        version: '1.2.0',
+        migratedTables: ['users', 'announcements', 'permissions']
+      });
+
+      const result = await mockMigrationService.runMigration('1.2.0');
+
+      expect(result.success).toBe(true);
+      expect(result.version).toBe('1.2.0');
+      expect(result.migratedTables).toContain('users');
+      expect(result.migratedTables).toContain('announcements');
+      expect(result.migratedTables).toContain('permissions');
+    });
+
+    it('should successfully rollback migration', async () => {
+      mockMigrationService.rollbackMigration.mockResolvedValue({
+        success: true,
+        rolledBackTo: '1.1.0',
+        affectedTables: ['announcements']
+      });
+
+      const result = await mockMigrationService.rollbackMigration('1.1.0');
+
+      expect(result.success).toBe(true);
+      expect(result.rolledBackTo).toBe('1.1.0');
+      expect(result.affectedTables).toContain('announcements');
+    });
+
+    it('should correctly check migration status', async () => {
+      mockMigrationService.checkMigrationStatus.mockResolvedValue({
+        currentVersion: '1.2.0',
+        pendingMigrations: [],
+        lastMigrationDate: '2023-12-01T10:00:00Z'
+      });
+
+      const status = await mockMigrationService.checkMigrationStatus();
+
+      expect(status.currentVersion).toBe('1.2.0');
+      expect(status.pendingMigrations).toEqual([]);
+      expect(status.lastMigrationDate).toBe('2023-12-01T10:00:00Z');
+    });
+  });
+
+  describe('Error path migration', () => {
+    it('should handle migration failure with database connection error', async () => {
+      mockMigrationService.runMigration.mockRejectedValue(new Error('Database connection failed'));
+
+      await expect(mockMigrationService.runMigration('1.2.0')).rejects.toThrow('Database connection failed');
+    });
+
+    it('should handle migration failure with constraint violation', async () => {
+      mockMigrationService.runMigration.mockResolvedValue({
+        success: false,
+        error: 'Foreign key constraint violation',
+        failedTable: 'announcements'
+      });
+
+      const result = await mockMigrationService.runMigration('1.2.0');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Foreign key constraint violation');
+      expect(result.failedTable).toBe('announcements');
+    });
+
+    it('should handle rollback failure when target version not found', async () => {
+      mockMigrationService.rollbackMigration.mockResolvedValue({
+        success: false,
+        error: 'Target migration version 0.9.0 not found'
+      });
+
+      const result = await mockMigrationService.rollbackMigration('0.9.0');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Target migration version 0.9.0 not found');
+    });
+
+    it('should handle migration status check failure', async () => {
+      mockMigrationService.checkMigrationStatus.mockRejectedValue(new Error('Unable to access migration table'));
+
+      await expect(mockMigrationService.checkMigrationStatus()).rejects.toThrow('Unable to access migration table');
+    });
+
+    it('should handle partial migration failure with cleanup', async () => {
+      mockMigrationService.runMigration.mockResolvedValue({
+        success: false,
+        partiallyCompleted: true,
+        completedTables: ['users'],
+        failedTable: 'announcements',
+        error: 'Column type mismatch',
+        cleanupRequired: true
+      });
+
+      const result = await mockMigrationService.runMigration('1.2.0');
+
+      expect(result.success).toBe(false);
+      expect(result.partiallyCompleted).toBe(true);
+      expect(result.completedTables).toContain('users');
+      expect(result.failedTable).toBe('announcements');
+      expect(result.cleanupRequired).toBe(true);
+    });
+  });
+});

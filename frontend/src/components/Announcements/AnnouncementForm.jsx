@@ -29,6 +29,14 @@ const AnnouncementForm = ({
     }
   }, [announcement]);
 
+  const sanitizeErrorMessage = (message) => {
+    if (typeof message !== 'string') {
+      return 'An error occurred. Please try again.';
+    }
+    // Use DOMPurify to sanitize HTML content
+    return DOMPurify.sanitize(message, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+  };
+
   const validateField = (name, value) => {
     const fieldErrors = {};
     
@@ -103,8 +111,9 @@ const AnnouncementForm = ({
       });
     } catch (error) {
       console.error('Error saving announcement:', error);
+      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to save announcement. Please try again.';
       setErrors({ 
-        submit: 'Failed to save announcement. Please try again.' 
+        submit: sanitizeErrorMessage(errorMessage)
       });
     }
   };
@@ -128,7 +137,7 @@ const AnnouncementForm = ({
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{errors.submit}</AlertDescription>
+              <AlertDescription dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(errors.submit) }}></AlertDescription>
             </Alert>
           )}
           

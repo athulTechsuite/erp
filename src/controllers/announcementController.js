@@ -3,30 +3,6 @@ const { validationResult } = require('express-validator');
 const DOMPurify = require('isomorphic-dompurify');
 const mongoose = require('mongoose');
 
-// Authentication middleware to verify JWT token
-const requireAuth = (req, res, next) => {
-  const token = req.header('Authorization')?.replace('Bearer ', '');
-  
-  if (!token) {
-    return res.status(401).json({
-      success: false,
-      message: 'Access denied. No token provided.'
-    });
-  }
-
-  try {
-    const jwt = require('jsonwebtoken');
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (error) {
-    res.status(401).json({
-      success: false,
-      message: 'Invalid token.'
-    });
-  }
-};
-
 // Input sanitization middleware
 const sanitizeInput = (input) => {
   if (typeof input !== 'string') return input;
@@ -48,7 +24,6 @@ const requireAdmin = (req, res, next) => {
 // Get all announcements (public - for dashboard display)
 const getAllAnnouncements = async (req, res) => {
   try {
-    // Using Mongoose ORM with parameterized queries (secure by default)
     const announcements = await Announcement.find({ isActive: true })
       .sort({ createdAt: -1 })
       .select('title content createdAt updatedAt');
@@ -68,45 +43,29 @@ const getAllAnnouncements = async (req, res) => {
 
 // Get all announcements for admin management
 const getAnnouncementsForAdmin = async (req, res) => {
-  const session = await mongoose.startSession();
-  
   try {
-    session.startTransaction();
-    
-    // Using Mongoose ORM with parameterized queries (secure by default)
     const announcements = await Announcement.find()
-      .sort({ createdAt: -1 })
-      .session(session);
-
-    await session.commitTransaction();
+      .sort({ createdAt: -1 });
 
     res.json({
       success: true,
       data: announcements
     });
   } catch (error) {
-    await session.abortTransaction();
     res.status(500).json({
       success: false,
       message: 'Error fetching announcements',
       error: error.message
     });
-  } finally {
-    session.endSession();
   }
 };
 
 // Create new announcement (admin only)
 const createAnnouncement = async (req, res) => {
-  const session = await mongoose.startSession();
-  
   try {
-    session.startTransaction();
-    
     // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      await session.abortTransaction();
       return res.status(400).json({
         success: false,
         message: 'Validation errors',
@@ -120,7 +79,6 @@ const createAnnouncement = async (req, res) => {
     const sanitizedTitle = sanitizeInput(title);
     const sanitizedContent = sanitizeInput(content);
 
-    // Using Mongoose ORM with parameterized queries (secure by default)
     const announcement = new Announcement({
       title: sanitizedTitle,
       content: sanitizedContent,
@@ -128,12 +86,10 @@ const createAnnouncement = async (req, res) => {
       createdBy: req.user._id
     });
 
-    await announcement.save({ session });
+    await announcement.save();
 
     // Populate creator info for response
     await announcement.populate('createdBy', 'name email');
-
-    await session.commitTransaction();
 
     res.status(201).json({
       success: true,
@@ -141,14 +97,11 @@ const createAnnouncement = async (req, res) => {
       data: announcement
     });
   } catch (error) {
-    await session.abortTransaction();
     res.status(500).json({
       success: false,
       message: 'Error creating announcement',
       error: error.message
     });
-  } finally {
-    session.endSession();
   }
 };
 
@@ -157,7 +110,14 @@ const getAnnouncementById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Using Mongoose ORM with parameterized queries (secure by default)
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
+
     const announcement = await Announcement.findById(id)
       .populate('createdBy', 'name email');
 
@@ -169,7 +129,7 @@ const getAnnouncementById = async (req, res) => {
     }
 
     // Non-admin users can only see active announcements
-    if (req.user && req.user.role !== 'admin' && !announcement.isActive) {
+    if (req.user.role !== 'admin' && !announcement.isActive) {
       return res.status(404).json({
         success: false,
         message: 'Announcement not found'
@@ -191,15 +151,10 @@ const getAnnouncementById = async (req, res) => {
 
 // Update announcement (admin only)
 const updateAnnouncement = async (req, res) => {
-  const session = await mongoose.startSession();
-  
   try {
-    session.startTransaction();
-    
     // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      await session.abortTransaction();
       return res.status(400).json({
         success: false,
         message: 'Validation errors',
@@ -210,11 +165,17 @@ const updateAnnouncement = async (req, res) => {
     const { id } = req.params;
     const { title, content, isActive } = req.body;
 
-    // Using Mongoose ORM with parameterized queries (secure by default)
-    const announcement = await Announcement.findById(id).session(session);
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
+
+    const announcement = await Announcement.findById(id);
 
     if (!announcement) {
-      await session.abortTransaction();
       return res.status(404).json({
         success: false,
         message: 'Announcement not found'
@@ -227,12 +188,10 @@ const updateAnnouncement = async (req, res) => {
     if (isActive !== undefined) announcement.isActive = isActive;
 
     announcement.updatedAt = new Date();
-    await announcement.save({ session });
+    await announcement.save();
 
     // Populate creator info for response
     await announcement.populate('createdBy', 'name email');
-
-    await session.commitTransaction();
 
     res.json({
       success: true,
@@ -240,71 +199,67 @@ const updateAnnouncement = async (req, res) => {
       data: announcement
     });
   } catch (error) {
-    await session.abortTransaction();
     res.status(500).json({
       success: false,
       message: 'Error updating announcement',
       error: error.message
     });
-  } finally {
-    session.endSession();
   }
 };
 
 // Delete announcement (admin only)
 const deleteAnnouncement = async (req, res) => {
-  const session = await mongoose.startSession();
-  
   try {
-    session.startTransaction();
-    
     const { id } = req.params;
 
-    // Using Mongoose ORM with parameterized queries (secure by default)
-    const announcement = await Announcement.findById(id).session(session);
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
+
+    const announcement = await Announcement.findById(id);
 
     if (!announcement) {
-      await session.abortTransaction();
       return res.status(404).json({
         success: false,
         message: 'Announcement not found'
       });
     }
 
-    await Announcement.findByIdAndDelete(id).session(session);
-
-    await session.commitTransaction();
+    await Announcement.findByIdAndDelete(id);
 
     res.json({
       success: true,
       message: 'Announcement deleted successfully'
     });
   } catch (error) {
-    await session.abortTransaction();
     res.status(500).json({
       success: false,
       message: 'Error deleting announcement',
       error: error.message
     });
-  } finally {
-    session.endSession();
   }
 };
 
 // Toggle announcement active status (admin only)
 const toggleAnnouncementStatus = async (req, res) => {
-  const session = await mongoose.startSession();
-  
   try {
-    session.startTransaction();
-    
     const { id } = req.params;
 
-    // Using Mongoose ORM with parameterized queries (secure by default)
-    const announcement = await Announcement.findById(id).session(session);
+    // Validate ObjectId format to prevent injection
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID format'
+      });
+    }
+
+    const announcement = await Announcement.findById(id);
 
     if (!announcement) {
-      await session.abortTransaction();
       return res.status(404).json({
         success: false,
         message: 'Announcement not found'
@@ -313,11 +268,9 @@ const toggleAnnouncementStatus = async (req, res) => {
 
     announcement.isActive = !announcement.isActive;
     announcement.updatedAt = new Date();
-    await announcement.save({ session });
+    await announcement.save();
 
     await announcement.populate('createdBy', 'name email');
-
-    await session.commitTransaction();
 
     res.json({
       success: true,
@@ -325,19 +278,15 @@ const toggleAnnouncementStatus = async (req, res) => {
       data: announcement
     });
   } catch (error) {
-    await session.abortTransaction();
     res.status(500).json({
       success: false,
       message: 'Error updating announcement status',
       error: error.message
     });
-  } finally {
-    session.endSession();
   }
 };
 
 module.exports = {
-  requireAuth,
   requireAdmin,
   getAllAnnouncements,
   getAnnouncementsForAdmin,

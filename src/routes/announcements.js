@@ -1,17 +1,20 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const db = require('../config/database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
-const rateLimit = require('express-rate-limit');
 
-// Rate limiting for write operations
-const writeOperationsLimiter = rateLimit({
+// Rate limiting middleware
+const announcementRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // limit each IP to 10 requests per windowMs for write operations
-  message: 'Too many write requests from this IP, please try again later.',
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Apply rate limiting to all routes
+router.use(announcementRateLimit);
 
 // Get all active announcements (accessible to all authenticated users)
 router.get('/', authenticateToken, async (req, res) => {
@@ -45,7 +48,7 @@ router.get('/admin', authenticateToken, requireRole('admin'), async (req, res) =
 });
 
 // Create new announcement (admin only)
-router.post('/', writeOperationsLimiter, authenticateToken, requireRole('admin'), async (req, res) => {
+router.post('/', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { title, content, is_active = true } = req.body;
     
@@ -72,7 +75,7 @@ router.post('/', writeOperationsLimiter, authenticateToken, requireRole('admin')
 });
 
 // Update announcement (admin only)
-router.put('/:id', writeOperationsLimiter, authenticateToken, requireRole('admin'), async (req, res) => {
+router.put('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
     const { title, content, is_active } = req.body;
@@ -105,7 +108,7 @@ router.put('/:id', writeOperationsLimiter, authenticateToken, requireRole('admin
 });
 
 // Delete announcement (admin only)
-router.delete('/:id', writeOperationsLimiter, authenticateToken, requireRole('admin'), async (req, res) => {
+router.delete('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
 

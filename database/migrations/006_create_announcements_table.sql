@@ -20,14 +20,20 @@ CREATE TABLE announcements (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
-    created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    is_active BOOLEAN DEFAULT true,
+    created_by INTEGER NOT NULL,
+    status VARCHAR(20) DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Foreign key constraint to users table
+    CONSTRAINT fk_announcements_created_by 
+        FOREIGN KEY (created_by) 
+        REFERENCES users(id) 
+        ON DELETE RESTRICT
 );
 
 -- Create indexes for better query performance
-CREATE INDEX idx_announcements_is_active ON announcements(is_active);
+CREATE INDEX idx_announcements_status ON announcements(status);
 CREATE INDEX idx_announcements_created_at ON announcements(created_at DESC);
 CREATE INDEX idx_announcements_created_by ON announcements(created_by);
 

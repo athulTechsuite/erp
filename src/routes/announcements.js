@@ -1,23 +1,13 @@
 const express = require('express');
-const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const db = require('../config/database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 
-// Rate limiting middleware for announcements
-const announcementLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: { error: 'Too many requests, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// Apply rate limiting to all routes
-router.use(announcementLimiter);
+// Apply authentication middleware to all routes
+router.use(authenticateToken);
 
 // Get all active announcements (accessible to all authenticated users)
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const announcements = await db.query(
       `SELECT id, title, content, created_at, updated_at 
@@ -33,7 +23,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // Get all announcements for admin management
-router.get('/admin', authenticateToken, requireRole('admin'), async (req, res) => {
+router.get('/admin', requireRole('admin'), async (req, res) => {
   try {
     const announcements = await db.query(
       `SELECT id, title, content, is_active, created_at, updated_at 
@@ -48,7 +38,7 @@ router.get('/admin', authenticateToken, requireRole('admin'), async (req, res) =
 });
 
 // Create new announcement (admin only)
-router.post('/', authenticateToken, requireRole('admin'), async (req, res) => {
+router.post('/', requireRole('admin'), async (req, res) => {
   try {
     const { title, content, is_active = true } = req.body;
     
@@ -75,7 +65,7 @@ router.post('/', authenticateToken, requireRole('admin'), async (req, res) => {
 });
 
 // Update announcement (admin only)
-router.put('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
+router.put('/:id', requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
     const { title, content, is_active } = req.body;
@@ -108,7 +98,7 @@ router.put('/:id', authenticateToken, requireRole('admin'), async (req, res) => 
 });
 
 // Delete announcement (admin only)
-router.delete('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
+router.delete('/:id', requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -129,7 +119,7 @@ router.delete('/:id', authenticateToken, requireRole('admin'), async (req, res) 
 });
 
 // Get single announcement by ID (admin only)
-router.get('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
+router.get('/:id', requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
 

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Save, X, AlertCircle } from 'lucide-react';
-import DOMPurify from 'dompurify';
 
 const AnnouncementForm = ({ 
   announcement = null, 
@@ -23,8 +23,8 @@ const AnnouncementForm = ({
   useEffect(() => {
     if (announcement) {
       setFormData({
-        title: DOMPurify.sanitize(announcement.title || ''),
-        content: DOMPurify.sanitize(announcement.content || '')
+        title: announcement.title || '',
+        content: announcement.content || ''
       });
     }
   }, [announcement]);
@@ -33,8 +33,8 @@ const AnnouncementForm = ({
     if (typeof message !== 'string') {
       return 'An error occurred. Please try again.';
     }
-    // Use DOMPurify to sanitize error messages
-    return DOMPurify.sanitize(message, { ALLOWED_TAGS: [] });
+    // Sanitize HTML content using DOMPurify
+    return DOMPurify.sanitize(message, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
   };
 
   const validateField = (name, value) => {
@@ -106,8 +106,8 @@ const AnnouncementForm = ({
     try {
       await onSave({
         ...formData,
-        title: DOMPurify.sanitize(formData.title.trim()),
-        content: DOMPurify.sanitize(formData.content.trim())
+        title: formData.title.trim(),
+        content: formData.content.trim()
       });
     } catch (error) {
       console.error('Error saving announcement:', error);
@@ -158,7 +158,7 @@ const AnnouncementForm = ({
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.title && touched.title && (
-                  <span className="text-red-500">{DOMPurify.sanitize(errors.title)}</span>
+                  <span className="text-red-500">{errors.title}</span>
                 )}
               </span>
               <span>{formData.title.length}/200</span>
@@ -183,7 +183,7 @@ const AnnouncementForm = ({
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {errors.content && touched.content && (
-                  <span className="text-red-500">{DOMPurify.sanitize(errors.content)}</span>
+                  <span className="text-red-500">{errors.content}</span>
                 )}
               </span>
               <span>{formData.content.length}/5000</span>

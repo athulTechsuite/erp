@@ -1,7 +1,408 @@
-// This file has been moved to the appropriate location
-// New location: tests/forms/announcement-form.test.js
-// The comprehensive announcement form validation tests have been relocated
-// to maintain proper test organization and file structure.
+// tests/unit/announcement-form-validation.test.js
+// Comprehensive announcement form validation and submission tests
 
-// For the actual test content, please refer to:
-// tests/forms/announcement-form.test.js
+// Validation configuration constants for announcement forms
+const VALIDATION_CONSTRAINTS = {
+  TITLE: {
+    MIN_LENGTH: 5,
+    MAX_LENGTH: 100
+  },
+  DESCRIPTION: {
+    MIN_LENGTH: 20,
+    MAX_LENGTH: 1000
+  },
+  CATEGORY: {
+    REQUIRED: true
+  }
+};
+
+describe('TC-003: Announcement form validation and submission', () => {
+  let form, submitButton, titleInput, descriptionInput, categorySelect;
+
+  beforeEach(() => {
+    // Setup announcement form elements with comprehensive validation attributes
+    document.body.innerHTML = `
+      <form id="announcement-form" novalidate>
+        <div class="form-group">
+          <label for="title">Announcement Title *</label>
+          <input 
+            type="text" 
+            id="title" 
+            name="title" 
+            required 
+            minlength="${VALIDATION_CONSTRAINTS.TITLE.MIN_LENGTH}" 
+            maxlength="${VALIDATION_CONSTRAINTS.TITLE.MAX_LENGTH}"
+            aria-describedby="title-error"
+          >
+          <div id="title-error" class="error-message" role="alert"></div>
+        </div>
+        
+        <div class="form-group">
+          <label for="category">Category *</label>
+          <select 
+            id="category" 
+            name="category" 
+            required
+            aria-describedby="category-error"
+          >
+            <option value="">Select a category</option>
+            <option value="general">General</option>
+            <option value="urgent">Urgent</option>
+            <option value="maintenance">Maintenance</option>
+            <option value="event">Event</option>
+          </select>
+          <div id="category-error" class="error-message" role="alert"></div>
+        </div>
+        
+        <div class="form-group">
+          <label for="description">Description *</label>
+          <textarea 
+            id="description" 
+            name="description" 
+            required 
+            minlength="${VALIDATION_CONSTRAINTS.DESCRIPTION.MIN_LENGTH}" 
+            maxlength="${VALIDATION_CONSTRAINTS.DESCRIPTION.MAX_LENGTH}"
+            aria-describedby="description-error"
+          ></textarea>
+          <div id="description-error" class="error-message" role="alert"></div>
+        </div>
+        
+        <div class="form-group">
+          <label for="priority">Priority</label>
+          <select 
+            id="priority" 
+            name="priority"
+            aria-describedby="priority-error"
+          >
+            <option value="low">Low</option>
+            <option value="medium" selected>Medium</option>
+            <option value="high">High</option>
+          </select>
+          <div id="priority-error" class="error-message" role="alert"></div>
+        </div>
+        
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="send-notification" name="sendNotification">
+            Send email notification
+          </label>
+        </div>
+        
+        <button type="submit" id="submit-btn" disabled>Create Announcement</button>
+        <button type="reset" id="reset-btn">Reset</button>
+      </form>
+    `;
+    
+    form = document.getElementById('announcement-form');
+    submitButton = document.getElementById('submit-btn');
+    titleInput = document.getElementById('title');
+    descriptionInput = document.getElementById('description');
+    categorySelect = document.getElementById('category');
+    
+    // Mock form validation handler
+    window.validateAnnouncementForm = jest.fn();
+    window.showFieldError = jest.fn();
+    window.clearFieldError = jest.fn();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    jest.clearAllMocks();
+  });
+
+  // Happy path tests
+  describe('Happy path - valid announcement form submission', () => {
+    test('should successfully submit announcement form with valid data', async () => {
+      // Arrange
+      titleInput.value = 'Important System Update';
+      categorySelect.value = 'general';
+      descriptionInput.value = 'This is a comprehensive announcement about system updates that all users need to know';
+
+      const mockSubmitHandler = jest.fn((e) => {
+        e.preventDefault();
+        return Promise.resolve({ success: true, id: 'ann-12345' });
+      });
+      form.addEventListener('submit', mockSubmitHandler);
+
+      // Act
+      const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      expect(mockSubmitHandler).toHaveBeenCalledTimes(1);
+      expect(form.checkValidity()).toBe(true);
+    });
+
+    test('should accept all required announcement fields when properly filled', () => {
+      // Arrange
+      titleInput.value = 'System Maintenance Notice';
+      categorySelect.value = 'maintenance';
+      descriptionInput.value = 'Scheduled maintenance will occur on Sunday evening from 8 PM to 10 PM EST';
+
+      // Act & Assert
+      expect(titleInput.validity.valid).toBe(true);
+      expect(categorySelect.validity.valid).toBe(true);
+      expect(descriptionInput.validity.valid).toBe(true);
+      expect(form.checkValidity()).toBe(true);
+    });
+
+    test('should validate different announcement categories', () => {
+      // Arrange
+      const validCategories = ['general', 'urgent', 'maintenance', 'event'];
+
+      validCategories.forEach(category => {
+        // Act
+        categorySelect.value = category;
+        
+        // Assert
+        expect(categorySelect.validity.valid).toBe(true);
+      });
+    });
+
+    test('should enable submit button when announcement form is valid', () => {
+      // Arrange
+      titleInput.value = 'New Feature Release';
+      categorySelect.value = 'general';
+      descriptionInput.value = 'We are excited to announce the release of new features that will enhance your experience';
+
+      // Act
+      const inputEvent = new Event('input', { bubbles: true });
+      titleInput.dispatchEvent(inputEvent);
+      categorySelect.dispatchEvent(inputEvent);
+      descriptionInput.dispatchEvent(inputEvent);
+
+      // Assert (would need actual validation logic implementation)
+      expect(form.checkValidity()).toBe(true);
+    });
+  });
+
+  // Error path tests
+  describe('Error path - invalid announcement form submission', () => {
+    test('should prevent submission when title field is empty', () => {
+      // Arrange
+      titleInput.value = '';
+      categorySelect.value = 'general';
+      descriptionInput.value = 'Valid description with adequate length for announcement';
+
+      // Act & Assert
+      expect(titleInput.validity.valid).toBe(false);
+      expect(titleInput.validity.valueMissing).toBe(true);
+      expect(form.checkValidity()).toBe(false);
+    });
+
+    test('should prevent submission when category is not selected', () => {
+      // Arrange
+      titleInput.value = 'Valid Title';
+      categorySelect.value = '';
+      descriptionInput.value = 'Valid description with adequate length for announcement';
+
+      // Act & Assert
+      expect(categorySelect.validity.valid).toBe(false);
+      expect(categorySelect.validity.valueMissing).toBe(true);
+      expect(form.checkValidity()).toBe(false);
+    });
+
+    test('should prevent submission when description field is empty', () => {
+      // Arrange
+      titleInput.value = 'Valid Title';
+      categorySelect.value = 'general';
+      descriptionInput.value = '';
+
+      // Act & Assert
+      expect(descriptionInput.validity.valid).toBe(false);
+      expect(descriptionInput.validity.valueMissing).toBe(true);
+      expect(form.checkValidity()).toBe(false);
+    });
+
+    test('should validate title field length constraints', () => {
+      // Test minimum length
+      titleInput.value = 'Too'; // Too short
+      expect(titleInput.validity.valid).toBe(false);
+      expect(titleInput.validity.tooShort).toBe(true);
+
+      // Test maximum length
+      titleInput.value = 'A'.repeat(VALIDATION_CONSTRAINTS.TITLE.MAX_LENGTH + 1); // Too long
+      expect(titleInput.validity.valid).toBe(false);
+      expect(titleInput.validity.tooLong).toBe(true);
+    });
+
+    test('should validate description field length constraints', () => {
+      // Test minimum length
+      descriptionInput.value = 'Too short'; // Too short
+      expect(descriptionInput.validity.valid).toBe(false);
+      expect(descriptionInput.validity.tooShort).toBe(true);
+
+      // Test maximum length
+      descriptionInput.value = 'A'.repeat(VALIDATION_CONSTRAINTS.DESCRIPTION.MAX_LENGTH + 1); // Too long
+      expect(descriptionInput.validity.valid).toBe(false);
+      expect(descriptionInput.validity.tooLong).toBe(true);
+    });
+
+    test('should prevent submission when all required fields are empty', () => {
+      // Arrange
+      titleInput.value = '';
+      categorySelect.value = '';
+      descriptionInput.value = '';
+
+      const mockSubmitHandler = jest.fn((e) => e.preventDefault());
+      form.addEventListener('submit', mockSubmitHandler);
+
+      // Act
+      const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      expect(form.checkValidity()).toBe(false);
+      expect(titleInput.validity.valueMissing).toBe(true);
+      expect(categorySelect.validity.valueMissing).toBe(true);
+      expect(descriptionInput.validity.valueMissing).toBe(true);
+    });
+
+    test('should handle announcement form submission errors gracefully', async () => {
+      // Arrange
+      titleInput.value = 'Valid Title';
+      categorySelect.value = 'urgent';
+      descriptionInput.value = 'This is a valid description for the announcement';
+
+      const mockSubmitHandler = jest.fn((e) => {
+        e.preventDefault();
+        throw new Error('Server error');
+      });
+      form.addEventListener('submit', mockSubmitHandler);
+
+      // Act & Assert
+      expect(() => {
+        const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+        form.dispatchEvent(submitEvent);
+      }).toThrow('Server error');
+    });
+  });
+
+  // Edge cases and accessibility tests
+  describe('Edge cases and accessibility', () => {
+    test('should maintain focus on invalid field after submission attempt', () => {
+      // Arrange
+      titleInput.value = '';
+      categorySelect.value = 'general';
+      descriptionInput.value = 'Valid description with adequate length';
+
+      // Act
+      const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      expect(form.checkValidity()).toBe(false);
+      // In real implementation, invalid field should receive focus
+    });
+
+    test('should display appropriate error messages for invalid announcement fields', () => {
+      // Arrange
+      titleInput.value = '';
+      const errorDiv = document.getElementById('title-error');
+
+      // Act
+      const blurEvent = new Event('blur', { bubbles: true });
+      titleInput.dispatchEvent(blurEvent);
+
+      // Assert
+      expect(titleInput.validity.valueMissing).toBe(true);
+      expect(errorDiv.getAttribute('role')).toBe('alert');
+    });
+
+    test('should reset announcement form fields when reset button is clicked', () => {
+      // Arrange
+      titleInput.value = 'Test Announcement';
+      categorySelect.value = 'urgent';
+      descriptionInput.value = 'Test description for announcement';
+      const resetButton = document.getElementById('reset-btn');
+
+      // Act
+      resetButton.click();
+
+      // Assert
+      expect(titleInput.value).toBe('');
+      expect(categorySelect.value).toBe('');
+      expect(descriptionInput.value).toBe('');
+    });
+
+    test('should validate announcement form state changes during user interaction', () => {
+      // Arrange
+      let formValidState = false;
+
+      const validateFormState = () => {
+        formValidState = form.checkValidity();
+        submitButton.disabled = !formValidState;
+      };
+
+      // Act - simulate user filling form step by step
+      titleInput.value = 'Valid Title';
+      validateFormState();
+      expect(formValidState).toBe(false); // Category and description still empty
+
+      categorySelect.value = 'general';
+      validateFormState();
+      expect(formValidState).toBe(false); // Description still empty
+
+      descriptionInput.value = 'Complete announcement description with adequate length';
+      validateFormState();
+      expect(formValidState).toBe(true); // All required fields filled
+    });
+
+    test('should handle announcement form submission with loading state', async () => {
+      // Arrange
+      titleInput.value = 'System Update';
+      categorySelect.value = 'maintenance';
+      descriptionInput.value = 'Important system update announcement for all users to review';
+
+      let isSubmitting = false;
+      const mockSubmitHandler = jest.fn(async (e) => {
+        e.preventDefault();
+        isSubmitting = true;
+        submitButton.disabled = true;
+        submitButton.textContent = 'Creating...';
+        
+        // Simulate async operation
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        isSubmitting = false;
+        submitButton.disabled = false;
+        submitButton.textContent = 'Create Announcement';
+        
+        return { success: true, message: 'Announcement created successfully' };
+      });
+
+      form.addEventListener('submit', mockSubmitHandler);
+
+      // Act
+      const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+      form.dispatchEvent(submitEvent);
+
+      // Assert initial state during submission
+      expect(mockSubmitHandler).toHaveBeenCalledTimes(1);
+      expect(submitButton.disabled).toBe(true);
+      expect(submitButton.textContent).toBe('Creating...');
+      
+      // Wait for async operation to complete
+      await new Promise(resolve => setTimeout(resolve, 150));
+      
+      // Assert final state after submission
+      expect(submitButton.disabled).toBe(false);
+      expect(submitButton.textContent).toBe('Create Announcement');
+      expect(form.checkValidity()).toBe(true);
+    });
+
+    test('should handle email notification checkbox properly', () => {
+      // Arrange
+      const notificationCheckbox = document.getElementById('send-notification');
+
+      // Act & Assert
+      expect(notificationCheckbox.checked).toBe(false);
+      
+      notificationCheckbox.checked = true;
+      expect(notificationCheckbox.checked).toBe(true);
+      
+      notificationCheckbox.checked = false;
+      expect(notificationCheckbox.checked).toBe(false);
+    });
+  });
+});

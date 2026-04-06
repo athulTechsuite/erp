@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardContent } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Trash2, Edit, Calendar } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import announcementService from '../../services/announcementService';
+import DOMPurify from 'dompurify';
 
 const AnnouncementList = ({ showActions = false, maxItems = null }) => {
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchAnnouncements();
@@ -45,6 +48,10 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
     }
   };
 
+  const handleEdit = (id) => {
+    navigate(`/admin/announcements/edit/${id}`);
+  };
+
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -52,6 +59,13 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
+    });
+  };
+
+  const sanitizeContent = (content) => {
+    return DOMPurify.sanitize(content, {
+      ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'br', 'p'],
+      ALLOWED_ATTR: []
     });
   };
 
@@ -108,10 +122,10 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
                   )}
                 </div>
               </div>
-              {showActions && (
+              {showActions && user?.role === 'admin' && (
                 <div className="flex items-center space-x-2 ml-4">
                   <button
-                    onClick={() => window.location.href = `/admin/announcements/edit/${announcement.id}`}
+                    onClick={() => handleEdit(announcement.id)}
                     className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                     title="Edit announcement"
                   >
@@ -130,9 +144,10 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="prose prose-sm max-w-none">
-              <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
-                {announcement.content}
-              </p>
+              <div 
+                className="text-gray-700 whitespace-pre-wrap leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: sanitizeContent(announcement.content) }}
+              />
             </div>
           </CardContent>
         </Card>

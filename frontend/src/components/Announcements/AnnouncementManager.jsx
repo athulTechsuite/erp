@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import './AnnouncementManager.css';
 
 const AnnouncementManager = () => {
   const [announcements, setAnnouncements] = useState([]);

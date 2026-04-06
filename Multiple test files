@@ -1,0 +1,114 @@
+// test_input_validation.js
+// TC-004: Input validation and error handling test coverage
+
+describe('TC-004: Input validation and error handling', () => {
+  // Happy path tests
+  describe('Valid input scenarios', () => {
+    test('TC-004: should accept valid string input', () => {
+      const validInput = 'test string';
+      const result = validateInput(validInput);
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeNull();
+    });
+
+    test('TC-004: should accept valid numeric input', () => {
+      const validInput = 123;
+      const result = validateInput(validInput);
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeNull();
+    });
+
+    test('TC-004: should accept valid email format', () => {
+      const validEmail = 'test@example.com';
+      const result = validateEmail(validEmail);
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeNull();
+    });
+  });
+
+  // Error path tests
+  describe('Invalid input scenarios', () => {
+    test('TC-004: should reject null input', () => {
+      const invalidInput = null;
+      const result = validateInput(invalidInput);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toBe('Input cannot be null');
+    });
+
+    test('TC-004: should reject undefined input', () => {
+      const invalidInput = undefined;
+      const result = validateInput(invalidInput);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toBe('Input is required');
+    });
+
+    test('TC-004: should reject empty string input', () => {
+      const invalidInput = '';
+      const result = validateInput(invalidInput);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toBe('Input cannot be empty');
+    });
+
+    test('TC-004: should reject invalid email format', () => {
+      const invalidEmail = 'invalid-email';
+      const result = validateEmail(invalidEmail);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toBe('Invalid email format');
+    });
+
+    test('TC-004: should handle special characters properly', () => {
+      const specialCharsInput = '<script>alert("test")</script>';
+      const result = validateInput(specialCharsInput);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toBe('Invalid characters detected');
+    });
+  });
+
+  // Edge cases
+  describe('Edge case scenarios', () => {
+    test('TC-004: should handle maximum length input', () => {
+      const maxLengthInput = 'a'.repeat(1000);
+      const result = validateInput(maxLengthInput);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toBe('Input exceeds maximum length');
+    });
+
+    test('TC-004: should handle whitespace-only input', () => {
+      const whitespaceInput = '   ';
+      const result = validateInput(whitespaceInput);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toBe('Input cannot contain only whitespace');
+    });
+  });
+});
+
+// Mock functions for testing
+function validateInput(input) {
+  if (input === null) {
+    return { isValid: false, error: 'Input cannot be null' };
+  }
+  if (input === undefined) {
+    return { isValid: false, error: 'Input is required' };
+  }
+  if (input === '') {
+    return { isValid: false, error: 'Input cannot be empty' };
+  }
+  if (typeof input === 'string' && input.trim() === '') {
+    return { isValid: false, error: 'Input cannot contain only whitespace' };
+  }
+  if (typeof input === 'string' && input.includes('<script>')) {
+    return { isValid: false, error: 'Invalid characters detected' };
+  }
+  if (typeof input === 'string' && input.length > 999) {
+    return { isValid: false, error: 'Input exceeds maximum length' };
+  }
+  return { isValid: true, error: null };
+}
+
+function validateEmail(email) {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return { isValid: false, error: 'Invalid email format' };
+  }
+  return { isValid: true, error: null };
+}

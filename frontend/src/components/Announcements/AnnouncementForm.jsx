@@ -19,6 +19,7 @@ const AnnouncementForm = ({
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
+  const [csrfToken, setCsrfToken] = useState('');
 
   useEffect(() => {
     if (announcement) {
@@ -29,21 +30,20 @@ const AnnouncementForm = ({
     }
   }, [announcement]);
 
-  const sanitizeErrorMessage = (message) => {
-    if (typeof message !== 'string') {
-      return 'An error occurred. Please try again.';
-    }
-    // Sanitize HTML content using DOMPurify
-    return DOMPurify.sanitize(message, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
-  };
+  useEffect(() => {
+    // Fetch CSRF token on component mount
+    const fetchCSRFToken = async () => {
+      try {
+        const response = await fetch('/api/csrf-token');
+        const data = await response.json();
+        setCsrfToken(data.token);
+      } catch (error) {
+        console.error('Failed to fetch CSRF token:', error);
+      }
+    };
 
-  const sanitizeInput = (input) => {
-    if (typeof input !== 'string') {
-      return '';
-    }
-    // Remove HTML tags and sanitize input
-    return DOMPurify.sanitize(input, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] }).trim();
-  };
+    fetchCSRFToken();
+  }, []);
 
   const validateField = (name, value) => {
     const fieldErrors = {};
@@ -53,8 +53,6 @@ const AnnouncementForm = ({
         fieldErrors.title = 'Title is required';
       } else if (value.length > 200) {
         fieldErrors.title = 'Title must be less than 200 characters';
-      } else if (value.trim().length < 3) {
-        fieldErrors.title = 'Title must be at least 3 characters long';
       }
     }
     
@@ -63,8 +61,6 @@ const AnnouncementForm = ({
         fieldErrors.content = 'Content is required';
       } else if (value.length > 5000) {
         fieldErrors.content = 'Content must be less than 5000 characters';
-      } else if (value.trim().length < 10) {
-        fieldErrors.content = 'Content must be at least 10 characters long';
       }
     }
     
@@ -116,42 +112,16 @@ const AnnouncementForm = ({
     }
 
     try {
-      // Sanitize and validate inputs before sending to API
-      const sanitizedTitle = sanitizeInput(formData.title);
-      const sanitizedContent = sanitizeInput(formData.content);
-      
-      // Additional validation after sanitization
-      if (!sanitizedTitle || sanitizedTitle.length < 3) {
-        setErrors({ title: 'Title must be at least 3 characters long after sanitization' });
-        return;
-      }
-      
-      if (!sanitizedContent || sanitizedContent.length < 10) {
-        setErrors({ content: 'Content must be at least 10 characters long after sanitization' });
-        return;
-      }
-      
-      if (sanitizedTitle.length > 200) {
-        setErrors({ title: 'Title is too long' });
-        return;
-      }
-      
-      if (sanitizedContent.length > 5000) {
-        setErrors({ content: 'Content is too long' });
-        return;
-      }
-
-      const sanitizedData = {
-        title: sanitizedTitle,
-        content: sanitizedContent
-      };
-
-      await onSave(sanitizedData);
+      await onSave({
+        ...formData,
+        title: formData.title.trim(),
+        content: formData.content.trim(),
+        csrfToken
+      });
     } catch (error) {
       console.error('Error saving announcement:', error);
-      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to save announcement. Please try again.';
       setErrors({ 
-        submit: sanitizeErrorMessage(errorMessage)
+        submit: 'Failed to save announcement. Please try again.' 
       });
     }
   };
@@ -172,6 +142,8 @@ const AnnouncementForm = ({
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
+          <input type="hidden" name="csrfToken" value={csrfToken} />
+          
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />

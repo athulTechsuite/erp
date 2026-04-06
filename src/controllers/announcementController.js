@@ -10,108 +10,55 @@ const sanitizeInput = (input) => {
   return DOMPurify.sanitize(input, { ALLOWED_TAGS: [] });
 };
 
-// Input validation middleware
-const validateInputs = (inputs) => {
-  const errors = [];
-  
-  for (const [key, value] of Object.entries(inputs)) {
-    if (value === null || value === undefined) continue;
-    
-    // Validate string inputs
-    if (typeof value === 'string') {
-      if (value.length > 10000) {
-        errors.push(`${key} exceeds maximum length`);
-      }
-      // Check for potential SQL injection patterns (even though we use MongoDB)
-      const sqlInjectionPatterns = /(\$where|\$ne|\$gt|\$lt|\$in|\$nin|\$exists|\$regex|javascript:|eval\(|function\()/i;
-      if (sqlInjectionPatterns.test(value)) {
-        errors.push(`${key} contains potentially dangerous content`);
-      }
-    }
-    
-    // Validate ObjectId strings
-    if ((key.includes('Id') || key === '_id' || key === 'id') && typeof value === 'string') {
-      if (!mongoose.Types.ObjectId.isValid(value)) {
-        errors.push(`${key} must be a valid ObjectId`);
-      }
-    }
-    
-    // Validate boolean inputs
-    if (key === 'isActive' && typeof value !== 'boolean') {
-      errors.push(`${key} must be a boolean value`);
-    }
-  }
-  
-  return errors;
-};
-
 // Enhanced parameterized query helper for MongoDB operations
 const executeSecureQuery = async (model, operation, params = {}) => {
   try {
-    // Validate all input parameters first
-    const validationErrors = validateInputs(params);
-    if (validationErrors.length > 0) {
-      throw new Error(`Input validation failed: ${validationErrors.join(', ')}`);
-    }
-    
-    // Validate and convert ObjectId parameters to prevent injection
-    const processedParams = { ...params };
-    for (const [key, value] of Object.entries(processedParams)) {
+    // Validate all ObjectId parameters to prevent injection
+    for (const [key, value] of Object.entries(params)) {
       if (key.includes('Id') || key === '_id' || key === 'id') {
         if (!mongoose.Types.ObjectId.isValid(value)) {
           throw new Error(`Invalid ObjectId format for parameter: ${key}`);
         }
         // Convert to proper ObjectId to ensure parameterized query
-        processedParams[key] = new mongoose.Types.ObjectId(value);
+        params[key] = new mongoose.Types.ObjectId(value);
       }
-      
-      // Recursively process nested objects (like filter, update objects)
-      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-        for (const [nestedKey, nestedValue] of Object.entries(value)) {
-          if ((nestedKey.includes('Id') || nestedKey === '_id' || nestedKey === 'id') && 
-              typeof nestedValue === 'string') {
-            if (!mongoose.Types.ObjectId.isValid(nestedValue)) {
-              throw new Error(`Invalid ObjectId format for nested parameter: ${nestedKey}`);
-            }
-            value[nestedKey] = new mongoose.Types.ObjectId(nestedValue);
+    }
+
+    // Validate filter objects to prevent query injection
+    if (params.filter && typeof params.filter === 'object') {
+      for (const [key, value] of Object.entries(params.filter)) {
+        // Sanitize filter keys to prevent injection through field names
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
+          throw new Error(`Invalid field name in filter: ${key}`);
+        }
+        // Validate ObjectId values in filters
+        if ((key.includes('Id') || key === '_id') && value) {
+          if (!mongoose.Types.ObjectId.isValid(value)) {
+            throw new Error(`Invalid ObjectId in filter for field: ${key}`);
           }
+          params.filter[key] = new mongoose.Types.ObjectId(value);
         }
       }
     }
 
-    // Execute operation with validated and processed parameters
+    // Execute operation with validated parameters using Mongoose's built-in parameterization
     switch (operation) {
       case 'find':
-        return await model.find(
-          processedParams.filter || {}, 
-          processedParams.select || null, 
-          processedParams.options || {}
-        );
+        return await model.find(params.filter || {}, params.select || null, params.options || {});
       case 'findById':
-        return await model.findById(processedParams.id, processedParams.select || null);
+        return await model.findById(params.id, params.select || null);
       case 'findOne':
-        return await model.findOne(
-          processedParams.filter || {}, 
-          processedParams.select || null
-        );
+        return await model.findOne(params.filter || {}, params.select || null);
       case 'create':
-        return await model.create(processedParams.data);
+        return await model.create(params.data);
       case 'findByIdAndUpdate':
-        return await model.findByIdAndUpdate(
-          processedParams.id, 
-          processedParams.update, 
-          processedParams.options || {}
-        );
+        return await model.findByIdAndUpdate(params.id, params.update, params.options || {});
       case 'findByIdAndDelete':
-        return await model.findByIdAndDelete(processedParams.id);
+        return await model.findByIdAndDelete(params.id);
       case 'updateOne':
-        return await model.updateOne(
-          processedParams.filter, 
-          processedParams.update, 
-          processedParams.options || {}
-        );
+        return await model.updateOne(params.filter, params.update, params.options || {});
       case 'deleteOne':
-        return await model.deleteOne(processedParams.filter);
+        return await model.deleteOne(params.filter);
       default:
         throw new Error(`Unsupported database operation: ${operation}`);
     }
@@ -189,16 +136,6 @@ const createAnnouncement = async (req, res) => {
 
     const { title, content, isActive = true } = req.body;
 
-    // Validate input data
-    const inputValidationErrors = validateInputs({ title, content, isActive, createdBy: req.user._id });
-    if (inputValidationErrors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Input validation failed',
-        errors: inputValidationErrors
-      });
-    }
-
     // Sanitize input to prevent stored XSS
     const sanitizedTitle = sanitizeInput(title);
     const sanitizedContent = sanitizeInput(content);
@@ -243,16 +180,6 @@ const createAnnouncement = async (req, res) => {
 const getAnnouncementById = async (req, res) => {
   try {
     const { id } = req.params;
-    
-    // Validate input parameters
-    const inputValidationErrors = validateInputs({ id });
-    if (inputValidationErrors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID',
-        errors: inputValidationErrors
-      });
-    }
     
     // Use secure query which validates ObjectId
     const announcement = await executeSecureQuery(Announcement, 'findById', {
@@ -305,16 +232,6 @@ const updateAnnouncement = async (req, res) => {
     const { id } = req.params;
     const { title, content, isActive } = req.body;
 
-    // Validate all input parameters
-    const inputValidationErrors = validateInputs({ id, title, content, isActive });
-    if (inputValidationErrors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Input validation failed',
-        errors: inputValidationErrors
-      });
-    }
-
     const announcement = await executeSecureQuery(Announcement, 'findById', {
       id: id
     });
@@ -361,16 +278,6 @@ const deleteAnnouncement = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate input parameters
-    const inputValidationErrors = validateInputs({ id });
-    if (inputValidationErrors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID',
-        errors: inputValidationErrors
-      });
-    }
-
     const announcement = await executeSecureQuery(Announcement, 'findById', {
       id: id
     });
@@ -403,16 +310,6 @@ const deleteAnnouncement = async (req, res) => {
 const toggleAnnouncementStatus = async (req, res) => {
   try {
     const { id } = req.params;
-
-    // Validate input parameters
-    const inputValidationErrors = validateInputs({ id });
-    if (inputValidationErrors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid announcement ID',
-        errors: inputValidationErrors
-      });
-    }
 
     const announcement = await executeSecureQuery(Announcement, 'findById', {
       id: id

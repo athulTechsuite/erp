@@ -1,60 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardContent } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Trash2, Edit, Calendar, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Trash2, Edit, Calendar } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import announcementService from '../../services/announcementService';
 import DOMPurify from 'dompurify';
 
-// Error Boundary Component
-class AnnouncementErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error, errorInfo) {
-    console.error('AnnouncementList Error:', error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            Something went wrong while loading announcements. Please refresh the page or try again later.
-            <button 
-              onClick={() => window.location.reload()} 
-              className="ml-2 underline hover:no-underline"
-            >
-              Refresh page
-            </button>
-          </AlertDescription>
-        </Alert>
-      );
-    }
-
-    return this.props.children;
-  }
-}
-
-const LoadingSpinner = ({ className = "" }) => (
-  <div className={`flex items-center justify-center ${className}`}>
-    <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
-    <span className="ml-2 text-gray-500">Loading announcements...</span>
-  </div>
-);
-
-const AnnouncementListContent = ({ showActions = false, maxItems = null }) => {
+const AnnouncementList = ({ showActions = false, maxItems = null }) => {
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [deleting, setDeleting] = useState(null);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -64,7 +19,6 @@ const AnnouncementListContent = ({ showActions = false, maxItems = null }) => {
   const fetchAnnouncements = async () => {
     try {
       setLoading(true);
-      setError('');
       const data = await announcementService.getAllAnnouncements();
       const sortedAnnouncements = data.sort((a, b) => 
         new Date(b.createdAt) - new Date(a.createdAt)
@@ -84,19 +38,12 @@ const AnnouncementListContent = ({ showActions = false, maxItems = null }) => {
     }
 
     try {
-      setDeleting(id);
       await announcementService.deleteAnnouncement(id);
       setAnnouncements(announcements.filter(announcement => announcement.id !== id));
     } catch (err) {
       setError('Failed to delete announcement');
       console.error('Error deleting announcement:', err);
-    } finally {
-      setDeleting(null);
     }
-  };
-
-  const handleRetry = () => {
-    fetchAnnouncements();
   };
 
   const formatDate = (dateString) => {
@@ -110,7 +57,7 @@ const AnnouncementListContent = ({ showActions = false, maxItems = null }) => {
   };
 
   const renderSafeContent = (content) => {
-    // Sanitize content and strip HTML tags to ensure safe plain text rendering
+    // Strip all HTML tags and render as plain text to prevent XSS
     const textContent = DOMPurify.sanitize(content, { 
       ALLOWED_TAGS: [], 
       KEEP_CONTENT: true 
@@ -131,7 +78,6 @@ const AnnouncementListContent = ({ showActions = false, maxItems = null }) => {
   if (loading) {
     return (
       <div className="space-y-4">
-        <LoadingSpinner className="py-8" />
         {[...Array(3)].map((_, index) => (
           <Card key={index} className="animate-pulse">
             <CardContent className="p-4">
@@ -149,17 +95,7 @@ const AnnouncementListContent = ({ showActions = false, maxItems = null }) => {
   if (error) {
     return (
       <Alert variant="destructive">
-        <AlertTriangle className="h-4 w-4" />
-        <AlertDescription className="flex items-center justify-between">
-          <span>{error}</span>
-          <button 
-            onClick={handleRetry}
-            className="ml-4 px-3 py-1 bg-red-100 text-red-800 rounded hover:bg-red-200 transition-colors text-sm"
-            disabled={loading}
-          >
-            {loading ? 'Retrying...' : 'Retry'}
-          </button>
-        </AlertDescription>
+        <AlertDescription>{error}</AlertDescription>
       </Alert>
     );
   }
@@ -198,21 +134,15 @@ const AnnouncementListContent = ({ showActions = false, maxItems = null }) => {
                     onClick={() => window.location.href = `/admin/announcements/edit/${announcement.id}`}
                     className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                     title="Edit announcement"
-                    disabled={deleting === announcement.id}
                   >
                     <Edit className="h-4 w-4" />
                   </button>
                   <button
                     onClick={() => handleDelete(announcement.id)}
-                    className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                     title="Delete announcement"
-                    disabled={deleting === announcement.id}
                   >
-                    {deleting === announcement.id ? (
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
               )}
@@ -228,14 +158,6 @@ const AnnouncementListContent = ({ showActions = false, maxItems = null }) => {
         </Card>
       ))}
     </div>
-  );
-};
-
-const AnnouncementList = (props) => {
-  return (
-    <AnnouncementErrorBoundary>
-      <AnnouncementListContent {...props} />
-    </AnnouncementErrorBoundary>
   );
 };
 

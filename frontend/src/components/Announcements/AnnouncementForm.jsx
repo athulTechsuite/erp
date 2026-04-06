@@ -28,23 +28,6 @@ const AnnouncementForm = ({
     }
   }, [announcement]);
 
-  const sanitizeErrorMessage = (message) => {
-    if (typeof message !== 'string') {
-      return 'An error occurred. Please try again.';
-    }
-    // Remove HTML tags and escape special characters
-    return message.replace(/<[^>]*>/g, '').replace(/[<>&"']/g, (match) => {
-      const htmlEntities = {
-        '<': '&lt;',
-        '>': '&gt;',
-        '&': '&amp;',
-        '"': '&quot;',
-        "'": '&#x27;'
-      };
-      return htmlEntities[match];
-    });
-  };
-
   const validateField = (name, value) => {
     const fieldErrors = {};
     
@@ -119,9 +102,8 @@ const AnnouncementForm = ({
       });
     } catch (error) {
       console.error('Error saving announcement:', error);
-      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to save announcement. Please try again.';
       setErrors({ 
-        submit: sanitizeErrorMessage(errorMessage)
+        submit: 'Failed to save announcement. Please try again.' 
       });
     }
   };
@@ -145,7 +127,7 @@ const AnnouncementForm = ({
           {errors.submit && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription dangerouslySetInnerHTML={{ __html: errors.submit }}></AlertDescription>
+              <AlertDescription>{errors.submit}</AlertDescription>
             </Alert>
           )}
           

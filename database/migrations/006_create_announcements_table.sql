@@ -29,7 +29,13 @@ CREATE TABLE announcements (
     CONSTRAINT fk_announcements_created_by 
         FOREIGN KEY (created_by) 
         REFERENCES users(id) 
-        ON DELETE RESTRICT
+        ON DELETE RESTRICT,
+    
+    -- Check constraints for reasonable length limits
+    CONSTRAINT chk_announcements_title_length 
+        CHECK (char_length(title) <= 255 AND char_length(title) >= 1),
+    CONSTRAINT chk_announcements_content_length 
+        CHECK (char_length(content) <= 50000 AND char_length(content) >= 1)
 );
 
 -- Create indexes for better query performance

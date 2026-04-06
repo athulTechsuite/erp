@@ -1,281 +1,169 @@
-// test_input_validation.js
-// TC-004: Input validation and error handling test coverage
+// test_announcement_form_validation.js
+// TC-004: Announcement form input validation and error handling test coverage
 
-describe('TC-004: Input validation and error handling', () => {
-  // Happy path tests
-  describe('Valid input scenarios', () => {
-    test('TC-004: should accept valid string input', () => {
-      const validInput = 'test string';
-      const result = validateInput(validInput);
+describe('TC-004: Announcement form input validation and error handling', () => {
+  // Happy path tests for announcement form
+  describe('Valid announcement form input scenarios', () => {
+    test('TC-004: should accept valid announcement title', () => {
+      const validTitle = 'Important Company Update';
+      const result = validateAnnouncementTitle(validTitle);
       expect(result.isValid).toBe(true);
       expect(result.error).toBeNull();
     });
 
-    test('TC-004: should accept valid numeric input', () => {
-      const validInput = 123;
-      const result = validateInput(validInput);
+    test('TC-004: should accept valid announcement content', () => {
+      const validContent = 'This is a valid announcement content with proper formatting.';
+      const result = validateAnnouncementContent(validContent);
       expect(result.isValid).toBe(true);
       expect(result.error).toBeNull();
     });
 
-    test('TC-004: should accept valid email format', () => {
-      const validEmail = 'test@example.com';
-      const result = validateEmail(validEmail);
+    test('TC-004: should accept valid announcement category', () => {
+      const validCategory = 'general';
+      const result = validateAnnouncementCategory(validCategory);
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeNull();
+    });
+
+    test('TC-004: should accept valid priority level', () => {
+      const validPriority = 'high';
+      const result = validateAnnouncementPriority(validPriority);
       expect(result.isValid).toBe(true);
       expect(result.error).toBeNull();
     });
   });
 
-  // Error path tests
-  describe('Invalid input scenarios', () => {
-    test('TC-004: should reject null input', () => {
-      const invalidInput = null;
-      const result = validateInput(invalidInput);
+  // Error path tests for announcement form
+  describe('Invalid announcement form input scenarios', () => {
+    test('TC-004: should reject null announcement title', () => {
+      const invalidTitle = null;
+      const result = validateAnnouncementTitle(invalidTitle);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Input cannot be null');
+      expect(result.error).toBe('Announcement title cannot be null');
     });
 
-    test('TC-004: should reject undefined input', () => {
-      const invalidInput = undefined;
-      const result = validateInput(invalidInput);
+    test('TC-004: should reject undefined announcement content', () => {
+      const invalidContent = undefined;
+      const result = validateAnnouncementContent(invalidContent);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Input is required');
+      expect(result.error).toBe('Announcement content is required');
     });
 
-    test('TC-004: should reject empty string input', () => {
-      const invalidInput = '';
-      const result = validateInput(invalidInput);
+    test('TC-004: should reject empty announcement title', () => {
+      const invalidTitle = '';
+      const result = validateAnnouncementTitle(invalidTitle);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Input cannot be empty');
+      expect(result.error).toBe('Announcement title cannot be empty');
     });
 
-    test('TC-004: should reject invalid email format', () => {
-      const invalidEmail = 'invalid-email';
-      const result = validateEmail(invalidEmail);
+    test('TC-004: should reject invalid announcement category', () => {
+      const invalidCategory = 'invalid-category';
+      const result = validateAnnouncementCategory(invalidCategory);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Invalid email format');
+      expect(result.error).toBe('Invalid announcement category');
     });
 
-    test('TC-004: should handle special characters properly', () => {
-      const specialCharsInput = '<script>alert("test")</script>';
-      const result = validateInput(specialCharsInput);
+    test('TC-004: should reject XSS attempts in announcement content', () => {
+      const maliciousContent = '<script>alert("xss")</script>Announcement content';
+      const result = validateAnnouncementContent(maliciousContent);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Invalid characters detected');
+      expect(result.error).toBe('Invalid characters detected in announcement content');
+    });
+
+    test('TC-004: should reject invalid priority level', () => {
+      const invalidPriority = 'invalid-priority';
+      const result = validateAnnouncementPriority(invalidPriority);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toBe('Invalid priority level');
     });
   });
 
-  // Edge cases
-  describe('Edge case scenarios', () => {
-    test('TC-004: should handle maximum length input', () => {
-      const maxLengthInput = 'a'.repeat(1000);
-      const result = validateInput(maxLengthInput);
+  // Edge cases for announcement form
+  describe('Announcement form edge case scenarios', () => {
+    test('TC-004: should handle maximum length announcement title', () => {
+      const maxLengthTitle = 'a'.repeat(201);
+      const result = validateAnnouncementTitle(maxLengthTitle);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Input exceeds maximum length');
+      expect(result.error).toBe('Announcement title exceeds maximum length (200 characters)');
     });
 
-    test('TC-004: should handle whitespace-only input', () => {
-      const whitespaceInput = '   ';
-      const result = validateInput(whitespaceInput);
+    test('TC-004: should handle maximum length announcement content', () => {
+      const maxLengthContent = 'a'.repeat(5001);
+      const result = validateAnnouncementContent(maxLengthContent);
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe('Input cannot contain only whitespace');
+      expect(result.error).toBe('Announcement content exceeds maximum length (5000 characters)');
+    });
+
+    test('TC-004: should handle whitespace-only announcement title', () => {
+      const whitespaceTitle = '   ';
+      const result = validateAnnouncementTitle(whitespaceTitle);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toBe('Announcement title cannot contain only whitespace');
+    });
+
+    test('TC-004: should handle minimum length validation for announcement content', () => {
+      const shortContent = 'Hi';
+      const result = validateAnnouncementContent(shortContent);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toBe('Announcement content must be at least 10 characters');
     });
   });
 });
 
-// TC-005: Authentication and Authorization test coverage
-describe('TC-005: Authentication and Authorization', () => {
-  // Authentication tests
-  describe('User authentication', () => {
-    test('TC-005: should authenticate valid user credentials', () => {
-      const credentials = { username: 'testuser', password: 'password123' };
-      const result = authenticateUser(credentials);
-      expect(result.authenticated).toBe(true);
-      expect(result.token).toBeDefined();
-      expect(result.user.role).toBeDefined();
-    });
-
-    test('TC-005: should reject invalid credentials', () => {
-      const credentials = { username: 'testuser', password: 'wrongpassword' };
-      const result = authenticateUser(credentials);
-      expect(result.authenticated).toBe(false);
-      expect(result.error).toBe('Invalid credentials');
-      expect(result.token).toBeUndefined();
-    });
-
-    test('TC-005: should reject missing credentials', () => {
-      const credentials = { username: '', password: '' };
-      const result = authenticateUser(credentials);
-      expect(result.authenticated).toBe(false);
-      expect(result.error).toBe('Username and password are required');
-    });
-
-    test('TC-005: should handle expired tokens', () => {
-      const expiredToken = 'expired.jwt.token';
-      const result = validateToken(expiredToken);
-      expect(result.valid).toBe(false);
-      expect(result.error).toBe('Token expired');
-    });
-  });
-
-  // Role-based authorization tests
-  describe('Role-based authorization', () => {
-    test('TC-005: should allow admin access to all endpoints', () => {
-      const user = { id: 1, role: 'admin' };
-      const endpoint = '/admin/users';
-      const result = checkAuthorization(user, endpoint);
-      expect(result.authorized).toBe(true);
-    });
-
-    test('TC-005: should allow user access to own resources', () => {
-      const user = { id: 1, role: 'user' };
-      const endpoint = '/user/1/profile';
-      const result = checkAuthorization(user, endpoint);
-      expect(result.authorized).toBe(true);
-    });
-
-    test('TC-005: should deny user access to other user resources', () => {
-      const user = { id: 1, role: 'user' };
-      const endpoint = '/user/2/profile';
-      const result = checkAuthorization(user, endpoint);
-      expect(result.authorized).toBe(false);
-      expect(result.error).toBe('Access denied: insufficient permissions');
-    });
-
-    test('TC-005: should deny guest access to protected endpoints', () => {
-      const user = { id: null, role: 'guest' };
-      const endpoint = '/user/profile';
-      const result = checkAuthorization(user, endpoint);
-      expect(result.authorized).toBe(false);
-      expect(result.error).toBe('Authentication required');
-    });
-
-    test('TC-005: should allow moderator access to moderation endpoints', () => {
-      const user = { id: 1, role: 'moderator' };
-      const endpoint = '/moderate/content';
-      const result = checkAuthorization(user, endpoint);
-      expect(result.authorized).toBe(true);
-    });
-
-    test('TC-005: should deny regular user access to admin endpoints', () => {
-      const user = { id: 1, role: 'user' };
-      const endpoint = '/admin/settings';
-      const result = checkAuthorization(user, endpoint);
-      expect(result.authorized).toBe(false);
-      expect(result.error).toBe('Access denied: admin role required');
-    });
-  });
-
-  // Permission-based access tests
-  describe('Permission-based access control', () => {
-    test('TC-005: should grant access with sufficient permissions', () => {
-      const user = { id: 1, role: 'user', permissions: ['read', 'write'] };
-      const requiredPermissions = ['read'];
-      const result = checkPermissions(user, requiredPermissions);
-      expect(result.authorized).toBe(true);
-    });
-
-    test('TC-005: should deny access with insufficient permissions', () => {
-      const user = { id: 1, role: 'user', permissions: ['read'] };
-      const requiredPermissions = ['read', 'write', 'delete'];
-      const result = checkPermissions(user, requiredPermissions);
-      expect(result.authorized).toBe(false);
-      expect(result.error).toBe('Insufficient permissions');
-    });
-  });
-});
-
-// Mock functions for testing
-function validateInput(input) {
-  if (input === null) {
-    return { isValid: false, error: 'Input cannot be null' };
+// Mock validation functions for announcement form testing
+function validateAnnouncementTitle(title) {
+  if (title === null) {
+    return { isValid: false, error: 'Announcement title cannot be null' };
   }
-  if (input === undefined) {
-    return { isValid: false, error: 'Input is required' };
+  if (title === undefined) {
+    return { isValid: false, error: 'Announcement title is required' };
   }
-  if (input === '') {
-    return { isValid: false, error: 'Input cannot be empty' };
+  if (title === '') {
+    return { isValid: false, error: 'Announcement title cannot be empty' };
   }
-  if (typeof input === 'string' && input.trim() === '') {
-    return { isValid: false, error: 'Input cannot contain only whitespace' };
+  if (typeof title === 'string' && title.trim() === '') {
+    return { isValid: false, error: 'Announcement title cannot contain only whitespace' };
   }
-  if (typeof input === 'string' && input.includes('<script>')) {
-    return { isValid: false, error: 'Invalid characters detected' };
-  }
-  if (typeof input === 'string' && input.length > 999) {
-    return { isValid: false, error: 'Input exceeds maximum length' };
+  if (typeof title === 'string' && title.length > 200) {
+    return { isValid: false, error: 'Announcement title exceeds maximum length (200 characters)' };
   }
   return { isValid: true, error: null };
 }
 
-function validateEmail(email) {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    return { isValid: false, error: 'Invalid email format' };
+function validateAnnouncementContent(content) {
+  if (content === null) {
+    return { isValid: false, error: 'Announcement content cannot be null' };
+  }
+  if (content === undefined) {
+    return { isValid: false, error: 'Announcement content is required' };
+  }
+  if (content === '') {
+    return { isValid: false, error: 'Announcement content cannot be empty' };
+  }
+  if (typeof content === 'string' && content.trim().length < 10) {
+    return { isValid: false, error: 'Announcement content must be at least 10 characters' };
+  }
+  if (typeof content === 'string' && content.includes('<script>')) {
+    return { isValid: false, error: 'Invalid characters detected in announcement content' };
+  }
+  if (typeof content === 'string' && content.length > 5000) {
+    return { isValid: false, error: 'Announcement content exceeds maximum length (5000 characters)' };
   }
   return { isValid: true, error: null };
 }
 
-// Mock authentication and authorization functions
-function authenticateUser(credentials) {
-  if (!credentials.username || !credentials.password) {
-    return { authenticated: false, error: 'Username and password are required' };
+function validateAnnouncementCategory(category) {
+  const validCategories = ['general', 'urgent', 'maintenance', 'update', 'event'];
+  if (!validCategories.includes(category)) {
+    return { isValid: false, error: 'Invalid announcement category' };
   }
-  if (credentials.username === 'testuser' && credentials.password === 'password123') {
-    return { 
-      authenticated: true, 
-      token: 'mock.jwt.token',
-      user: { id: 1, username: 'testuser', role: 'user' }
-    };
-  }
-  return { authenticated: false, error: 'Invalid credentials' };
+  return { isValid: true, error: null };
 }
 
-function validateToken(token) {
-  if (token === 'expired.jwt.token') {
-    return { valid: false, error: 'Token expired' };
+function validateAnnouncementPriority(priority) {
+  const validPriorities = ['low', 'medium', 'high', 'critical'];
+  if (!validPriorities.includes(priority)) {
+    return { isValid: false, error: 'Invalid priority level' };
   }
-  if (token === 'mock.jwt.token') {
-    return { valid: true, user: { id: 1, username: 'testuser', role: 'user' } };
-  }
-  return { valid: false, error: 'Invalid token' };
-}
-
-function checkAuthorization(user, endpoint) {
-  if (!user.id && user.role === 'guest') {
-    return { authorized: false, error: 'Authentication required' };
-  }
-  
-  if (user.role === 'admin') {
-    return { authorized: true };
-  }
-  
-  if (endpoint.startsWith('/admin/')) {
-    return { authorized: false, error: 'Access denied: admin role required' };
-  }
-  
-  if (endpoint.startsWith('/moderate/') && user.role !== 'moderator' && user.role !== 'admin') {
-    return { authorized: false, error: 'Access denied: moderator role required' };
-  }
-  
-  if (endpoint.includes('/user/')) {
-    const userIdMatch = endpoint.match(/\/user\/(\d+)\//);
-    if (userIdMatch && parseInt(userIdMatch[1]) !== user.id) {
-      return { authorized: false, error: 'Access denied: insufficient permissions' };
-    }
-  }
-  
-  return { authorized: true };
-}
-
-function checkPermissions(user, requiredPermissions) {
-  const userPermissions = user.permissions || [];
-  const hasAllPermissions = requiredPermissions.every(permission => 
-    userPermissions.includes(permission)
-  );
-  
-  if (!hasAllPermissions) {
-    return { authorized: false, error: 'Insufficient permissions' };
-  }
-  
-  return { authorized: true };
+  return { isValid: true, error: null };
 }

@@ -10,46 +10,108 @@ const sanitizeInput = (input) => {
   return DOMPurify.sanitize(input, { ALLOWED_TAGS: [] });
 };
 
+// Input validation middleware
+const validateInputs = (inputs) => {
+  const errors = [];
+  
+  for (const [key, value] of Object.entries(inputs)) {
+    if (value === null || value === undefined) continue;
+    
+    // Validate string inputs
+    if (typeof value === 'string') {
+      if (value.length > 10000) {
+        errors.push(`${key} exceeds maximum length`);
+      }
+      // Check for potential SQL injection patterns (even though we use MongoDB)
+      const sqlInjectionPatterns = /(\$where|\$ne|\$gt|\$lt|\$in|\$nin|\$exists|\$regex|javascript:|eval\(|function\()/i;
+      if (sqlInjectionPatterns.test(value)) {
+        errors.push(`${key} contains potentially dangerous content`);
+      }
+    }
+    
+    // Validate ObjectId strings
+    if ((key.includes('Id') || key === '_id' || key === 'id') && typeof value === 'string') {
+      if (!mongoose.Types.ObjectId.isValid(value)) {
+        errors.push(`${key} must be a valid ObjectId`);
+      }
+    }
+    
+    // Validate boolean inputs
+    if (key === 'isActive' && typeof value !== 'boolean') {
+      errors.push(`${key} must be a boolean value`);
+    }
+  }
+  
+  return errors;
+};
+
 // Enhanced parameterized query helper for MongoDB operations
 const executeSecureQuery = async (model, operation, params = {}) => {
   try {
-    // Validate all ObjectId parameters to prevent injection
-    for (const [key, value] of Object.entries(params)) {
+    // Validate all input parameters first
+    const validationErrors = validateInputs(params);
+    if (validationErrors.length > 0) {
+      throw new Error(`Input validation failed: ${validationErrors.join(', ')}`);
+    }
+    
+    // Validate and convert ObjectId parameters to prevent injection
+    const processedParams = { ...params };
+    for (const [key, value] of Object.entries(processedParams)) {
       if (key.includes('Id') || key === '_id' || key === 'id') {
         if (!mongoose.Types.ObjectId.isValid(value)) {
           throw new Error(`Invalid ObjectId format for parameter: ${key}`);
         }
         // Convert to proper ObjectId to ensure parameterized query
-        params[key] = new mongoose.Types.ObjectId(value);
+        processedParams[key] = new mongoose.Types.ObjectId(value);
+      }
+      
+      // Recursively process nested objects (like filter, update objects)
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        for (const [nestedKey, nestedValue] of Object.entries(value)) {
+          if ((nestedKey.includes('Id') || nestedKey === '_id' || nestedKey === 'id') && 
+              typeof nestedValue === 'string') {
+            if (!mongoose.Types.ObjectId.isValid(nestedValue)) {
+              throw new Error(`Invalid ObjectId format for nested parameter: ${nestedKey}`);
+            }
+            value[nestedKey] = new mongoose.Types.ObjectId(nestedValue);
+          }
+        }
       }
     }
 
-    // Execute operation with validated parameters using proper MongoDB methods
+    // Execute operation with validated and processed parameters
     switch (operation) {
       case 'find':
-        // Use parameterized query with filter object - prevents injection
-        return await model.find(params.filter || {}, params.select || null, params.options || {});
+        return await model.find(
+          processedParams.filter || {}, 
+          processedParams.select || null, 
+          processedParams.options || {}
+        );
       case 'findById':
-        // MongoDB's findById method automatically uses parameterized queries
-        return await model.findById(params.id, params.select || null);
+        return await model.findById(processedParams.id, processedParams.select || null);
       case 'findOne':
-        // Use parameterized query with filter object
-        return await model.findOne(params.filter || {}, params.select || null);
+        return await model.findOne(
+          processedParams.filter || {}, 
+          processedParams.select || null
+        );
       case 'create':
-        // Create method uses parameterized insertion
-        return await model.create(params.data);
+        return await model.create(processedParams.data);
       case 'findByIdAndUpdate':
-        // Update methods use parameterized queries with proper filter and update objects
-        return await model.findByIdAndUpdate(params.id, params.update, params.options || {});
+        return await model.findByIdAndUpdate(
+          processedParams.id, 
+          processedParams.update, 
+          processedParams.options || {}
+        );
       case 'findByIdAndDelete':
-        // Delete method uses parameterized query
-        return await model.findByIdAndDelete(params.id);
+        return await model.findByIdAndDelete(processedParams.id);
       case 'updateOne':
-        // UpdateOne uses parameterized filter and update objects
-        return await model.updateOne(params.filter, params.update, params.options || {});
+        return await model.updateOne(
+          processedParams.filter, 
+          processedParams.update, 
+          processedParams.options || {}
+        );
       case 'deleteOne':
-        // DeleteOne uses parameterized filter object
-        return await model.deleteOne(params.filter);
+        return await model.deleteOne(processedParams.filter);
       default:
         throw new Error(`Unsupported database operation: ${operation}`);
     }
@@ -127,6 +189,16 @@ const createAnnouncement = async (req, res) => {
 
     const { title, content, isActive = true } = req.body;
 
+    // Validate input data
+    const inputValidationErrors = validateInputs({ title, content, isActive, createdBy: req.user._id });
+    if (inputValidationErrors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Input validation failed',
+        errors: inputValidationErrors
+      });
+    }
+
     // Sanitize input to prevent stored XSS
     const sanitizedTitle = sanitizeInput(title);
     const sanitizedContent = sanitizeInput(content);
@@ -171,6 +243,16 @@ const createAnnouncement = async (req, res) => {
 const getAnnouncementById = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // Validate input parameters
+    const inputValidationErrors = validateInputs({ id });
+    if (inputValidationErrors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID',
+        errors: inputValidationErrors
+      });
+    }
     
     // Use secure query which validates ObjectId
     const announcement = await executeSecureQuery(Announcement, 'findById', {
@@ -223,6 +305,16 @@ const updateAnnouncement = async (req, res) => {
     const { id } = req.params;
     const { title, content, isActive } = req.body;
 
+    // Validate all input parameters
+    const inputValidationErrors = validateInputs({ id, title, content, isActive });
+    if (inputValidationErrors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Input validation failed',
+        errors: inputValidationErrors
+      });
+    }
+
     const announcement = await executeSecureQuery(Announcement, 'findById', {
       id: id
     });
@@ -266,25 +358,32 @@ const updateAnnouncement = async (req, res) => {
 
 // Delete announcement (admin only)
 const deleteAnnouncement = async (req, res) => {
-  const session = await mongoose.startSession();
-  
   try {
     const { id } = req.params;
 
-    await session.withTransaction(async () => {
-      // First, verify the announcement exists within the transaction
-      const announcement = await executeSecureQuery(Announcement, 'findById', {
-        id: id
+    // Validate input parameters
+    const inputValidationErrors = validateInputs({ id });
+    if (inputValidationErrors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID',
+        errors: inputValidationErrors
       });
+    }
 
-      if (!announcement) {
-        throw new Error('Announcement not found');
-      }
+    const announcement = await executeSecureQuery(Announcement, 'findById', {
+      id: id
+    });
 
-      // Perform the delete operation within the transaction
-      await executeSecureQuery(Announcement, 'findByIdAndDelete', {
-        id: id
+    if (!announcement) {
+      return res.status(404).json({
+        success: false,
+        message: 'Announcement not found'
       });
+    }
+
+    await executeSecureQuery(Announcement, 'findByIdAndDelete', {
+      id: id
     });
 
     res.json({
@@ -292,20 +391,11 @@ const deleteAnnouncement = async (req, res) => {
       message: 'Announcement deleted successfully'
     });
   } catch (error) {
-    if (error.message === 'Announcement not found') {
-      res.status(404).json({
-        success: false,
-        message: 'Announcement not found'
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: 'Error deleting announcement',
-        error: error.message
-      });
-    }
-  } finally {
-    await session.endSession();
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting announcement',
+      error: error.message
+    });
   }
 };
 
@@ -313,6 +403,16 @@ const deleteAnnouncement = async (req, res) => {
 const toggleAnnouncementStatus = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Validate input parameters
+    const inputValidationErrors = validateInputs({ id });
+    if (inputValidationErrors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid announcement ID',
+        errors: inputValidationErrors
+      });
+    }
 
     const announcement = await executeSecureQuery(Announcement, 'findById', {
       id: id

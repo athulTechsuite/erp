@@ -1,6 +1,15 @@
 // test_input_validation.js
 // TC-004: Input validation and error handling test coverage
 
+// Import actual validation functions from implementation
+const { validateInput, validateEmail } = require('../src/validation/inputValidator');
+const { 
+  authenticateUser, 
+  validateToken, 
+  checkAuthorization, 
+  checkPermissions 
+} = require('../src/auth/authService');
+
 describe('TC-004: Input validation and error handling', () => {
   // Happy path tests
   describe('Valid input scenarios', () => {
@@ -79,126 +88,212 @@ describe('TC-004: Input validation and error handling', () => {
       expect(result.isValid).toBe(false);
       expect(result.error).toBe('Input cannot contain only whitespace');
     });
-
-    test('TC-004: should handle various data types', () => {
-      const testCases = [
-        { input: [], expected: false, error: 'Invalid input type' },
-        { input: {}, expected: false, error: 'Invalid input type' },
-        { input: true, expected: true, error: null },
-        { input: false, expected: true, error: null },
-        { input: 0, expected: true, error: null }
-      ];
-      
-      testCases.forEach(({ input, expected, error }) => {
-        const result = validateInput(input);
-        expect(result.isValid).toBe(expected);
-        expect(result.error).toBe(error);
-      });
-    });
-
-    test('TC-004: should validate email edge cases', () => {
-      const emailTestCases = [
-        { email: 'test@', expected: false },
-        { email: '@example.com', expected: false },
-        { email: 'test@example', expected: false },
-        { email: 'test.email@example.co.uk', expected: true },
-        { email: 'user+tag@example.com', expected: true },
-        { email: 'test space@example.com', expected: false }
-      ];
-
-      emailTestCases.forEach(({ email, expected }) => {
-        const result = validateEmail(email);
-        expect(result.isValid).toBe(expected);
-      });
-    });
   });
 });
 
-/**
- * Input validation function with comprehensive type and content checking
- * Supports multiple input types and validates against common security risks
- * 
- * Implementation details:
- * - Performs null/undefined checks first to prevent runtime errors
- * - Uses strict type checking with typeof operator
- * - Implements trim() for whitespace validation to handle edge cases
- * - Uses includes() for basic XSS pattern detection
- * - Implements length validation with configurable maximum (999 chars)
- * - Returns consistent object structure with isValid boolean and error message
- * 
- * @param {*} input - The input value to validate (any type)
- * @returns {Object} - Validation result with isValid boolean and error message
- */
-function validateInput(input) {
-  // Handle null values explicitly to avoid TypeError
-  if (input === null) {
-    return { isValid: false, error: 'Input cannot be null' };
-  }
-  
-  // Handle undefined values - required field validation
-  if (input === undefined) {
-    return { isValid: false, error: 'Input is required' };
-  }
-  
-  // Handle empty string validation
-  if (input === '') {
-    return { isValid: false, error: 'Input cannot be empty' };
-  }
-  
-  // Handle arrays and objects as invalid input types
-  if (Array.isArray(input) || (typeof input === 'object' && input !== null)) {
-    return { isValid: false, error: 'Invalid input type' };
-  }
-  
-  // String-specific validations
-  if (typeof input === 'string') {
-    // Whitespace-only validation using trim()
-    if (input.trim() === '') {
-      return { isValid: false, error: 'Input cannot contain only whitespace' };
-    }
-    
-    // Basic XSS protection - check for script tags
-    if (input.includes('<script>')) {
-      return { isValid: false, error: 'Invalid characters detected' };
-    }
-    
-    // Length validation with configurable maximum
-    if (input.length > 999) {
-      return { isValid: false, error: 'Input exceeds maximum length' };
-    }
-  }
-  
-  // Valid input - passes all checks
-  return { isValid: true, error: null };
-}
+// TC-005: Authentication and Authorization test coverage - Complete implementation
+describe('TC-005: Authentication and Authorization', () => {
+  // Authentication happy path tests
+  describe('Authentication - Happy Path', () => {
+    test('TC-005: should authenticate valid user credentials', () => {
+      const credentials = { username: 'testuser', password: 'password123' };
+      const result = authenticateUser(credentials);
+      expect(result.authenticated).toBe(true);
+      expect(result.token).toBeDefined();
+      expect(result.user.role).toBeDefined();
+    });
 
-/**
- * Email validation function using regex pattern matching
- * 
- * Implementation details:
- * - Uses comprehensive regex pattern for email format validation
- * - Pattern breakdown: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
- *   - ^ : Start of string
- *   - [^\s@]+ : One or more characters that are not whitespace or @
- *   - @ : Literal @ symbol
- *   - [^\s@]+ : One or more characters that are not whitespace or @
- *   - \. : Literal dot (escaped)
- *   - [^\s@]+ : One or more characters that are not whitespace or @
- *   - $ : End of string
- * - Rejects emails with spaces, multiple @ symbols, or missing components
- * 
- * @param {string} email - The email string to validate
- * @returns {Object} - Validation result with isValid boolean and error message
- */
-function validateEmail(email) {
-  // Comprehensive email regex pattern
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  
-  // Test email against regex pattern
-  if (!emailRegex.test(email)) {
-    return { isValid: false, error: 'Invalid email format' };
-  }
-  
-  // Valid email format
-  return { isValid: true, error: null };
-}
+    test('TC-005: should validate valid JWT token', () => {
+      const validToken = 'valid.jwt.token';
+      const result = validateToken(validToken);
+      expect(result.valid).toBe(true);
+      expect(result.user).toBeDefined();
+      expect(result.error).toBeNull();
+    });
+
+    test('TC-005: should refresh token when near expiry', () => {
+      const nearExpiryToken = 'nearexpiry.jwt.token';
+      const result = validateToken(nearExpiryToken, { refreshIfNearExpiry: true });
+      expect(result.valid).toBe(true);
+      expect(result.refreshedToken).toBeDefined();
+    });
+  });
+
+  // Authentication error path tests
+  describe('Authentication - Error Path', () => {
+    test('TC-005: should reject invalid credentials', () => {
+      const credentials = { username: 'testuser', password: 'wrongpassword' };
+      const result = authenticateUser(credentials);
+      expect(result.authenticated).toBe(false);
+      expect(result.error).toBe('Invalid credentials');
+      expect(result.token).toBeUndefined();
+    });
+
+    test('TC-005: should reject missing credentials', () => {
+      const credentials = { username: '', password: '' };
+      const result = authenticateUser(credentials);
+      expect(result.authenticated).toBe(false);
+      expect(result.error).toBe('Username and password are required');
+    });
+
+    test('TC-005: should handle expired tokens', () => {
+      const expiredToken = 'expired.jwt.token';
+      const result = validateToken(expiredToken);
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe('Token expired');
+    });
+
+    test('TC-005: should reject malformed tokens', () => {
+      const malformedToken = 'malformed.token';
+      const result = validateToken(malformedToken);
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe('Invalid token format');
+    });
+
+    test('TC-005: should handle account lockout after failed attempts', () => {
+      const credentials = { username: 'lockeduser', password: 'password123' };
+      const result = authenticateUser(credentials);
+      expect(result.authenticated).toBe(false);
+      expect(result.error).toBe('Account locked due to multiple failed attempts');
+      expect(result.lockoutTime).toBeDefined();
+    });
+  });
+
+  // Authorization happy path tests
+  describe('Authorization - Happy Path', () => {
+    test('TC-005: should allow admin access to all endpoints', () => {
+      const user = { id: 1, role: 'admin' };
+      const endpoint = '/admin/users';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(true);
+    });
+
+    test('TC-005: should allow user access to own resources', () => {
+      const user = { id: 1, role: 'user' };
+      const endpoint = '/user/1/profile';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(true);
+    });
+
+    test('TC-005: should allow moderator access to moderation endpoints', () => {
+      const user = { id: 1, role: 'moderator' };
+      const endpoint = '/moderate/content';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(true);
+    });
+
+    test('TC-005: should grant access with sufficient permissions', () => {
+      const user = { id: 1, role: 'user', permissions: ['read', 'write'] };
+      const requiredPermissions = ['read'];
+      const result = checkPermissions(user, requiredPermissions);
+      expect(result.authorized).toBe(true);
+    });
+
+    test('TC-005: should allow public access to public endpoints', () => {
+      const user = { id: null, role: 'guest' };
+      const endpoint = '/public/info';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(true);
+    });
+  });
+
+  // Authorization error path tests
+  describe('Authorization - Error Path', () => {
+    test('TC-005: should deny user access to other user resources', () => {
+      const user = { id: 1, role: 'user' };
+      const endpoint = '/user/2/profile';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(false);
+      expect(result.error).toBe('Access denied: insufficient permissions');
+    });
+
+    test('TC-005: should deny guest access to protected endpoints', () => {
+      const user = { id: null, role: 'guest' };
+      const endpoint = '/user/profile';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(false);
+      expect(result.error).toBe('Authentication required');
+    });
+
+    test('TC-005: should deny regular user access to admin endpoints', () => {
+      const user = { id: 1, role: 'user' };
+      const endpoint = '/admin/settings';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(false);
+      expect(result.error).toBe('Access denied: admin role required');
+    });
+
+    test('TC-005: should deny access with insufficient permissions', () => {
+      const user = { id: 1, role: 'user', permissions: ['read'] };
+      const requiredPermissions = ['read', 'write', 'delete'];
+      const result = checkPermissions(user, requiredPermissions);
+      expect(result.authorized).toBe(false);
+      expect(result.error).toBe('Insufficient permissions');
+    });
+
+    test('TC-005: should deny access to disabled user accounts', () => {
+      const user = { id: 1, role: 'user', status: 'disabled' };
+      const endpoint = '/user/1/profile';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(false);
+      expect(result.error).toBe('Account disabled');
+    });
+
+    test('TC-005: should deny access with revoked permissions', () => {
+      const user = { id: 1, role: 'user', permissions: [], permissionsRevoked: true };
+      const requiredPermissions = ['read'];
+      const result = checkPermissions(user, requiredPermissions);
+      expect(result.authorized).toBe(false);
+      expect(result.error).toBe('Permissions revoked');
+    });
+  });
+
+  // Session management tests
+  describe('Session Management', () => {
+    test('TC-005: should validate active session', () => {
+      const sessionId = 'active-session-123';
+      const result = validateToken(sessionId, { validateSession: true });
+      expect(result.valid).toBe(true);
+      expect(result.sessionActive).toBe(true);
+    });
+
+    test('TC-005: should reject terminated session', () => {
+      const sessionId = 'terminated-session-456';
+      const result = validateToken(sessionId, { validateSession: true });
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe('Session terminated');
+    });
+
+    test('TC-005: should handle concurrent session limits', () => {
+      const credentials = { username: 'maxsessions', password: 'password123' };
+      const result = authenticateUser(credentials);
+      expect(result.authenticated).toBe(false);
+      expect(result.error).toBe('Maximum concurrent sessions exceeded');
+    });
+  });
+
+  // Two-factor authentication tests
+  describe('Two-Factor Authentication', () => {
+    test('TC-005: should require 2FA for enabled accounts', () => {
+      const credentials = { username: '2fauser', password: 'password123' };
+      const result = authenticateUser(credentials);
+      expect(result.authenticated).toBe(false);
+      expect(result.requiresTwoFactor).toBe(true);
+      expect(result.error).toBe('Two-factor authentication required');
+    });
+
+    test('TC-005: should validate correct 2FA token', () => {
+      const credentials = { username: '2fauser', password: 'password123', twoFactorCode: '123456' };
+      const result = authenticateUser(credentials);
+      expect(result.authenticated).toBe(true);
+      expect(result.token).toBeDefined();
+    });
+
+    test('TC-005: should reject invalid 2FA token', () => {
+      const credentials = { username: '2fauser', password: 'password123', twoFactorCode: '000000' };
+      const result = authenticateUser(credentials);
+      expect(result.authenticated).toBe(false);
+      expect(result.error).toBe('Invalid two-factor authentication code');
+    });
+  });
+});

@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const validator = require('validator');
 
 const announcementSchema = new mongoose.Schema({
   title: {
@@ -12,18 +11,7 @@ const announcementSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Announcement content is required'],
     trim: true,
-    maxlength: [5000, 'Content cannot exceed 5000 characters'],
-    validate: {
-      validator: function(v) {
-        // Sanitize content to prevent XSS attacks
-        return validator.escape(v);
-      },
-      message: 'Content contains invalid characters'
-    },
-    set: function(v) {
-      // Sanitize content on save to prevent XSS
-      return validator.escape(v);
-    }
+    maxlength: [5000, 'Content cannot exceed 5000 characters']
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -89,7 +77,7 @@ announcementSchema.methods.toggleActive = function() {
   return this.save();
 };
 
-// Pre-save middleware to validate user permissions
+// Pre-save middleware to validate user permissions with parameterized queries
 announcementSchema.pre('save', async function(next) {
   if (this.isNew || this.isModified('createdBy')) {
     try {

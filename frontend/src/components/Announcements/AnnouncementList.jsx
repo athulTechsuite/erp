@@ -56,19 +56,12 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
     });
   };
 
-  const sanitizeContent = (content) => {
-    return DOMPurify.sanitize(content, {
-      ALLOWED_TAGS: ['strong', 'em', 'u'],
-      ALLOWED_ATTR: [],
-      ALLOW_DATA_ATTR: false,
-      KEEP_CONTENT: true
-    });
-  };
-
   const renderSafeContent = (content) => {
-    // Strip HTML tags and convert to plain text, then handle basic formatting
-    const sanitized = sanitizeContent(content);
-    const textContent = DOMPurify.sanitize(content, { ALLOWED_TAGS: [], KEEP_CONTENT: true });
+    // Sanitize content and strip HTML tags to ensure safe plain text rendering
+    const textContent = DOMPurify.sanitize(content, { 
+      ALLOWED_TAGS: [], 
+      KEEP_CONTENT: true 
+    });
     
     // Split by line breaks and render as paragraphs
     return textContent.split('\n').map((line, index) => (

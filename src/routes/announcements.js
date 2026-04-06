@@ -3,11 +3,8 @@ const router = express.Router();
 const db = require('../config/database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 
-// Apply authentication middleware to all routes
-router.use(authenticateToken);
-
 // Get all active announcements (accessible to all authenticated users)
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const announcements = await db.query(
       `SELECT id, title, content, created_at, updated_at 
@@ -23,7 +20,7 @@ router.get('/', async (req, res) => {
 });
 
 // Get all announcements for admin management
-router.get('/admin', requireRole('admin'), async (req, res) => {
+router.get('/admin', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const announcements = await db.query(
       `SELECT id, title, content, is_active, created_at, updated_at 
@@ -38,7 +35,7 @@ router.get('/admin', requireRole('admin'), async (req, res) => {
 });
 
 // Create new announcement (admin only)
-router.post('/', requireRole('admin'), async (req, res) => {
+router.post('/', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { title, content, is_active = true } = req.body;
     
@@ -65,7 +62,7 @@ router.post('/', requireRole('admin'), async (req, res) => {
 });
 
 // Update announcement (admin only)
-router.put('/:id', requireRole('admin'), async (req, res) => {
+router.put('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
     const { title, content, is_active } = req.body;
@@ -98,7 +95,7 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
 });
 
 // Delete announcement (admin only)
-router.delete('/:id', requireRole('admin'), async (req, res) => {
+router.delete('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -119,7 +116,7 @@ router.delete('/:id', requireRole('admin'), async (req, res) => {
 });
 
 // Get single announcement by ID (admin only)
-router.get('/:id', requireRole('admin'), async (req, res) => {
+router.get('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
 

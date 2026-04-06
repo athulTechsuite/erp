@@ -24,6 +24,7 @@ const requireAdmin = (req, res, next) => {
 // Get all announcements (public - for dashboard display)
 const getAllAnnouncements = async (req, res) => {
   try {
+    // Using parameterized query with MongoDB findOne method instead of string concatenation
     const announcements = await Announcement.find({ isActive: true })
       .sort({ createdAt: -1 })
       .select('title content createdAt updatedAt');

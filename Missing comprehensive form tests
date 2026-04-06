@@ -1,17 +1,431 @@
-// Validation configuration constants
-const VALIDATION_CONSTRAINTS = {
-  NAME: {
-    MIN_LENGTH: 2,
-    MAX_LENGTH: 50
-  },
-  EMAIL: {
-    MAX_LENGTH: 100
-  },
-  MESSAGE: {
-    MIN_LENGTH: 10,
-    MAX_LENGTH: 500
-  }
-};
+// tests/form-validation.test.js
+describe('TC-002: Form validation', () => {
+  let form, submitButton, nameInput, emailInput, messageInput;
+
+  beforeEach(() => {
+    // Setup form elements with comprehensive validation attributes
+    document.body.innerHTML = `
+      <form id="contact-form" novalidate>
+        <div class="form-group">
+          <label for="name">Full Name *</label>
+          <input 
+            type="text" 
+            id="name" 
+            name="name" 
+            required 
+            minlength="2" 
+            maxlength="50"
+            pattern="^[a-zA-Z\s]+$"
+            aria-describedby="name-error"
+          >
+          <div id="name-error" class="error-message" role="alert"></div>
+        </div>
+        
+        <div class="form-group">
+          <label for="email">Email Address *</label>
+          <input 
+            type="email" 
+            id="email" 
+            name="email" 
+            required
+            maxlength="100"
+            aria-describedby="email-error"
+          >
+          <div id="email-error" class="error-message" role="alert"></div>
+        </div>
+        
+        <div class="form-group">
+          <label for="message">Message *</label>
+          <textarea 
+            id="message" 
+            name="message" 
+            required 
+            minlength="10" 
+            maxlength="500"
+            aria-describedby="message-error"
+          ></textarea>
+          <div id="message-error" class="error-message" role="alert"></div>
+        </div>
+        
+        <div class="form-group">
+          <label for="phone">Phone Number</label>
+          <input 
+            type="tel" 
+            id="phone" 
+            name="phone"
+            pattern="^[\+]?[1-9][\d]{0,15}$"
+            aria-describedby="phone-error"
+          >
+          <div id="phone-error" class="error-message" role="alert"></div>
+        </div>
+        
+        <button type="submit" id="submit-btn" disabled>Submit</button>
+        <button type="reset" id="reset-btn">Reset</button>
+      </form>
+    `;
+    
+    form = document.getElementById('contact-form');
+    submitButton = document.getElementById('submit-btn');
+    nameInput = document.getElementById('name');
+    emailInput = document.getElementById('email');
+    messageInput = document.getElementById('message');
+    
+    // Mock form validation handler
+    window.validateForm = jest.fn();
+    window.showFieldError = jest.fn();
+    window.clearFieldError = jest.fn();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    jest.clearAllMocks();
+  });
+
+  // Happy path tests - TC-002 validation success scenarios
+  describe('Happy path - valid form validation', () => {
+    test('should validate successfully with all required fields filled correctly', async () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'This is a test message with sufficient length';
+
+      // Act & Assert
+      expect(nameInput.validity.valid).toBe(true);
+      expect(emailInput.validity.valid).toBe(true);
+      expect(messageInput.validity.valid).toBe(true);
+      expect(form.checkValidity()).toBe(true);
+    });
+
+    test('should validate email format correctly with various valid formats', () => {
+      // Arrange
+      const validEmails = [
+        'user@domain.com',
+        'test.email@example.org',
+        'user+tag@domain.co.uk',
+        'firstname.lastname@company.com'
+      ];
+
+      validEmails.forEach(email => {
+        // Act
+        emailInput.value = email;
+        
+        // Assert
+        expect(emailInput.validity.valid).toBe(true);
+        expect(emailInput.validity.typeMismatch).toBe(false);
+      });
+    });
+
+    test('should validate name field with valid characters and length', () => {
+      // Arrange
+      const validNames = [
+        'John Doe',
+        'Mary Jane Watson',
+        'A B', // Minimum valid length
+        'Very Long Name That Still Fits Within Fifty Chars' // Max valid length
+      ];
+
+      validNames.forEach(name => {
+        // Act
+        nameInput.value = name;
+        
+        // Assert
+        expect(nameInput.validity.valid).toBe(true);
+      });
+    });
+
+    test('should validate message field with proper length', () => {
+      // Arrange
+      const validMessages = [
+        'Short but valid', // Minimum valid length
+        'A'.repeat(500) // Maximum valid length
+      ];
+
+      validMessages.forEach(message => {
+        // Act
+        messageInput.value = message;
+        
+        // Assert
+        expect(messageInput.validity.valid).toBe(true);
+      });
+    });
+
+    test('should validate optional phone number when provided with valid format', () => {
+      // Arrange
+      const phoneInput = document.getElementById('phone');
+      const validPhones = ['+1234567890', '1234567890', '+44207123456'];
+
+      validPhones.forEach(phone => {
+        // Act
+        phoneInput.value = phone;
+        
+        // Assert
+        expect(phoneInput.validity.valid).toBe(true);
+      });
+    });
+
+    test('should pass validation when optional phone field is empty', () => {
+      // Arrange
+      const phoneInput = document.getElementById('phone');
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'Valid message content here';
+
+      // Act
+      phoneInput.value = '';
+
+      // Assert
+      expect(phoneInput.validity.valid).toBe(true);
+      expect(form.checkValidity()).toBe(true);
+    });
+  });
+
+  // Error path tests - TC-002 validation failure scenarios
+  describe('Error path - invalid form validation', () => {
+    test('should fail validation when required name field is empty', () => {
+      // Arrange
+      nameInput.value = '';
+      emailInput.value = 'test@example.com';
+      messageInput.value = 'Test message with adequate length';
+
+      // Act & Assert
+      expect(nameInput.validity.valid).toBe(false);
+      expect(nameInput.validity.valueMissing).toBe(true);
+      expect(form.checkValidity()).toBe(false);
+    });
+
+    test('should fail validation when required email field is empty', () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = '';
+      messageInput.value = 'Test message with adequate length';
+
+      // Act & Assert
+      expect(emailInput.validity.valid).toBe(false);
+      expect(emailInput.validity.valueMissing).toBe(true);
+      expect(form.checkValidity()).toBe(false);
+    });
+
+    test('should fail validation when required message field is empty', () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = '';
+
+      // Act & Assert
+      expect(messageInput.validity.valid).toBe(false);
+      expect(messageInput.validity.valueMissing).toBe(true);
+      expect(form.checkValidity()).toBe(false);
+    });
+
+    test('should fail validation with invalid email formats', () => {
+      // Arrange & Act
+      const invalidEmails = [
+        'invalid-email',
+        '@example.com',
+        'test@',
+        'test.com',
+        'user@',
+        '@domain.com',
+        'user..double.dot@domain.com',
+        'user@domain'
+      ];
+      
+      invalidEmails.forEach(invalidEmail => {
+        emailInput.value = invalidEmail;
+        
+        // Assert
+        expect(emailInput.validity.valid).toBe(false);
+        expect(emailInput.validity.typeMismatch).toBe(true);
+      });
+    });
+
+    test('should fail validation when name field violates length constraints', () => {
+      // Test minimum length violation
+      nameInput.value = 'A'; // Too short
+      expect(nameInput.validity.valid).toBe(false);
+      expect(nameInput.validity.tooShort).toBe(true);
+
+      // Test maximum length violation
+      nameInput.value = 'A'.repeat(51); // Too long
+      expect(nameInput.validity.valid).toBe(false);
+      expect(nameInput.validity.tooLong).toBe(true);
+    });
+
+    test('should fail validation when name field contains invalid characters', () => {
+      // Arrange
+      const invalidNames = [
+        'John123', // Contains numbers
+        'John@Doe', // Contains special characters
+        'John.Doe', // Contains period
+        'John_Doe' // Contains underscore
+      ];
+
+      invalidNames.forEach(invalidName => {
+        // Act
+        nameInput.value = invalidName;
+        
+        // Assert
+        expect(nameInput.validity.valid).toBe(false);
+        expect(nameInput.validity.patternMismatch).toBe(true);
+      });
+    });
+
+    test('should fail validation when message field violates length constraints', () => {
+      // Test minimum length violation
+      messageInput.value = 'Short'; // Too short
+      expect(messageInput.validity.valid).toBe(false);
+      expect(messageInput.validity.tooShort).toBe(true);
+
+      // Test maximum length violation
+      messageInput.value = 'A'.repeat(501); // Too long
+      expect(messageInput.validity.valid).toBe(false);
+      expect(messageInput.validity.tooLong).toBe(true);
+    });
+
+    test('should fail validation when phone number has invalid format', () => {
+      // Arrange
+      const phoneInput = document.getElementById('phone');
+      const invalidPhones = [
+        'invalid-phone',
+        '++1234567890',
+        '123-456-7890',
+        'abc123def',
+        '0123456789012345678' // Too long
+      ];
+
+      invalidPhones.forEach(phone => {
+        // Act
+        phoneInput.value = phone;
+        
+        // Assert
+        expect(phoneInput.validity.valid).toBe(false);
+        expect(phoneInput.validity.patternMismatch).toBe(true);
+      });
+    });
+
+    test('should fail validation when all required fields are empty', () => {
+      // Arrange
+      nameInput.value = '';
+      emailInput.value = '';
+      messageInput.value = '';
+
+      // Act & Assert
+      expect(form.checkValidity()).toBe(false);
+      expect(nameInput.validity.valueMissing).toBe(true);
+      expect(emailInput.validity.valueMissing).toBe(true);
+      expect(messageInput.validity.valueMissing).toBe(true);
+    });
+
+    test('should fail validation with mixed valid and invalid field values', () => {
+      // Arrange
+      nameInput.value = 'John Doe'; // Valid
+      emailInput.value = 'invalid-email-format'; // Invalid
+      messageInput.value = 'Valid message content here'; // Valid
+
+      // Act & Assert
+      expect(nameInput.validity.valid).toBe(true);
+      expect(emailInput.validity.valid).toBe(false);
+      expect(messageInput.validity.valid).toBe(true);
+      expect(form.checkValidity()).toBe(false);
+    });
+
+    test('should fail validation when email exceeds maximum length', () => {
+      // Arrange
+      const longEmail = 'a'.repeat(90) + '@example.com'; // Exceeds 100 char limit
+      emailInput.value = longEmail;
+
+      // Act & Assert
+      expect(emailInput.validity.valid).toBe(false);
+      expect(emailInput.validity.tooLong).toBe(true);
+    });
+  });
+
+  // Validation behavior and edge cases
+  describe('Validation behavior and edge cases', () => {
+    test('should validate form state as user fills required fields progressively', () => {
+      // Initially invalid - all fields empty
+      expect(form.checkValidity()).toBe(false);
+
+      // Still invalid after filling name only
+      nameInput.value = 'John Doe';
+      expect(form.checkValidity()).toBe(false);
+
+      // Still invalid after filling name and email
+      emailInput.value = 'john@example.com';
+      expect(form.checkValidity()).toBe(false);
+
+      // Valid after filling all required fields
+      messageInput.value = 'Complete test message content';
+      expect(form.checkValidity()).toBe(true);
+    });
+
+    test('should maintain validation state when modifying valid form', () => {
+      // Arrange - Start with valid form
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'Valid message content';
+      expect(form.checkValidity()).toBe(true);
+
+      // Act - Make name invalid
+      nameInput.value = 'A'; // Too short
+
+      // Assert - Form becomes invalid
+      expect(nameInput.validity.valid).toBe(false);
+      expect(form.checkValidity()).toBe(false);
+
+      // Act - Fix name
+      nameInput.value = 'John Smith';
+
+      // Assert - Form becomes valid again
+      expect(nameInput.validity.valid).toBe(true);
+      expect(form.checkValidity()).toBe(true);
+    });
+
+    test('should handle validation with whitespace in fields', () => {
+      // Arrange
+      nameInput.value = '   '; // Only whitespace
+      emailInput.value = ' john@example.com '; // Email with surrounding spaces
+      messageInput.value = 'Valid message content';
+
+      // Act & Assert
+      // Note: HTML5 validation trims whitespace for required fields
+      expect(nameInput.validity.valid).toBe(false);
+      expect(emailInput.validity.valid).toBe(true); // Email validation handles spaces
+      expect(form.checkValidity()).toBe(false);
+    });
+
+    test('should validate boundary values for field lengths', () => {
+      // Name field boundary tests
+      nameInput.value = 'AB'; // Exactly minimum length
+      expect(nameInput.validity.valid).toBe(true);
+      
+      nameInput.value = 'A'.repeat(50); // Exactly maximum length
+      expect(nameInput.validity.valid).toBe(true);
+
+      // Message field boundary tests
+      messageInput.value = 'A'.repeat(10); // Exactly minimum length
+      expect(messageInput.validity.valid).toBe(true);
+      
+      messageInput.value = 'A'.repeat(500); // Exactly maximum length
+      expect(messageInput.validity.valid).toBe(true);
+    });
+
+    test('should handle accessibility attributes during validation', () => {
+      // Arrange
+      nameInput.value = '';
+      const errorDiv = document.getElementById('name-error');
+
+      // Act
+      const blurEvent = new Event('blur', { bubbles: true });
+      nameInput.dispatchEvent(blurEvent);
+
+      // Assert - Error element should have proper accessibility attributes
+      expect(nameInput.validity.valueMissing).toBe(true);
+      expect(errorDiv.getAttribute('role')).toBe('alert');
+      expect(nameInput.getAttribute('aria-describedby')).toBe('name-error');
+    });
+  });
+});
 
 describe('TC-003: Form validation and submission', () => {
   let form, submitButton, nameInput, emailInput, messageInput;
@@ -27,8 +441,8 @@ describe('TC-003: Form validation and submission', () => {
             id="name" 
             name="name" 
             required 
-            minlength="${VALIDATION_CONSTRAINTS.NAME.MIN_LENGTH}" 
-            maxlength="${VALIDATION_CONSTRAINTS.NAME.MAX_LENGTH}"
+            minlength="2" 
+            maxlength="50"
             pattern="^[a-zA-Z\s]+$"
             aria-describedby="name-error"
           >
@@ -42,7 +456,7 @@ describe('TC-003: Form validation and submission', () => {
             id="email" 
             name="email" 
             required
-            maxlength="${VALIDATION_CONSTRAINTS.EMAIL.MAX_LENGTH}"
+            maxlength="100"
             aria-describedby="email-error"
           >
           <div id="email-error" class="error-message" role="alert"></div>
@@ -54,8 +468,8 @@ describe('TC-003: Form validation and submission', () => {
             id="message" 
             name="message" 
             required 
-            minlength="${VALIDATION_CONSTRAINTS.MESSAGE.MIN_LENGTH}" 
-            maxlength="${VALIDATION_CONSTRAINTS.MESSAGE.MAX_LENGTH}"
+            minlength="10" 
+            maxlength="500"
             aria-describedby="message-error"
           ></textarea>
           <div id="message-error" class="error-message" role="alert"></div>
@@ -253,7 +667,7 @@ describe('TC-003: Form validation and submission', () => {
       expect(nameInput.validity.tooShort).toBe(true);
 
       // Test maximum length
-      nameInput.value = 'A'.repeat(VALIDATION_CONSTRAINTS.NAME.MAX_LENGTH + 1); // Too long
+      nameInput.value = 'A'.repeat(51); // Too long
       expect(nameInput.validity.valid).toBe(false);
       expect(nameInput.validity.tooLong).toBe(true);
 
@@ -270,7 +684,7 @@ describe('TC-003: Form validation and submission', () => {
       expect(messageInput.validity.tooShort).toBe(true);
 
       // Test maximum length
-      messageInput.value = 'A'.repeat(VALIDATION_CONSTRAINTS.MESSAGE.MAX_LENGTH + 1); // Too long
+      messageInput.value = 'A'.repeat(501); // Too long
       expect(messageInput.validity.valid).toBe(false);
       expect(messageInput.validity.tooLong).toBe(true);
     });

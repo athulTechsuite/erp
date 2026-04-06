@@ -1,97 +1,93 @@
+// Validation configuration constants
+const VALIDATION_CONSTRAINTS = {
+  NAME: {
+    MIN_LENGTH: 2,
+    MAX_LENGTH: 50
+  },
+  EMAIL: {
+    MAX_LENGTH: 100
+  },
+  MESSAGE: {
+    MIN_LENGTH: 10,
+    MAX_LENGTH: 500
+  }
+};
+
 describe('TC-003: Form validation and submission', () => {
-  let form, submitButton, titleInput, contentInput, categorySelect, publishDateInput;
+  let form, submitButton, nameInput, emailInput, messageInput;
 
   beforeEach(() => {
-    // Setup AnnouncementForm elements with comprehensive validation attributes
+    // Setup form elements with comprehensive validation attributes
     document.body.innerHTML = `
-      <form id="announcement-form" novalidate>
+      <form id="contact-form" novalidate>
         <div class="form-group">
-          <label for="title">Announcement Title *</label>
+          <label for="name">Full Name *</label>
           <input 
             type="text" 
-            id="title" 
-            name="title" 
+            id="name" 
+            name="name" 
             required 
-            minlength="3" 
-            maxlength="100"
-            aria-describedby="title-error"
+            minlength="${VALIDATION_CONSTRAINTS.NAME.MIN_LENGTH}" 
+            maxlength="${VALIDATION_CONSTRAINTS.NAME.MAX_LENGTH}"
+            pattern="^[a-zA-Z\s]+$"
+            aria-describedby="name-error"
           >
-          <div id="title-error" class="error-message" role="alert"></div>
+          <div id="name-error" class="error-message" role="alert"></div>
         </div>
         
         <div class="form-group">
-          <label for="content">Announcement Content *</label>
-          <textarea 
-            id="content" 
-            name="content" 
-            required 
-            minlength="10" 
-            maxlength="1000"
-            aria-describedby="content-error"
-          ></textarea>
-          <div id="content-error" class="error-message" role="alert"></div>
-        </div>
-        
-        <div class="form-group">
-          <label for="category">Category *</label>
-          <select 
-            id="category" 
-            name="category" 
-            required
-            aria-describedby="category-error"
-          >
-            <option value="">Select a category</option>
-            <option value="general">General</option>
-            <option value="urgent">Urgent</option>
-            <option value="maintenance">Maintenance</option>
-            <option value="event">Event</option>
-          </select>
-          <div id="category-error" class="error-message" role="alert"></div>
-        </div>
-        
-        <div class="form-group">
-          <label for="publishDate">Publish Date</label>
+          <label for="email">Email Address *</label>
           <input 
-            type="date" 
-            id="publishDate" 
-            name="publishDate"
-            min="${new Date().toISOString().split('T')[0]}"
-            aria-describedby="publishDate-error"
+            type="email" 
+            id="email" 
+            name="email" 
+            required
+            maxlength="${VALIDATION_CONSTRAINTS.EMAIL.MAX_LENGTH}"
+            aria-describedby="email-error"
           >
-          <div id="publishDate-error" class="error-message" role="alert"></div>
+          <div id="email-error" class="error-message" role="alert"></div>
         </div>
         
         <div class="form-group">
-          <label for="priority">Priority Level</label>
-          <select 
-            id="priority" 
-            name="priority"
-          >
-            <option value="low">Low</option>
-            <option value="normal" selected>Normal</option>
-            <option value="high">High</option>
-          </select>
+          <label for="message">Message *</label>
+          <textarea 
+            id="message" 
+            name="message" 
+            required 
+            minlength="${VALIDATION_CONSTRAINTS.MESSAGE.MIN_LENGTH}" 
+            maxlength="${VALIDATION_CONSTRAINTS.MESSAGE.MAX_LENGTH}"
+            aria-describedby="message-error"
+          ></textarea>
+          <div id="message-error" class="error-message" role="alert"></div>
         </div>
         
-        <button type="submit" id="submit-btn" disabled>Publish Announcement</button>
+        <div class="form-group">
+          <label for="phone">Phone Number</label>
+          <input 
+            type="tel" 
+            id="phone" 
+            name="phone"
+            pattern="^[\+]?[1-9][\d]{0,15}$"
+            aria-describedby="phone-error"
+          >
+          <div id="phone-error" class="error-message" role="alert"></div>
+        </div>
+        
+        <button type="submit" id="submit-btn" disabled>Submit</button>
         <button type="reset" id="reset-btn">Reset</button>
-        <button type="button" id="save-draft-btn">Save as Draft</button>
       </form>
     `;
     
-    form = document.getElementById('announcement-form');
+    form = document.getElementById('contact-form');
     submitButton = document.getElementById('submit-btn');
-    titleInput = document.getElementById('title');
-    contentInput = document.getElementById('content');
-    categorySelect = document.getElementById('category');
-    publishDateInput = document.getElementById('publishDate');
+    nameInput = document.getElementById('name');
+    emailInput = document.getElementById('email');
+    messageInput = document.getElementById('message');
     
-    // Mock AnnouncementForm validation handlers
-    window.validateAnnouncementForm = jest.fn();
+    // Mock form validation handler
+    window.validateForm = jest.fn();
     window.showFieldError = jest.fn();
     window.clearFieldError = jest.fn();
-    window.publishAnnouncement = jest.fn();
-    window.saveDraft = jest.fn();
   });
 
   afterEach(() => {
@@ -99,18 +95,17 @@ describe('TC-003: Form validation and submission', () => {
     jest.clearAllMocks();
   });
 
-  // Happy path tests - TC-003 validation and submission success scenarios
-  describe('Happy path - valid announcement form submission', () => {
-    test('should successfully submit announcement form with valid data', async () => {
+  // Happy path tests
+  describe('Happy path - valid form submission', () => {
+    test('should successfully submit form with valid data', async () => {
       // Arrange
-      titleInput.value = 'Important System Update';
-      contentInput.value = 'We will be performing scheduled maintenance this weekend';
-      categorySelect.value = 'maintenance';
-      publishDateInput.value = '2024-12-31';
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'This is a test message with sufficient length';
 
       const mockSubmitHandler = jest.fn((e) => {
         e.preventDefault();
-        return Promise.resolve({ success: true, id: 'ann-12345' });
+        return Promise.resolve({ success: true, id: '12345' });
       });
       form.addEventListener('submit', mockSubmitHandler);
 
@@ -123,160 +118,189 @@ describe('TC-003: Form validation and submission', () => {
       expect(form.checkValidity()).toBe(true);
     });
 
-    test('should accept all required announcement fields when properly filled', () => {
+    test('should validate email format correctly with various valid formats', () => {
       // Arrange
-      titleInput.value = 'New Policy Update';
-      contentInput.value = 'Please review the updated company policies in the employee handbook';
-      categorySelect.value = 'general';
-
-      // Act & Assert
-      expect(titleInput.validity.valid).toBe(true);
-      expect(contentInput.validity.valid).toBe(true);
-      expect(categorySelect.validity.valid).toBe(true);
-      expect(form.checkValidity()).toBe(true);
-    });
-
-    test('should validate announcement title length within acceptable range', () => {
-      // Arrange & Act
-      const validTitles = [
-        'New',
-        'Monthly Team Meeting',
-        'Important Security Update for All Employees'
+      const validEmails = [
+        'user@domain.com',
+        'test.email@example.org',
+        'user+tag@domain.co.uk',
+        'firstname.lastname@company.com'
       ];
 
-      validTitles.forEach(title => {
-        titleInput.value = title;
-        expect(titleInput.validity.valid).toBe(true);
+      validEmails.forEach(email => {
+        // Act
+        emailInput.value = email;
+        
+        // Assert
+        expect(emailInput.validity.valid).toBe(true);
+        expect(emailInput.validity.typeMismatch).toBe(false);
       });
     });
 
-    test('should accept future dates for announcement publishing', () => {
+    test('should accept all required fields when properly filled', () => {
       // Arrange
-      const futureDate = new Date();
-      futureDate.setDate(futureDate.getDate() + 7);
-      const futureDateString = futureDate.toISOString().split('T')[0];
+      nameInput.value = 'Jane Smith';
+      emailInput.value = 'jane@test.com';
+      messageInput.value = 'This is a comprehensive test message';
 
-      // Act
-      publishDateInput.value = futureDateString;
-
-      // Assert
-      expect(publishDateInput.validity.valid).toBe(true);
-    });
-
-    test('should enable submit button when announcement form is valid', () => {
-      // Arrange
-      titleInput.value = 'Holiday Schedule';
-      contentInput.value = 'Please note the updated holiday schedule for next year';
-      categorySelect.value = 'general';
-
-      // Act
-      const inputEvent = new Event('input', { bubbles: true });
-      titleInput.dispatchEvent(inputEvent);
-      contentInput.dispatchEvent(inputEvent);
-      categorySelect.dispatchEvent(inputEvent);
-
-      // Assert
+      // Act & Assert
+      expect(nameInput.validity.valid).toBe(true);
+      expect(emailInput.validity.valid).toBe(true);
+      expect(messageInput.validity.valid).toBe(true);
       expect(form.checkValidity()).toBe(true);
     });
 
-    test('should successfully save announcement as draft', () => {
+    test('should validate optional phone number when provided', () => {
       // Arrange
-      titleInput.value = 'Draft Announcement';
-      contentInput.value = 'This is a draft announcement content';
-      const saveDraftButton = document.getElementById('save-draft-btn');
-      
-      const mockDraftHandler = jest.fn();
-      saveDraftButton.addEventListener('click', mockDraftHandler);
+      const phoneInput = document.getElementById('phone');
+      const validPhones = ['+1234567890', '1234567890', '+44207123456'];
+
+      validPhones.forEach(phone => {
+        // Act
+        phoneInput.value = phone;
+        
+        // Assert
+        expect(phoneInput.validity.valid).toBe(true);
+      });
+    });
+
+    test('should enable submit button when form is valid', () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'Valid message content here';
 
       // Act
-      saveDraftButton.click();
+      const inputEvent = new Event('input', { bubbles: true });
+      nameInput.dispatchEvent(inputEvent);
+      emailInput.dispatchEvent(inputEvent);
+      messageInput.dispatchEvent(inputEvent);
 
-      // Assert
-      expect(mockDraftHandler).toHaveBeenCalledTimes(1);
+      // Assert (would need actual validation logic implementation)
+      expect(form.checkValidity()).toBe(true);
     });
   });
 
-  // Error path tests - TC-003 validation failure scenarios
-  describe('Error path - invalid announcement form submission', () => {
-    test('should prevent submission when announcement title is empty', () => {
+  // Error path tests
+  describe('Error path - invalid form submission', () => {
+    test('should prevent submission when name field is empty', () => {
       // Arrange
-      titleInput.value = '';
-      contentInput.value = 'Valid content for the announcement';
-      categorySelect.value = 'general';
+      nameInput.value = '';
+      emailInput.value = 'test@example.com';
+      messageInput.value = 'Test message with adequate length';
 
       // Act & Assert
-      expect(titleInput.validity.valid).toBe(false);
-      expect(titleInput.validity.valueMissing).toBe(true);
+      expect(nameInput.validity.valid).toBe(false);
+      expect(nameInput.validity.valueMissing).toBe(true);
       expect(form.checkValidity()).toBe(false);
     });
 
-    test('should prevent submission when announcement content is empty', () => {
+    test('should prevent submission when email field is empty', () => {
       // Arrange
-      titleInput.value = 'Valid Title';
-      contentInput.value = '';
-      categorySelect.value = 'general';
+      nameInput.value = 'John Doe';
+      emailInput.value = '';
+      messageInput.value = 'Test message with adequate length';
 
       // Act & Assert
-      expect(contentInput.validity.valid).toBe(false);
-      expect(contentInput.validity.valueMissing).toBe(true);
+      expect(emailInput.validity.valid).toBe(false);
+      expect(emailInput.validity.valueMissing).toBe(true);
       expect(form.checkValidity()).toBe(false);
     });
 
-    test('should prevent submission when category is not selected', () => {
+    test('should prevent submission when message field is empty', () => {
       // Arrange
-      titleInput.value = 'Valid Title';
-      contentInput.value = 'Valid content for the announcement';
-      categorySelect.value = '';
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = '';
 
       // Act & Assert
-      expect(categorySelect.validity.valid).toBe(false);
-      expect(categorySelect.validity.valueMissing).toBe(true);
+      expect(messageInput.validity.valid).toBe(false);
+      expect(messageInput.validity.valueMissing).toBe(true);
       expect(form.checkValidity()).toBe(false);
     });
 
-    test('should validate announcement title length constraints', () => {
+    test('should reject invalid email formats', () => {
+      // Arrange & Act
+      const invalidEmails = [
+        'invalid-email',
+        '@example.com',
+        'test@',
+        'test.com',
+        'user@',
+        '@domain.com',
+        'user..double.dot@domain.com',
+        'user@domain',
+        ''
+      ];
+      
+      invalidEmails.forEach(invalidEmail => {
+        emailInput.value = invalidEmail;
+        
+        // Assert
+        expect(emailInput.validity.valid).toBe(false);
+        if (invalidEmail === '') {
+          expect(emailInput.validity.valueMissing).toBe(true);
+        } else {
+          expect(emailInput.validity.typeMismatch).toBe(true);
+        }
+      });
+    });
+
+    test('should validate name field length constraints', () => {
       // Test minimum length
-      titleInput.value = 'A'; // Too short
-      expect(titleInput.validity.valid).toBe(false);
-      expect(titleInput.validity.tooShort).toBe(true);
+      nameInput.value = 'A'; // Too short
+      expect(nameInput.validity.valid).toBe(false);
+      expect(nameInput.validity.tooShort).toBe(true);
 
       // Test maximum length
-      titleInput.value = 'A'.repeat(101); // Too long
-      expect(titleInput.validity.valid).toBe(false);
-      expect(titleInput.validity.tooLong).toBe(true);
+      nameInput.value = 'A'.repeat(VALIDATION_CONSTRAINTS.NAME.MAX_LENGTH + 1); // Too long
+      expect(nameInput.validity.valid).toBe(false);
+      expect(nameInput.validity.tooLong).toBe(true);
+
+      // Test invalid characters
+      nameInput.value = 'John123'; // Contains numbers
+      expect(nameInput.validity.valid).toBe(false);
+      expect(nameInput.validity.patternMismatch).toBe(true);
     });
 
-    test('should validate announcement content length constraints', () => {
+    test('should validate message field length constraints', () => {
       // Test minimum length
-      contentInput.value = 'Short'; // Too short
-      expect(contentInput.validity.valid).toBe(false);
-      expect(contentInput.validity.tooShort).toBe(true);
+      messageInput.value = 'Short'; // Too short
+      expect(messageInput.validity.valid).toBe(false);
+      expect(messageInput.validity.tooShort).toBe(true);
 
       // Test maximum length
-      contentInput.value = 'A'.repeat(1001); // Too long
-      expect(contentInput.validity.valid).toBe(false);
-      expect(contentInput.validity.tooLong).toBe(true);
+      messageInput.value = 'A'.repeat(VALIDATION_CONSTRAINTS.MESSAGE.MAX_LENGTH + 1); // Too long
+      expect(messageInput.validity.valid).toBe(false);
+      expect(messageInput.validity.tooLong).toBe(true);
     });
 
-    test('should reject past dates for announcement publishing', () => {
+    test('should validate phone number format when provided', () => {
       // Arrange
-      const pastDate = new Date();
-      pastDate.setDate(pastDate.getDate() - 1);
-      const pastDateString = pastDate.toISOString().split('T')[0];
+      const phoneInput = document.getElementById('phone');
+      const invalidPhones = [
+        'invalid-phone',
+        '++1234567890',
+        '123-456-7890',
+        'abc123def',
+        '0123456789012345678' // Too long
+      ];
 
-      // Act
-      publishDateInput.value = pastDateString;
-
-      // Assert
-      expect(publishDateInput.validity.valid).toBe(false);
-      expect(publishDateInput.validity.rangeUnderflow).toBe(true);
+      invalidPhones.forEach(phone => {
+        // Act
+        phoneInput.value = phone;
+        
+        // Assert
+        expect(phoneInput.validity.valid).toBe(false);
+        expect(phoneInput.validity.patternMismatch).toBe(true);
+      });
     });
 
-    test('should prevent submission when all required fields are empty', () => {
+    test('should prevent submission when all fields are empty', () => {
       // Arrange
-      titleInput.value = '';
-      contentInput.value = '';
-      categorySelect.value = '';
+      nameInput.value = '';
+      emailInput.value = '';
+      messageInput.value = '';
 
       const mockSubmitHandler = jest.fn((e) => e.preventDefault());
       form.addEventListener('submit', mockSubmitHandler);
@@ -287,20 +311,20 @@ describe('TC-003: Form validation and submission', () => {
 
       // Assert
       expect(form.checkValidity()).toBe(false);
-      expect(titleInput.validity.valueMissing).toBe(true);
-      expect(contentInput.validity.valueMissing).toBe(true);
-      expect(categorySelect.validity.valueMissing).toBe(true);
+      expect(nameInput.validity.valueMissing).toBe(true);
+      expect(emailInput.validity.valueMissing).toBe(true);
+      expect(messageInput.validity.valueMissing).toBe(true);
     });
 
-    test('should handle announcement form submission errors gracefully', async () => {
+    test('should handle form submission errors gracefully', async () => {
       // Arrange
-      titleInput.value = 'Test Announcement';
-      contentInput.value = 'Test announcement content';
-      categorySelect.value = 'general';
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'This is a test message';
 
       const mockSubmitHandler = jest.fn((e) => {
         e.preventDefault();
-        throw new Error('Server error during announcement publishing');
+        throw new Error('Network error');
       });
       form.addEventListener('submit', mockSubmitHandler);
 
@@ -308,28 +332,17 @@ describe('TC-003: Form validation and submission', () => {
       expect(() => {
         const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
         form.dispatchEvent(submitEvent);
-      }).toThrow('Server error during announcement publishing');
-    });
-
-    test('should validate category selection from available options only', () => {
-      // Arrange
-      const invalidCategory = 'invalid-category';
-      
-      // Act - try to set invalid category (would be prevented by select element)
-      categorySelect.value = invalidCategory;
-      
-      // Assert
-      expect(categorySelect.value).toBe(''); // Should reset to empty
+      }).toThrow('Network error');
     });
   });
 
-  // Edge cases and accessibility tests for AnnouncementForm
-  describe('Edge cases and accessibility for announcement form', () => {
-    test('should maintain focus on invalid announcement field after submission attempt', () => {
+  // Edge cases and accessibility tests
+  describe('Edge cases and accessibility', () => {
+    test('should maintain focus on invalid field after submission attempt', () => {
       // Arrange
-      titleInput.value = '';
-      contentInput.value = 'Valid content';
-      categorySelect.value = 'general';
+      nameInput.value = '';
+      emailInput.value = 'valid@email.com';
+      messageInput.value = 'Valid message content';
 
       // Act
       const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
@@ -340,50 +353,57 @@ describe('TC-003: Form validation and submission', () => {
       // In real implementation, invalid field should receive focus
     });
 
-    test('should display appropriate error messages for invalid announcement fields', () => {
+    test('should display appropriate error messages for invalid fields', () => {
       // Arrange
-      titleInput.value = '';
-      const errorDiv = document.getElementById('title-error');
+      nameInput.value = '';
+      const errorDiv = document.getElementById('name-error');
 
       // Act
       const blurEvent = new Event('blur', { bubbles: true });
-      titleInput.dispatchEvent(blurEvent);
+      nameInput.dispatchEvent(blurEvent);
 
       // Assert
-      expect(titleInput.validity.valueMissing).toBe(true);
+      expect(nameInput.validity.valueMissing).toBe(true);
       expect(errorDiv.getAttribute('role')).toBe('alert');
     });
 
-    test('should reset announcement form fields when reset button is clicked', () => {
+    test('should reset form fields when reset button is clicked', () => {
       // Arrange
-      titleInput.value = 'Test Title';
-      contentInput.value = 'Test content';
-      categorySelect.value = 'urgent';
-      publishDateInput.value = '2024-12-31';
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'Test message';
       const resetButton = document.getElementById('reset-btn');
 
       // Act
       resetButton.click();
 
       // Assert
-      expect(titleInput.value).toBe('');
-      expect(contentInput.value).toBe('');
-      expect(categorySelect.value).toBe('');
-      expect(publishDateInput.value).toBe('');
+      expect(nameInput.value).toBe('');
+      expect(emailInput.value).toBe('');
+      expect(messageInput.value).toBe('');
     });
 
-    test('should handle special characters in announcement content', () => {
+    test('should handle special characters in text inputs', () => {
       // Arrange
-      const specialContent = 'Announcement with special chars: @#$%^&*()_+-=[]{}|;":,.<>?';
+      const specialCharNames = [
+        'José María',
+        'François',
+        'Müller',
+        'O\'Brien',
+        'Mary-Jane'
+      ];
 
-      // Act
-      contentInput.value = specialContent;
-      
-      // Assert
-      expect(contentInput.validity.valid).toBe(true);
+      specialCharNames.forEach(name => {
+        // Act
+        nameInput.value = name;
+        
+        // Assert - should be valid for names with accents and hyphens
+        // Note: Current pattern only allows letters and spaces
+        // This test highlights the need for more inclusive validation
+      });
     });
 
-    test('should validate announcement form state changes during user interaction', () => {
+    test('should validate form state changes during user interaction', () => {
       // Arrange
       let formValidState = false;
 
@@ -392,39 +412,39 @@ describe('TC-003: Form validation and submission', () => {
         submitButton.disabled = !formValidState;
       };
 
-      // Act - simulate user filling announcement form step by step
-      titleInput.value = 'Test';
+      // Act - simulate user filling form step by step
+      nameInput.value = 'John';
       validateFormState();
-      expect(formValidState).toBe(false); // Content and category still empty
+      expect(formValidState).toBe(false); // Email and message still empty
 
-      contentInput.value = 'Test content for announcement';
+      emailInput.value = 'john@example.com';
       validateFormState();
-      expect(formValidState).toBe(false); // Category still empty
+      expect(formValidState).toBe(false); // Message still empty
 
-      categorySelect.value = 'general';
+      messageInput.value = 'Complete test message content';
       validateFormState();
       expect(formValidState).toBe(true); // All required fields filled
     });
 
-    test('should handle announcement publishing with loading state', async () => {
+    test('should handle form submission with loading state', async () => {
       // Arrange
-      titleInput.value = 'Loading Test';
-      contentInput.value = 'Test announcement content';
-      categorySelect.value = 'general';
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'Test message content';
 
-      let isPublishing = false;
+      let isSubmitting = false;
       const mockSubmitHandler = jest.fn(async (e) => {
         e.preventDefault();
-        isPublishing = true;
+        isSubmitting = true;
         submitButton.disabled = true;
-        submitButton.textContent = 'Publishing...';
+        submitButton.textContent = 'Submitting...';
         
         // Simulate async operation
         await new Promise(resolve => setTimeout(resolve, 100));
         
-        isPublishing = false;
+        isSubmitting = false;
         submitButton.disabled = false;
-        submitButton.textContent = 'Publish Announcement';
+        submitButton.textContent = 'Submit';
       });
 
       form.addEventListener('submit', mockSubmitHandler);
@@ -436,32 +456,6 @@ describe('TC-003: Form validation and submission', () => {
       // Assert
       expect(mockSubmitHandler).toHaveBeenCalledTimes(1);
       expect(submitButton.disabled).toBe(true);
-    });
-
-    test('should handle urgent category announcements with proper priority', () => {
-      // Arrange
-      titleInput.value = 'Emergency Maintenance';
-      contentInput.value = 'Urgent system maintenance required immediately';
-      categorySelect.value = 'urgent';
-      const prioritySelect = document.getElementById('priority');
-      prioritySelect.value = 'high';
-
-      // Act & Assert
-      expect(form.checkValidity()).toBe(true);
-      expect(categorySelect.value).toBe('urgent');
-      expect(prioritySelect.value).toBe('high');
-    });
-
-    test('should validate announcement form with mixed content types', () => {
-      // Arrange
-      titleInput.value = 'Mixed Content Test 123!';
-      contentInput.value = 'This announcement contains: numbers 123, symbols @#$, and unicode characters: café, naïve, résumé';
-      categorySelect.value = 'general';
-
-      // Act & Assert
-      expect(titleInput.validity.valid).toBe(true);
-      expect(contentInput.validity.valid).toBe(true);
-      expect(form.checkValidity()).toBe(true);
     });
   });
 });

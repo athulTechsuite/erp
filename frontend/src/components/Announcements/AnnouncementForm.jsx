@@ -6,6 +6,51 @@ import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Save, X, AlertCircle } from 'lucide-react';
 
+// XSS Protection: Input sanitization utility
+const sanitizeInput = (input) => {
+  if (typeof input !== 'string') return '';
+  
+  // Remove potentially dangerous HTML tags and attributes
+  return input
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
+    .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '')
+    .replace(/<link\b[^>]*>/gi, '')
+    .replace(/<meta\b[^>]*>/gi, '')
+    .replace(/javascript:/gi, '')
+    .replace(/on\w+\s*=/gi, '')
+    .replace(/data:/gi, '')
+    .replace(/vbscript:/gi, '');
+};
+
+// XSS Protection: HTML encoding utility for output
+const encodeHtmlEntities = (text) => {
+  if (typeof text !== 'string') return '';
+  
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+};
+
+// XSS Protection: Validate input doesn't contain malicious content
+const containsMaliciousContent = (input) => {
+  if (typeof input !== 'string') return false;
+  
+  const maliciousPatterns = [
+    /<script/i,
+    /javascript:/i,
+    /on\w+\s*=/i,
+    /<iframe/i,
+    /<object/i,
+    /<embed/i,
+    /data:.*base64/i,
+    /vbscript:/i
+  ];
+  
+  return maliciousPatterns.some(pattern => pattern.test(input));
+};
+
 const AnnouncementForm = ({ 
   announcement = null, 
   onSave, 
@@ -21,61 +66,28 @@ const AnnouncementForm = ({
 
   useEffect(() => {
     if (announcement) {
+      // XSS Protection: Sanitize data from props
       setFormData({
-        title: announcement.title || '',
-        content: announcement.content || ''
+        title: sanitizeInput(announcement.title || ''),
+        content: sanitizeInput(announcement.content || '')
       });
     }
   }, [announcement]);
 
-  const sanitizeInput = (input) => {
-    if (typeof input !== 'string') {
-      return '';
-    }
-    
-    // Remove potentially dangerous characters and patterns
-    return input
-      // Remove HTML tags
-      .replace(/<[^>]*>/g, '')
-      // Remove script tags and content
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-      // Remove javascript: and data: URLs
-      .replace(/javascript:|data:/gi, '')
-      // Remove null bytes
-      .replace(/\0/g, '')
-      // Limit to printable ASCII and common unicode characters
-      .replace(/[^\x20-\x7E\u00A0-\u024F\u1E00-\u1EFF]/g, '')
-      // Trim whitespace
-      .trim();
-  };
-
-  const sanitizeErrorMessage = (message) => {
-    if (typeof message !== 'string') {
-      return 'An error occurred. Please try again.';
-    }
-    // Remove HTML tags and escape special characters
-    return message.replace(/<[^>]*>/g, '').replace(/[<>&"']/g, (match) => {
-      const htmlEntities = {
-        '<': '&lt;',
-        '>': '&gt;',
-        '&': '&amp;',
-        '"': '&quot;',
-        "'": '&#x27;'
-      };
-      return htmlEntities[match];
-    });
-  };
-
   const validateField = (name, value) => {
     const fieldErrors = {};
+    
+    // XSS Protection: Check for malicious content
+    if (containsMaliciousContent(value)) {
+      fieldErrors[name] = 'Invalid content detected. Please remove any script tags or suspicious content.';
+      return fieldErrors;
+    }
     
     if (name === 'title') {
       if (!value.trim()) {
         fieldErrors.title = 'Title is required';
       } else if (value.length > 200) {
         fieldErrors.title = 'Title must be less than 200 characters';
-      } else if (value.length < 3) {
-        fieldErrors.title = 'Title must be at least 3 characters';
       }
     }
     
@@ -84,8 +96,6 @@ const AnnouncementForm = ({
         fieldErrors.content = 'Content is required';
       } else if (value.length > 5000) {
         fieldErrors.content = 'Content must be less than 5000 characters';
-      } else if (value.length < 10) {
-        fieldErrors.content = 'Content must be at least 10 characters';
       }
     }
     
@@ -93,13 +103,8 @@ const AnnouncementForm = ({
   };
 
   const validateForm = () => {
-    const sanitizedData = {
-      title: sanitizeInput(formData.title),
-      content: sanitizeInput(formData.content)
-    };
-    
-    const titleErrors = validateField('title', sanitizedData.title);
-    const contentErrors = validateField('content', sanitizedData.content);
+    const titleErrors = validateField('title', formData.title);
+    const contentErrors = validateField('content', formData.content);
     
     const allErrors = { ...titleErrors, ...contentErrors };
     setErrors(allErrors);
@@ -110,7 +115,7 @@ const AnnouncementForm = ({
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     
-    // Sanitize input in real-time
+    // XSS Protection: Sanitize input on change
     const sanitizedValue = sanitizeInput(value);
     
     setFormData(prev => ({
@@ -131,8 +136,7 @@ const AnnouncementForm = ({
     const { name, value } = e.target;
     setTouched(prev => ({ ...prev, [name]: true }));
     
-    const sanitizedValue = sanitizeInput(value);
-    const fieldErrors = validateField(name, sanitizedValue);
+    const fieldErrors = validateField(name, value);
     setErrors(prev => ({ ...prev, ...fieldErrors }));
   };
 
@@ -141,30 +145,22 @@ const AnnouncementForm = ({
     
     setTouched({ title: true, content: true });
     
-    // Sanitize form data before validation
-    const sanitizedData = {
-      title: sanitizeInput(formData.title),
-      content: sanitizeInput(formData.content)
-    };
-    
-    // Update form data with sanitized values
-    setFormData(sanitizedData);
-    
     if (!validateForm()) {
       return;
     }
 
     try {
-      await onSave({
-        ...sanitizedData,
-        title: sanitizedData.title.trim(),
-        content: sanitizedData.content.trim()
-      });
+      // XSS Protection: Final sanitization before saving
+      const sanitizedData = {
+        title: sanitizeInput(formData.title.trim()),
+        content: sanitizeInput(formData.content.trim())
+      };
+      
+      await onSave(sanitizedData);
     } catch (error) {
       console.error('Error saving announcement:', error);
-      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to save announcement. Please try again.';
       setErrors({ 
-        submit: sanitizeErrorMessage(errorMessage)
+        submit: 'Failed to save announcement. Please try again.' 
       });
     }
   };
@@ -176,6 +172,10 @@ const AnnouncementForm = ({
     onCancel();
   };
 
+  const titleError = errors.title && touched.title;
+  const contentError = errors.content && touched.content;
+  const hasErrors = Object.keys(errors).some(key => key !== 'submit' && errors[key]);
+
   return (
     <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
@@ -184,17 +184,17 @@ const AnnouncementForm = ({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           {errors.submit && (
-            <Alert variant="destructive">
+            <Alert variant="destructive" role="alert" aria-live="polite">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{errors.submit}</AlertDescription>
+              <AlertDescription>{encodeHtmlEntities(errors.submit)}</AlertDescription>
             </Alert>
           )}
           
           <div className="space-y-2">
             <label htmlFor="title" className="text-sm font-medium">
-              Title <span className="text-red-500">*</span>
+              Title <span className="text-red-500" aria-label="required">*</span>
             </label>
             <Input
               id="title"
@@ -203,22 +203,35 @@ const AnnouncementForm = ({
               onChange={handleInputChange}
               onBlur={handleBlur}
               placeholder="Enter announcement title..."
-              className={errors.title && touched.title ? 'border-red-500' : ''}
+              className={titleError ? 'border-red-500' : ''}
               maxLength={200}
+              required
+              aria-invalid={titleError ? 'true' : 'false'}
+              aria-describedby={titleError ? 'title-error' : 'title-count'}
+              aria-label="Announcement title"
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
-                {errors.title && touched.title && (
-                  <span className="text-red-500">{errors.title}</span>
+                {titleError && (
+                  <span 
+                    id="title-error" 
+                    className="text-red-500" 
+                    role="alert"
+                    aria-live="polite"
+                  >
+                    {encodeHtmlEntities(errors.title)}
+                  </span>
                 )}
               </span>
-              <span>{formData.title.length}/200</span>
+              <span id="title-count" aria-label={`${formData.title.length} of 200 characters used`}>
+                {formData.title.length}/200
+              </span>
             </div>
           </div>
 
           <div className="space-y-2">
             <label htmlFor="content" className="text-sm font-medium">
-              Content <span className="text-red-500">*</span>
+              Content <span className="text-red-500" aria-label="required">*</span>
             </label>
             <Textarea
               id="content"
@@ -228,16 +241,29 @@ const AnnouncementForm = ({
               onBlur={handleBlur}
               placeholder="Enter announcement content..."
               rows={8}
-              className={errors.content && touched.content ? 'border-red-500' : ''}
+              className={contentError ? 'border-red-500' : ''}
               maxLength={5000}
+              required
+              aria-invalid={contentError ? 'true' : 'false'}
+              aria-describedby={contentError ? 'content-error' : 'content-count'}
+              aria-label="Announcement content"
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
-                {errors.content && touched.content && (
-                  <span className="text-red-500">{errors.content}</span>
+                {contentError && (
+                  <span 
+                    id="content-error" 
+                    className="text-red-500" 
+                    role="alert"
+                    aria-live="polite"
+                  >
+                    {encodeHtmlEntities(errors.content)}
+                  </span>
                 )}
               </span>
-              <span>{formData.content.length}/5000</span>
+              <span id="content-count" aria-label={`${formData.content.length} of 5000 characters used`}>
+                {formData.content.length}/5000
+              </span>
             </div>
           </div>
 
@@ -247,15 +273,17 @@ const AnnouncementForm = ({
               variant="outline"
               onClick={handleCancel}
               disabled={isSubmitting}
+              aria-label="Cancel announcement creation"
             >
-              <X className="h-4 w-4 mr-2" />
+              <X className="h-4 w-4 mr-2" aria-hidden="true" />
               Cancel
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting || Object.keys(errors).length > 0}
+              disabled={isSubmitting || hasErrors}
+              aria-label={isSubmitting ? 'Saving announcement' : announcement ? 'Update announcement' : 'Publish announcement'}
             >
-              <Save className="h-4 w-4 mr-2" />
+              <Save className="h-4 w-4 mr-2" aria-hidden="true" />
               {isSubmitting ? 'Saving...' : announcement ? 'Update' : 'Publish'}
             </Button>
           </div>

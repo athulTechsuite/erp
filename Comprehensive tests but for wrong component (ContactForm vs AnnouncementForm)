@@ -1,0 +1,193 @@
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import AnnouncementForm from '../components/AnnouncementForm';
+
+describe('AnnouncementForm - TC-003: Form validation and submission tests', () => {
+  const mockOnSubmit = jest.fn();
+  
+  beforeEach(() => {
+    mockOnSubmit.mockClear();
+  });
+
+  describe('TC-003 Happy Path - Valid form submission', () => {
+    it('should successfully submit form with valid data', async () => {
+      const user = userEvent.setup();
+      
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+      
+      // Fill in valid form data
+      await user.type(screen.getByLabelText(/title/i), 'Test Announcement');
+      await user.type(screen.getByLabelText(/content/i), 'This is a test announcement content that meets minimum length requirements.');
+      await user.selectOptions(screen.getByLabelText(/category/i), 'general');
+      await user.selectOptions(screen.getByLabelText(/priority/i), 'medium');
+      
+      // Submit the form
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      
+      await waitFor(() => {
+        expect(mockOnSubmit).toHaveBeenCalledWith({
+          title: 'Test Announcement',
+          content: 'This is a test announcement content that meets minimum length requirements.',
+          category: 'general',
+          priority: 'medium'
+        });
+      });
+      
+      expect(screen.queryByText(/error/i)).not.toBeInTheDocument();
+    });
+
+    it('should reset form after successful submission', async () => {
+      const user = userEvent.setup();
+      
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+      
+      await user.type(screen.getByLabelText(/title/i), 'Test Title');
+      await user.type(screen.getByLabelText(/content/i), 'Test content for announcement form validation.');
+      
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      
+      await waitFor(() => {
+        expect(screen.getByLabelText(/title/i)).toHaveValue('');
+        expect(screen.getByLabelText(/content/i)).toHaveValue('');
+      });
+    });
+  });
+
+  describe('TC-003 Error Path - Form validation errors', () => {
+    it('should display error when title is empty', async () => {
+      const user = userEvent.setup();
+      
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+      
+      await user.type(screen.getByLabelText(/content/i), 'Valid content for the announcement.');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      
+      await waitFor(() => {
+        expect(screen.getByText(/title is required/i)).toBeInTheDocument();
+      });
+      
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+
+    it('should display error when content is too short', async () => {
+      const user = userEvent.setup();
+      
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+      
+      await user.type(screen.getByLabelText(/title/i), 'Valid Title');
+      await user.type(screen.getByLabelText(/content/i), 'Short');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      
+      await waitFor(() => {
+        expect(screen.getByText(/content must be at least 10 characters/i)).toBeInTheDocument();
+      });
+      
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+
+    it('should display error when title exceeds maximum length', async () => {
+      const user = userEvent.setup();
+      const longTitle = 'a'.repeat(101); // Assuming max length is 100
+      
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+      
+      await user.type(screen.getByLabelText(/title/i), longTitle);
+      await user.type(screen.getByLabelText(/content/i), 'Valid content for testing purposes.');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      
+      await waitFor(() => {
+        expect(screen.getByText(/title must not exceed 100 characters/i)).toBeInTheDocument();
+      });
+      
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+
+    it('should display multiple validation errors simultaneously', async () => {
+      const user = userEvent.setup();
+      
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+      
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      
+      await waitFor(() => {
+        expect(screen.getByText(/title is required/i)).toBeInTheDocument();
+        expect(screen.getByText(/content is required/i)).toBeInTheDocument();
+      });
+      
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+
+    it('should handle server-side validation errors', async () => {
+      const mockOnSubmitWithError = jest.fn().mockRejectedValue(new Error('Server validation failed'));
+      const user = userEvent.setup();
+      
+      render(<AnnouncementForm onSubmit={mockOnSubmitWithError} />);
+      
+      await user.type(screen.getByLabelText(/title/i), 'Valid Title');
+      await user.type(screen.getByLabelText(/content/i), 'Valid content for the announcement form.');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      
+      await waitFor(() => {
+        expect(screen.getByText(/server validation failed/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should clear validation errors when user corrects input', async () => {
+      const user = userEvent.setup();
+      
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+      
+      // Trigger validation error
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      
+      await waitFor(() => {
+        expect(screen.getByText(/title is required/i)).toBeInTheDocument();
+      });
+      
+      // Fix the error
+      await user.type(screen.getByLabelText(/title/i), 'Fixed Title');
+      
+      await waitFor(() => {
+        expect(screen.queryByText(/title is required/i)).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('TC-003 Form field interactions', () => {
+    it('should enable submit button when form is valid', async () => {
+      const user = userEvent.setup();
+      
+      render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+      
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+      expect(submitButton).toBeDisabled();
+      
+      await user.type(screen.getByLabelText(/title/i), 'Valid Title');
+      await user.type(screen.getByLabelText(/content/i), 'Valid content with sufficient length for validation.');
+      
+      await waitFor(() => {
+        expect(submitButton).toBeEnabled();
+      });
+    });
+
+    it('should show loading state during form submission', async () => {
+      const mockDelayedSubmit = jest.fn().mockImplementation(() => 
+        new Promise(resolve => setTimeout(resolve, 100))
+      );
+      const user = userEvent.setup();
+      
+      render(<AnnouncementForm onSubmit={mockDelayedSubmit} />);
+      
+      await user.type(screen.getByLabelText(/title/i), 'Test Title');
+      await user.type(screen.getByLabelText(/content/i), 'Test content for loading state validation.');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      
+      expect(screen.getByText(/submitting/i)).toBeInTheDocument();
+      
+      await waitFor(() => {
+        expect(screen.queryByText(/submitting/i)).not.toBeInTheDocument();
+      });
+    });
+  });
+});

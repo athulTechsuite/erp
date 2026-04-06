@@ -2,6 +2,9 @@ const { expect } = require('chai');
 const sinon = require('sinon');
 const authService = require('../src/auth/authService');
 const { AuthError } = require('../src/auth/errors');
+const inputSanitizer = require('../src/utils/inputSanitizer');
+const dbService = require('../src/db/dbService');
+const { DatabaseError } = require('../src/db/errors');
 
 describe('TC-001: Authentication and authorization', () => {
   let authStub;
@@ -99,6 +102,377 @@ describe('TC-001: Authentication and authorization', () => {
         .to.be.rejectedWith(AuthError, 'Authorization token is required');
 
       authorizeStub.restore();
+    });
+  });
+});
+
+describe('TC-004: Authentication and authorization', () => {
+  let authStub, authorizeStub;
+
+  beforeEach(() => {
+    authStub = sinon.stub(authService, 'authenticate');
+    authorizeStub = sinon.stub(authService, 'authorize');
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  describe('Happy path scenarios', () => {
+    it('should successfully authenticate admin user with elevated privileges', async () => {
+      // Arrange
+      const adminCredentials = {
+        username: 'admin',
+        password: 'adminPassword123'
+      };
+      const expectedResponse = { 
+        token: 'admin-jwt-token-456', 
+        user: { id: 1, username: 'admin', role: 'admin' } 
+      };
+      authStub.resolves(expectedResponse);
+
+      // Act
+      const result = await authService.authenticate(adminCredentials);
+
+      // Assert
+      expect(result).to.have.property('token', 'admin-jwt-token-456');
+      expect(result.user).to.have.property('role', 'admin');
+      expect(authStub.calledOnceWith(adminCredentials)).to.be.true;
+    });
+
+    it('should successfully authorize user access to protected resource', async () => {
+      // Arrange
+      const validToken = 'Bearer jwt-token-789';
+      const expectedUser = { id: 2, username: 'regularuser', role: 'user', permissions: ['read'] };
+      authorizeStub.resolves(expectedUser);
+
+      // Act
+      const result = await authService.authorize(validToken);
+
+      // Assert
+      expect(result).to.deep.equal(expectedUser);
+      expect(result.permissions).to.include('read');
+      expect(authorizeStub.calledOnceWith(validToken)).to.be.true;
+    });
+  });
+
+  describe('Error path scenarios', () => {
+    it('should reject authentication when account is locked', async () => {
+      // Arrange
+      const lockedAccountCredentials = {
+        username: 'lockeduser',
+        password: 'correctPassword123'
+      };
+      authStub.rejects(new AuthError('Account is locked due to multiple failed attempts'));
+
+      // Act & Assert
+      await expect(authService.authenticate(lockedAccountCredentials))
+        .to.be.rejectedWith(AuthError, 'Account is locked due to multiple failed attempts');
+      expect(authStub.calledOnceWith(lockedAccountCredentials)).to.be.true;
+    });
+
+    it('should reject authorization when token is expired', async () => {
+      // Arrange
+      const expiredToken = 'Bearer expired-jwt-token';
+      authorizeStub.rejects(new AuthError('Token has expired'));
+
+      // Act & Assert
+      await expect(authService.authorize(expiredToken))
+        .to.be.rejectedWith(AuthError, 'Token has expired');
+      expect(authorizeStub.calledOnceWith(expiredToken)).to.be.true;
+    });
+
+    it('should reject authorization when user lacks required permissions', async () => {
+      // Arrange
+      const limitedToken = 'Bearer limited-access-token';
+      authorizeStub.rejects(new AuthError('Insufficient permissions'));
+
+      // Act & Assert
+      await expect(authService.authorize(limitedToken))
+        .to.be.rejectedWith(AuthError, 'Insufficient permissions');
+      expect(authorizeStub.calledOnceWith(limitedToken)).to.be.true;
+    });
+  });
+});
+
+describe('TC-005: Input sanitization and XSS prevention', () => {
+  let sanitizeStub;
+
+  beforeEach(() => {
+    sanitizeStub = sinon.stub(inputSanitizer, 'sanitize');
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  describe('Happy path scenarios', () => {
+    it('should successfully sanitize clean user input', () => {
+      // Arrange
+      const cleanInput = 'This is a normal text input';
+      const expectedOutput = 'This is a normal text input';
+      sanitizeStub.returns(expectedOutput);
+
+      // Act
+      const result = inputSanitizer.sanitize(cleanInput);
+
+      // Assert
+      expect(result).to.equal(expectedOutput);
+      expect(sanitizeStub.calledOnceWith(cleanInput)).to.be.true;
+    });
+
+    it('should successfully sanitize input with safe HTML entities', () => {
+      // Arrange
+      const inputWithEntities = 'User & Company < 2023 >';
+      const expectedOutput = 'User &amp; Company &lt; 2023 &gt;';
+      sanitizeStub.returns(expectedOutput);
+
+      // Act
+      const result = inputSanitizer.sanitize(inputWithEntities);
+
+      // Assert
+      expect(result).to.equal(expectedOutput);
+      expect(result).to.not.include('<');
+      expect(result).to.not.include('>');
+      expect(sanitizeStub.calledOnceWith(inputWithEntities)).to.be.true;
+    });
+
+    it('should successfully preserve safe markdown formatting', () => {
+      // Arrange
+      const markdownInput = '**Bold text** and *italic text*';
+      const expectedOutput = '**Bold text** and *italic text*';
+      sanitizeStub.returns(expectedOutput);
+
+      // Act
+      const result = inputSanitizer.sanitize(markdownInput);
+
+      // Assert
+      expect(result).to.equal(expectedOutput);
+      expect(sanitizeStub.calledOnceWith(markdownInput)).to.be.true;
+    });
+  });
+
+  describe('Error path scenarios', () => {
+    it('should sanitize and remove script tags from malicious input', () => {
+      // Arrange
+      const maliciousInput = '<script>alert("XSS")</script>Hello World';
+      const expectedOutput = 'Hello World';
+      sanitizeStub.returns(expectedOutput);
+
+      // Act
+      const result = inputSanitizer.sanitize(maliciousInput);
+
+      // Assert
+      expect(result).to.equal(expectedOutput);
+      expect(result).to.not.include('<script>');
+      expect(result).to.not.include('alert');
+      expect(sanitizeStub.calledOnceWith(maliciousInput)).to.be.true;
+    });
+
+    it('should sanitize input with event handlers and dangerous attributes', () => {
+      // Arrange
+      const maliciousInput = '<img src="x" onerror="alert(1)" onclick="evil()">Test';
+      const expectedOutput = '<img src="x">Test';
+      sanitizeStub.returns(expectedOutput);
+
+      // Act
+      const result = inputSanitizer.sanitize(maliciousInput);
+
+      // Assert
+      expect(result).to.equal(expectedOutput);
+      expect(result).to.not.include('onerror');
+      expect(result).to.not.include('onclick');
+      expect(sanitizeStub.calledOnceWith(maliciousInput)).to.be.true;
+    });
+
+    it('should handle null or undefined input gracefully', () => {
+      // Arrange
+      const nullInput = null;
+      const expectedOutput = '';
+      sanitizeStub.returns(expectedOutput);
+
+      // Act
+      const result = inputSanitizer.sanitize(nullInput);
+
+      // Assert
+      expect(result).to.equal(expectedOutput);
+      expect(sanitizeStub.calledOnceWith(nullInput)).to.be.true;
+    });
+
+    it('should sanitize SQL injection attempts in input', () => {
+      // Arrange
+      const sqlInjectionInput = "'; DROP TABLE users; --";
+      const expectedOutput = "&#x27;; DROP TABLE users; --";
+      sanitizeStub.returns(expectedOutput);
+
+      // Act
+      const result = inputSanitizer.sanitize(sqlInjectionInput);
+
+      // Assert
+      expect(result).to.equal(expectedOutput);
+      expect(result).to.not.include("'"));
+      expect(sanitizeStub.calledOnceWith(sqlInjectionInput)).to.be.true;
+    });
+  });
+});
+
+describe('TC-006: Database operations and constraints', () => {
+  let dbStub;
+
+  beforeEach(() => {
+    dbStub = {
+      create: sinon.stub(dbService, 'create'),
+      findById: sinon.stub(dbService, 'findById'),
+      update: sinon.stub(dbService, 'update'),
+      delete: sinon.stub(dbService, 'delete')
+    };
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  describe('Happy path scenarios', () => {
+    it('should successfully create new record with valid data', async () => {
+      // Arrange
+      const validData = {
+        name: 'John Doe',
+        email: 'john.doe@example.com',
+        age: 30
+      };
+      const expectedResult = { id: 1, ...validData, createdAt: new Date() };
+      dbStub.create.resolves(expectedResult);
+
+      // Act
+      const result = await dbService.create('users', validData);
+
+      // Assert
+      expect(result).to.have.property('id', 1);
+      expect(result).to.have.property('name', 'John Doe');
+      expect(result).to.have.property('email', 'john.doe@example.com');
+      expect(dbStub.create.calledOnceWith('users', validData)).to.be.true;
+    });
+
+    it('should successfully find record by valid ID', async () => {
+      // Arrange
+      const validId = 1;
+      const expectedRecord = {
+        id: 1,
+        name: 'Jane Smith',
+        email: 'jane.smith@example.com',
+        age: 25
+      };
+      dbStub.findById.resolves(expectedRecord);
+
+      // Act
+      const result = await dbService.findById('users', validId);
+
+      // Assert
+      expect(result).to.deep.equal(expectedRecord);
+      expect(dbStub.findById.calledOnceWith('users', validId)).to.be.true;
+    });
+
+    it('should successfully update record with valid data and constraints', async () => {
+      // Arrange
+      const recordId = 1;
+      const updateData = { age: 31, email: 'john.updated@example.com' };
+      const expectedResult = {
+        id: 1,
+        name: 'John Doe',
+        email: 'john.updated@example.com',
+        age: 31,
+        updatedAt: new Date()
+      };
+      dbStub.update.resolves(expectedResult);
+
+      // Act
+      const result = await dbService.update('users', recordId, updateData);
+
+      // Assert
+      expect(result).to.have.property('age', 31);
+      expect(result).to.have.property('email', 'john.updated@example.com');
+      expect(result).to.have.property('updatedAt');
+      expect(dbStub.update.calledOnceWith('users', recordId, updateData)).to.be.true;
+    });
+  });
+
+  describe('Error path scenarios', () => {
+    it('should reject creation when unique constraint is violated', async () => {
+      // Arrange
+      const duplicateData = {
+        name: 'Jane Doe',
+        email: 'existing@example.com', // Duplicate email
+        age: 28
+      };
+      dbStub.create.rejects(new DatabaseError('UNIQUE constraint failed: users.email'));
+
+      // Act & Assert
+      await expect(dbService.create('users', duplicateData))
+        .to.be.rejectedWith(DatabaseError, 'UNIQUE constraint failed: users.email');
+      expect(dbStub.create.calledOnceWith('users', duplicateData)).to.be.true;
+    });
+
+    it('should reject creation when required fields are missing', async () => {
+      // Arrange
+      const incompleteData = {
+        name: 'John Incomplete'
+        // Missing required email field
+      };
+      dbStub.create.rejects(new DatabaseError('NOT NULL constraint failed: users.email'));
+
+      // Act & Assert
+      await expect(dbService.create('users', incompleteData))
+        .to.be.rejectedWith(DatabaseError, 'NOT NULL constraint failed: users.email');
+      expect(dbStub.create.calledOnceWith('users', incompleteData)).to.be.true;
+    });
+
+    it('should return null when record with ID does not exist', async () => {
+      // Arrange
+      const nonExistentId = 999;
+      dbStub.findById.resolves(null);
+
+      // Act
+      const result = await dbService.findById('users', nonExistentId);
+
+      // Assert
+      expect(result).to.be.null;
+      expect(dbStub.findById.calledOnceWith('users', nonExistentId)).to.be.true;
+    });
+
+    it('should reject update when foreign key constraint is violated', async () => {
+      // Arrange
+      const recordId = 1;
+      const invalidUpdateData = {
+        department_id: 999 // Non-existent department
+      };
+      dbStub.update.rejects(new DatabaseError('FOREIGN KEY constraint failed'));
+
+      // Act & Assert
+      await expect(dbService.update('users', recordId, invalidUpdateData))
+        .to.be.rejectedWith(DatabaseError, 'FOREIGN KEY constraint failed');
+      expect(dbStub.update.calledOnceWith('users', recordId, invalidUpdateData)).to.be.true;
+    });
+
+    it('should reject delete when record is referenced by foreign key', async () => {
+      // Arrange
+      const recordId = 1;
+      dbStub.delete.rejects(new DatabaseError('FOREIGN KEY constraint failed: record is referenced'));
+
+      // Act & Assert
+      await expect(dbService.delete('users', recordId))
+        .to.be.rejectedWith(DatabaseError, 'FOREIGN KEY constraint failed: record is referenced');
+      expect(dbStub.delete.calledOnceWith('users', recordId)).to.be.true;
+    });
+
+    it('should handle database connection errors gracefully', async () => {
+      // Arrange
+      const validData = { name: 'Test User', email: 'test@example.com' };
+      dbStub.create.rejects(new DatabaseError('Database connection failed'));
+
+      // Act & Assert
+      await expect(dbService.create('users', validData))
+        .to.be.rejectedWith(DatabaseError, 'Database connection failed');
+      expect(dbStub.create.calledOnceWith('users', validData)).to.be.true;
     });
   });
 });

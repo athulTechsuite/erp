@@ -56,6 +56,17 @@ const AnnouncementsWidget = () => {
     return content.substring(0, maxLength) + '...';
   };
 
+  const toggleReadMore = (announcementId) => {
+    setAnnouncements(prevAnnouncements => 
+      prevAnnouncements.map(announcement => 
+        announcement.id === announcementId 
+          ? { ...announcement, showFull: !announcement.showFull }
+          : announcement
+      )
+    );
+  };
+
+  // Loading state render
   if (loading) {
     return (
       <Card className="h-full">
@@ -75,6 +86,7 @@ const AnnouncementsWidget = () => {
     );
   }
 
+  // Error state render
   if (error) {
     return (
       <Card className="h-full">
@@ -89,11 +101,24 @@ const AnnouncementsWidget = () => {
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>{error}</AlertDescription>
           </Alert>
+          <div className="mt-4 text-center">
+            <button 
+              onClick={() => {
+                setError(null);
+                setLoading(true);
+                fetchAnnouncements();
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+            >
+              Try Again
+            </button>
+          </div>
         </CardContent>
       </Card>
     );
   }
 
+  // Main render with announcements
   return (
     <Card className="h-full">
       <CardHeader className="pb-3">
@@ -125,20 +150,16 @@ const AnnouncementsWidget = () => {
                   </div>
                 </div>
                 <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
-                  {truncateContent(announcement.content)}
+                  {announcement.showFull 
+                    ? announcement.content 
+                    : truncateContent(announcement.content)
+                  }
                 </p>
                 {announcement.content.length > 200 && (
                   <button 
-                    className="text-blue-600 hover:text-blue-800 text-xs mt-1 font-medium"
-                    onClick={() => {
-                      // Toggle full content display
-                      const updatedAnnouncements = announcements.map(a => 
-                        a.id === announcement.id 
-                          ? { ...a, showFull: !a.showFull }
-                          : a
-                      );
-                      setAnnouncements(updatedAnnouncements);
-                    }}
+                    className="text-blue-600 hover:text-blue-800 text-xs mt-1 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
+                    onClick={() => toggleReadMore(announcement.id)}
+                    aria-label={announcement.showFull ? 'Show less content' : 'Show more content'}
                   >
                     {announcement.showFull ? 'Show Less' : 'Read More'}
                   </button>

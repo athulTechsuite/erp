@@ -131,8 +131,7 @@ const AnnouncementsWidget = () => {
         {announcements.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <Megaphone className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            <p className="text-sm">No announcements at this time.</p>
-            <p className="text-xs mt-1">Check back later for company updates.</p>
+            <p>No announcements at this time.</p>
           </div>
         ) : (
           <div className="space-y-4 max-h-96 overflow-y-auto">
@@ -167,6 +166,17 @@ const AnnouncementsWidget = () => {
                 )}
               </div>
             ))}
+          </div>
+        )}
+        {announcements.length > 0 && (
+          <div className="mt-4 pt-3 border-t border-gray-200">
+            <button 
+              onClick={fetchAnnouncements}
+              className="w-full text-center text-sm text-blue-600 hover:text-blue-800 font-medium py-1 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              disabled={loading}
+            >
+              {loading ? 'Refreshing...' : 'Refresh Announcements'}
+            </button>
           </div>
         )}
       </CardContent>

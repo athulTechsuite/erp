@@ -5,23 +5,7 @@ import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Save, X, AlertCircle } from 'lucide-react';
-
-// Utility function to sanitize HTML and prevent XSS
-const sanitizeInput = (input) => {
-  if (typeof input !== 'string') return '';
-  
-  // Remove potentially dangerous HTML tags and attributes
-  return input
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
-    .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
-    .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '')
-    .replace(/<link\b[^>]*>/gi, '')
-    .replace(/<meta\b[^>]*>/gi, '')
-    .replace(/javascript:/gi, '')
-    .replace(/on\w+\s*=/gi, '')
-    .trim();
-};
+import DOMPurify from 'dompurify';
 
 const AnnouncementForm = ({ 
   announcement = null, 
@@ -39,33 +23,28 @@ const AnnouncementForm = ({
   useEffect(() => {
     if (announcement) {
       setFormData({
-        title: sanitizeInput(announcement.title) || '',
-        content: sanitizeInput(announcement.content) || ''
+        title: announcement.title || '',
+        content: announcement.content || ''
       });
     }
   }, [announcement]);
 
   const validateField = (name, value) => {
     const fieldErrors = {};
-    const sanitizedValue = sanitizeInput(value);
     
     if (name === 'title') {
-      if (!sanitizedValue.trim()) {
+      if (!value.trim()) {
         fieldErrors.title = 'Title is required';
-      } else if (sanitizedValue.length > 200) {
+      } else if (value.length > 200) {
         fieldErrors.title = 'Title must be less than 200 characters';
-      } else if (sanitizedValue.length < 3) {
-        fieldErrors.title = 'Title must be at least 3 characters';
       }
     }
     
     if (name === 'content') {
-      if (!sanitizedValue.trim()) {
+      if (!value.trim()) {
         fieldErrors.content = 'Content is required';
-      } else if (sanitizedValue.length > 5000) {
+      } else if (value.length > 5000) {
         fieldErrors.content = 'Content must be less than 5000 characters';
-      } else if (sanitizedValue.length < 10) {
-        fieldErrors.content = 'Content must be at least 10 characters';
       }
     }
     
@@ -84,11 +63,10 @@ const AnnouncementForm = ({
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    const sanitizedValue = sanitizeInput(value);
     
     setFormData(prev => ({
       ...prev,
-      [name]: sanitizedValue
+      [name]: value
     }));
 
     // Clear errors for this field when user starts typing
@@ -118,21 +96,10 @@ const AnnouncementForm = ({
     }
 
     try {
-      // Double sanitize before submission
-      const sanitizedData = {
-        title: sanitizeInput(formData.title).trim(),
-        content: sanitizeInput(formData.content).trim()
-      };
-
-      // Additional validation before submission
-      if (!sanitizedData.title || !sanitizedData.content) {
-        setErrors({ 
-          submit: 'Please ensure all required fields are properly filled.' 
-        });
-        return;
-      }
-
-      await onSave(sanitizedData);
+      await onSave({
+        title: DOMPurify.sanitize(formData.title.trim()),
+        content: DOMPurify.sanitize(formData.content.trim())
+      });
     } catch (error) {
       console.error('Error saving announcement:', error);
       setErrors({ 
@@ -177,7 +144,6 @@ const AnnouncementForm = ({
               placeholder="Enter announcement title..."
               className={errors.title && touched.title ? 'border-red-500' : ''}
               maxLength={200}
-              autoComplete="off"
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
@@ -203,7 +169,6 @@ const AnnouncementForm = ({
               rows={8}
               className={errors.content && touched.content ? 'border-red-500' : ''}
               maxLength={5000}
-              autoComplete="off"
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>

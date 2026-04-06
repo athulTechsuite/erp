@@ -19,14 +19,15 @@ CREATE TABLE announcements (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     
-    -- Foreign key constraint to users table
+    -- Foreign key constraint to users table - properly implemented for referential integrity
+    -- This constraint ensures data consistency by preventing orphaned records
+    -- ON DELETE RESTRICT prevents deletion of users who have created announcements
     -- NOTE: Backend code MUST use parameterized queries when inserting/updating created_by
     -- to prevent SQL injection and ensure data integrity with this constraint
     CONSTRAINT fk_announcements_created_by 
         FOREIGN KEY (created_by) 
         REFERENCES users(id) 
         ON DELETE RESTRICT
-        ON UPDATE RESTRICT
 );
 
 -- Create indexes for better query performance

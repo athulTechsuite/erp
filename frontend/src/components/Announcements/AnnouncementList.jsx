@@ -32,15 +32,22 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
     }
   };
 
+  const canDeleteAnnouncement = (announcement) => {
+    if (!user) return false;
+    // Admin can delete any announcement, authors can delete their own
+    return user.role === 'admin' || user.id === announcement.authorId;
+  };
+
   const canEditAnnouncement = (announcement) => {
     if (!user) return false;
-    // Allow if user is admin or the author of the announcement
+    // Admin can edit any announcement, authors can edit their own
     return user.role === 'admin' || user.id === announcement.authorId;
   };
 
   const handleDelete = async (id) => {
     const announcement = announcements.find(a => a.id === id);
-    if (!announcement || !canEditAnnouncement(announcement)) {
+    
+    if (!canDeleteAnnouncement(announcement)) {
       setError('You do not have permission to delete this announcement');
       return;
     }
@@ -56,14 +63,6 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
       setError('Failed to delete announcement');
       console.error('Error deleting announcement:', err);
     }
-  };
-
-  const handleEdit = (announcement) => {
-    if (!canEditAnnouncement(announcement)) {
-      setError('You do not have permission to edit this announcement');
-      return;
-    }
-    window.location.href = `/admin/announcements/edit/${announcement.id}`;
   };
 
   const formatDate = (dateString) => {
@@ -84,30 +83,34 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
     });
   };
 
-  const sanitizeTitle = (title) => {
-    return DOMPurify.sanitize(title, {
-      ALLOWED_TAGS: [],
-      ALLOWED_ATTR: []
-    });
-  };
-
-  const sanitizeAuthorName = (name) => {
-    return DOMPurify.sanitize(name, {
-      ALLOWED_TAGS: [],
-      ALLOWED_ATTR: []
-    });
-  };
-
   if (loading) {
     return (
       <div className="space-y-4">
         {[...Array(3)].map((_, index) => (
-          <Card key={index} className="animate-pulse">
-            <CardContent className="p-4">
-              <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-              <div className="h-3 bg-gray-200 rounded w-1/2 mb-3"></div>
-              <div className="h-3 bg-gray-200 rounded w-full mb-2"></div>
-              <div className="h-3 bg-gray-200 rounded w-2/3"></div>
+          <Card key={index} className="animate-pulse border-l-4 border-l-gray-200">
+            <CardHeader className="pb-2">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="h-6 bg-gray-200 rounded w-3/4 mb-2"></div>
+                  <div className="flex items-center">
+                    <div className="h-4 w-4 bg-gray-200 rounded mr-1"></div>
+                    <div className="h-4 bg-gray-200 rounded w-40"></div>
+                  </div>
+                </div>
+                {showActions && (
+                  <div className="flex items-center space-x-2 ml-4">
+                    <div className="h-8 w-8 bg-gray-200 rounded-lg"></div>
+                    <div className="h-8 w-8 bg-gray-200 rounded-lg"></div>
+                  </div>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="space-y-2">
+                <div className="h-4 bg-gray-200 rounded w-full"></div>
+                <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+                <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -141,32 +144,36 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                  {sanitizeTitle(announcement.title)}
+                  {announcement.title}
                 </h3>
                 <div className="flex items-center text-sm text-gray-500">
                   <Calendar className="h-4 w-4 mr-1" />
                   <span>Published {formatDate(announcement.createdAt)}</span>
                   {announcement.author && (
-                    <span className="ml-2">by {sanitizeAuthorName(announcement.author.name)}</span>
+                    <span className="ml-2">by {announcement.author.name}</span>
                   )}
                 </div>
               </div>
-              {showActions && canEditAnnouncement(announcement) && (
+              {showActions && (
                 <div className="flex items-center space-x-2 ml-4">
-                  <button
-                    onClick={() => handleEdit(announcement)}
-                    className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                    title="Edit announcement"
-                  >
-                    <Edit className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(announcement.id)}
-                    className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                    title="Delete announcement"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {canEditAnnouncement(announcement) && (
+                    <button
+                      onClick={() => window.location.href = `/admin/announcements/edit/${announcement.id}`}
+                      className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Edit announcement"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </button>
+                  )}
+                  {canDeleteAnnouncement(announcement) && (
+                    <button
+                      onClick={() => handleDelete(announcement.id)}
+                      className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Delete announcement"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               )}
             </div>

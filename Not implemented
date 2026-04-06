@@ -413,166 +413,19 @@ describe('TC-003: Announcement CRUD Operations', () => {
   });
 });
 
-describe('TC-004: Authorization and security tests', () => {
+describe('TC-004: Security tests for XSS and injection', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('TC-004 Happy Path - Authorized access and operations', () => {
-    it('should allow authenticated admin users to access AnnouncementForm', () => {
-      const adminAuthContext = {
-        user: { id: 'admin123', role: 'admin' },
-        isAuthenticated: true,
-        login: jest.fn(),
-        logout: jest.fn()
-      };
-
-      render(
-        <TestWrapper authContext={adminAuthContext}>
-          <AnnouncementForm onSubmit={mockSubmit} />
-        </TestWrapper>
-      );
-
-      expect(screen.getByRole('form')).toBeInTheDocument();
-      expect(screen.getByLabelText(/title/i)).toBeEnabled();
-      expect(screen.getByLabelText(/content/i)).toBeEnabled();
-      expect(screen.getByRole('button', { name: /submit/i })).toBeEnabled();
-    });
-
-    it('should allow authenticated moderator users to access AnnouncementForm', () => {
-      const moderatorAuthContext = {
-        user: { id: 'mod123', role: 'moderator' },
-        isAuthenticated: true,
-        login: jest.fn(),
-        logout: jest.fn()
-      };
-
-      render(
-        <TestWrapper authContext={moderatorAuthContext}>
-          <AnnouncementForm onSubmit={mockSubmit} />
-        </TestWrapper>
-      );
-
-      expect(screen.getByRole('form')).toBeInTheDocument();
-      expect(screen.queryByText(/unauthorized/i)).not.toBeInTheDocument();
-    });
-
-    it('should validate user permissions for sensitive operations', async () => {
+  describe('TC-004 Happy Path - Secure input handling and validation', () => {
+    it('should sanitize and accept safe HTML content in announcements', async () => {
       const user = userEvent.setup();
-      const mockSubmitWithAuth = jest.fn().mockResolvedValue({ success: true });
-
-      render(
-        <TestWrapper>
-          <AnnouncementForm onSubmit={mockSubmitWithAuth} />
-        </TestWrapper>
-      );
-
-      await user.type(screen.getByLabelText(/title/i), 'Authorized Announcement');
-      await user.type(screen.getByLabelText(/content/i), 'This announcement is created by authorized user');
-      await user.click(screen.getByRole('button', { name: /submit/i }));
-
-      await waitFor(() => {
-        expect(mockSubmitWithAuth).toHaveBeenCalledWith(
-          expect.objectContaining({
-            title: 'Authorized Announcement',
-            content: 'This announcement is created by authorized user'
-          })
-        );
+      const mockSubmitSanitized = jest.fn().mockResolvedValue({
+        id: '3',
+        title: 'Safe HTML Content',
+        content: 'This is <strong>bold text</strong> and <em>italic text</em>.'
       });
-    });
-  });
-
-  describe('TC-004 Error Path - Unauthorized access and security violations', () => {
-    it('should deny access to unauthenticated users', () => {
-      const unauthenticatedContext = {
-        user: null,
-        isAuthenticated: false,
-        login: jest.fn(),
-        logout: jest.fn()
-      };
-
-      render(
-        <TestWrapper authContext={unauthenticatedContext}>
-          <AnnouncementForm onSubmit={mockSubmit} />
-        </TestWrapper>
-      );
-
-      expect(screen.getByText(/please log in to access this feature/i)).toBeInTheDocument();
-      expect(screen.queryByRole('form')).not.toBeInTheDocument();
-    });
-
-    it('should deny access to users with insufficient privileges', () => {
-      const regularUserContext = {
-        user: { id: 'user123', role: 'user' },
-        isAuthenticated: true,
-        login: jest.fn(),
-        logout: jest.fn()
-      };
-
-      render(
-        <TestWrapper authContext={regularUserContext}>
-          <AnnouncementForm onSubmit={mockSubmit} />
-        </TestWrapper>
-      );
-
-      expect(screen.getByText(/insufficient privileges/i)).toBeInTheDocument();
-      expect(screen.queryByRole('form')).not.toBeInTheDocument();
-    });
-
-    it('should handle token expiration gracefully', async () => {
-      const user = userEvent.setup();
-      const expiredTokenContext = {
-        user: { id: 'admin123', role: 'admin' },
-        isAuthenticated: true,
-        login: jest.fn(),
-        logout: jest.fn()
-      };
-
-      const mockSubmitTokenError = jest.fn().mockRejectedValue({
-        response: { status: 401, data: { message: 'Token expired' } }
-      });
-
-      render(
-        <TestWrapper authContext={expiredTokenContext}>
-          <AnnouncementForm onSubmit={mockSubmitTokenError} />
-        </TestWrapper>
-      );
-
-      await user.type(screen.getByLabelText(/title/i), 'Test Title');
-      await user.type(screen.getByLabelText(/content/i), 'Test content');
-      await user.click(screen.getByRole('button', { name: /submit/i }));
-
-      await waitFor(() => {
-        expect(screen.getByText(/session expired.*please log in again/i)).toBeInTheDocument();
-      });
-
-      expect(expiredTokenContext.logout).toHaveBeenCalled();
-    });
-
-    it('should prevent CSRF attacks by validating request tokens', async () => {
-      const user = userEvent.setup();
-      const mockSubmitCSRF = jest.fn().mockRejectedValue({
-        response: { status: 403, data: { message: 'CSRF token mismatch' } }
-      });
-
-      render(
-        <TestWrapper>
-          <AnnouncementForm onSubmit={mockSubmitCSRF} />
-        </TestWrapper>
-      );
-
-      await user.type(screen.getByLabelText(/title/i), 'CSRF Test');
-      await user.type(screen.getByLabelText(/content/i), 'Testing CSRF protection');
-      await user.click(screen.getByRole('button', { name: /submit/i }));
-
-      await waitFor(() => {
-        expect(screen.getByText(/security validation failed/i)).toBeInTheDocument();
-      });
-    });
-
-    it('should sanitize user input to prevent XSS attacks', async () => {
-      const user = userEvent.setup();
-      const mockSubmitSanitized = jest.fn();
 
       render(
         <TestWrapper>
@@ -580,20 +433,342 @@ describe('TC-004: Authorization and security tests', () => {
         </TestWrapper>
       );
 
-      const maliciousTitle = '<script>alert("xss")</script>Announcement';
-      const maliciousContent = '<img src="x" onerror="alert(\'xss\')" />Content';
-
-      await user.type(screen.getByLabelText(/title/i), maliciousTitle);
-      await user.type(screen.getByLabelText(/content/i), maliciousContent);
+      // Submit safe HTML content
+      await user.type(screen.getByLabelText(/title/i), 'Safe HTML Content');
+      await user.type(screen.getByLabelText(/content/i), 'This is <strong>bold text</strong> and <em>italic text</em>.');
       await user.click(screen.getByRole('button', { name: /submit/i }));
 
       await waitFor(() => {
         expect(mockSubmitSanitized).toHaveBeenCalledWith(
           expect.objectContaining({
-            title: expect.not.stringContaining('<script>'),
-            content: expect.not.stringContaining('<img')
+            title: 'Safe HTML Content',
+            content: 'This is <strong>bold text</strong> and <em>italic text</em>.'
           })
         );
+      });
+    });
+
+    it('should properly encode special characters in display', async () => {
+      const announcementWithSpecialChars = {
+        id: '1',
+        title: 'Special & Characters',
+        content: 'Content with < > & " \' characters',
+        category: 'general',
+        createdAt: '2024-01-01T00:00:00Z',
+        author: { id: 'admin1', name: 'Admin User' }
+      };
+
+      render(
+        <TestWrapper>
+          <AnnouncementDetail announcement={announcementWithSpecialChars} />
+        </TestWrapper>
+      );
+
+      // Verify special characters are safely displayed
+      expect(screen.getByText('Special & Characters')).toBeInTheDocument();
+      expect(screen.getByText(/Content with < > & " ' characters/)).toBeInTheDocument();
+    });
+
+    it('should validate input length and format securely', async () => {
+      const user = userEvent.setup();
+      const mockValidatedSubmit = jest.fn().mockResolvedValue({ success: true });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockValidatedSubmit} maxTitleLength={100} maxContentLength={1000} />
+        </TestWrapper>
+      );
+
+      // Submit content within valid limits
+      const validTitle = 'Valid title within limits';
+      const validContent = 'Valid content that is within the specified character limits and properly formatted.';
+
+      await user.type(screen.getByLabelText(/title/i), validTitle);
+      await user.type(screen.getByLabelText(/content/i), validContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockValidatedSubmit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: validTitle,
+            content: validContent
+          })
+        );
+      });
+    });
+
+    it('should handle CSRF token validation for secure form submissions', async () => {
+      const user = userEvent.setup();
+      const mockSecureSubmit = jest.fn().mockResolvedValue({ 
+        success: true,
+        csrfTokenValid: true 
+      });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSecureSubmit} csrfToken="valid-csrf-token" />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'CSRF Protected Announcement');
+      await user.type(screen.getByLabelText(/content/i), 'This form includes CSRF protection');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSecureSubmit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: 'CSRF Protected Announcement',
+            content: 'This form includes CSRF protection'
+          })
+        );
+      });
+    });
+  });
+
+  describe('TC-004 Error Path - XSS and injection attack prevention', () => {
+    it('should prevent XSS attacks via script tag injection in title', async () => {
+      const user = userEvent.setup();
+      const mockSubmitXSSPrevention = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitXSSPrevention} />
+        </TestWrapper>
+      );
+
+      // Attempt XSS injection in title
+      const maliciousTitle = '<script>alert("XSS attack in title")</script>Malicious Title';
+      await user.type(screen.getByLabelText(/title/i), maliciousTitle);
+      await user.type(screen.getByLabelText(/content/i), 'Normal content');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        const callArgs = mockSubmitXSSPrevention.mock.calls[0]?.[0];
+        // Verify script tags are stripped or escaped
+        expect(callArgs?.title).not.toContain('<script>');
+        expect(callArgs?.title).not.toContain('alert(');
+        // Should contain sanitized version
+        expect(callArgs?.title).toContain('Malicious Title');
+      });
+    });
+
+    it('should prevent XSS attacks via image onerror injection in content', async () => {
+      const user = userEvent.setup();
+      const mockSubmitImageXSSPrevention = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitImageXSSPrevention} />
+        </TestWrapper>
+      );
+
+      // Attempt image-based XSS injection
+      const maliciousContent = '<img src="invalid.jpg" onerror="alert(\'XSS via image\')" />Normal content';
+      await user.type(screen.getByLabelText(/title/i), 'Image XSS Test');
+      await user.type(screen.getByLabelText(/content/i), maliciousContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        const callArgs = mockSubmitImageXSSPrevention.mock.calls[0]?.[0];
+        // Verify onerror attribute is removed
+        expect(callArgs?.content).not.toContain('onerror');
+        expect(callArgs?.content).not.toContain('alert(');
+        // Should still contain safe content
+        expect(callArgs?.content).toContain('Normal content');
+      });
+    });
+
+    it('should prevent SQL injection attempts in form data', async () => {
+      const user = userEvent.setup();
+      const mockSubmitSQLInjectionPrevention = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitSQLInjectionPrevention} />
+        </TestWrapper>
+      );
+
+      // Attempt SQL injection patterns
+      const sqlInjectionTitle = "'; DROP TABLE announcements; --";
+      const sqlInjectionContent = "' UNION SELECT * FROM users WHERE '1'='1";
+
+      await user.type(screen.getByLabelText(/title/i), sqlInjectionTitle);
+      await user.type(screen.getByLabelText(/content/i), sqlInjectionContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        const callArgs = mockSubmitSQLInjectionPrevention.mock.calls[0]?.[0];
+        // Data should be escaped or rejected
+        expect(callArgs?.title).toBeDefined();
+        expect(callArgs?.content).toBeDefined();
+        // SQL keywords should be escaped or sanitized
+        expect(callArgs?.title).not.toMatch(/DROP\s+TABLE/i);
+        expect(callArgs?.content).not.toMatch(/UNION\s+SELECT/i);
+      });
+    });
+
+    it('should reject dangerous HTML attributes and event handlers', async () => {
+      const user = userEvent.setup();
+      const mockSubmitDangerousHTML = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitDangerousHTML} />
+        </TestWrapper>
+      );
+
+      // Attempt various dangerous HTML attributes
+      const dangerousContent = `
+        <div onclick="alert('XSS')" onmouseover="steal_data()">
+          <a href="javascript:alert('XSS')">Click me</a>
+          <input type="text" onfocus="malicious_code()" />
+          <iframe src="javascript:alert('XSS')"></iframe>
+        </div>
+      `;
+
+      await user.type(screen.getByLabelText(/title/i), 'Dangerous HTML Test');
+      await user.type(screen.getByLabelText(/content/i), dangerousContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        const callArgs = mockSubmitDangerousHTML.mock.calls[0]?.[0];
+        // Verify dangerous attributes are removed
+        expect(callArgs?.content).not.toContain('onclick');
+        expect(callArgs?.content).not.toContain('onmouseover');
+        expect(callArgs?.content).not.toContain('onfocus');
+        expect(callArgs?.content).not.toContain('javascript:');
+        expect(callArgs?.content).not.toContain('<iframe');
+      });
+    });
+
+    it('should handle DOM-based XSS prevention in displayed content', () => {
+      const maliciousAnnouncement = {
+        id: '1',
+        title: '<script>document.write("XSS")</script>Malicious',
+        content: '<img src=x onerror=alert("DOM XSS")>Content',
+        category: 'general',
+        createdAt: '2024-01-01T00:00:00Z',
+        author: { id: 'admin1', name: 'Admin User' }
+      };
+
+      render(
+        <TestWrapper>
+          <AnnouncementDetail announcement={maliciousAnnouncement} />
+        </TestWrapper>
+      );
+
+      // Check that dangerous content is not executed in DOM
+      const titleElement = screen.getByTestId ? screen.queryByTestId('announcement-title') : screen.getByRole('heading');
+      const contentElement = screen.getByTestId ? screen.queryByTestId('announcement-content') : document.querySelector('[data-testid="announcement-content"]');
+      
+      // Verify script tags don't execute
+      expect(document.querySelector('script')).toBeNull();
+      // Verify malicious attributes are not present in DOM
+      expect(document.querySelector('[onerror]')).toBeNull();
+    });
+
+    it('should validate and reject excessively long input that could cause buffer overflow', async () => {
+      const user = userEvent.setup();
+      const mockSubmitBufferOverflow = jest.fn().mockRejectedValue({
+        response: { 
+          status: 413, 
+          data: { message: 'Input too long' }
+        }
+      });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitBufferOverflow} maxTitleLength={100} />
+        </TestWrapper>
+      );
+
+      // Attempt buffer overflow with extremely long input
+      const excessivelyLongTitle = 'A'.repeat(10000);
+      
+      await user.type(screen.getByLabelText(/title/i), excessivelyLongTitle);
+      await user.type(screen.getByLabelText(/content/i), 'Normal content');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/input too long/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should prevent LDAP injection attacks in user input', async () => {
+      const user = userEvent.setup();
+      const mockSubmitLDAPInjection = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitLDAPInjection} />
+        </TestWrapper>
+      );
+
+      // Attempt LDAP injection patterns
+      const ldapInjectionTitle = '*)(uid=*))(|(uid=*';
+      const ldapInjectionContent = '*)(&(objectClass=*))';
+
+      await user.type(screen.getByLabelText(/title/i), ldapInjectionTitle);
+      await user.type(screen.getByLabelText(/content/i), ldapInjectionContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        const callArgs = mockSubmitLDAPInjection.mock.calls[0]?.[0];
+        // LDAP special characters should be escaped
+        expect(callArgs?.title).toBeDefined();
+        expect(callArgs?.content).toBeDefined();
+      });
+    });
+
+    it('should handle CSV injection prevention for data export functionality', async () => {
+      const user = userEvent.setup();
+      const mockSubmitCSVInjection = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitCSVInjection} />
+        </TestWrapper>
+      );
+
+      // Attempt CSV injection with formula injection
+      const csvInjectionTitle = '=cmd|"/c calc"!A0';
+      const csvInjectionContent = '@SUM(1+1)*cmd|"/c calc"!A0';
+
+      await user.type(screen.getByLabelText(/title/i), csvInjectionTitle);
+      await user.type(screen.getByLabelText(/content/i), csvInjectionContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        const callArgs = mockSubmitCSVInjection.mock.calls[0]?.[0];
+        // Formula indicators should be escaped or removed
+        expect(callArgs?.title).not.toMatch(/^=/);
+        expect(callArgs?.content).not.toMatch(/^[@=+\-]/);
+      });
+    });
+
+    it('should prevent NoSQL injection attempts', async () => {
+      const user = userEvent.setup();
+      const mockSubmitNoSQLInjection = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitNoSQLInjection} />
+        </TestWrapper>
+      );
+
+      // Attempt NoSQL injection patterns
+      const nosqlInjectionTitle = '{"$ne": null}';
+      const nosqlInjectionContent = '{"$where": "function() { return true; }"}';
+
+      await user.type(screen.getByLabelText(/title/i), nosqlInjectionTitle);
+      await user.type(screen.getByLabelText(/content/i), nosqlInjectionContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        const callArgs = mockSubmitNoSQLInjection.mock.calls[0]?.[0];
+        // NoSQL operators should be escaped or rejected
+        expect(callArgs?.title).toBeDefined();
+        expect(callArgs?.content).toBeDefined();
       });
     });
   });

@@ -62,7 +62,15 @@ const announcementSchema = new mongoose.Schema({
       values: ['low', 'medium', 'high', 'urgent'],
       message: 'Priority must be one of: low, medium, high, urgent'
     },
-    default: 'medium'
+    default: 'medium',
+    validate: {
+      validator: function(v) {
+        // Strict enum validation for priority field
+        const allowedValues = ['low', 'medium', 'high', 'urgent'];
+        return allowedValues.includes(v);
+      },
+      message: 'Priority value is not valid. Must be one of: low, medium, high, urgent'
+    }
   }
 }, {
   timestamps: true

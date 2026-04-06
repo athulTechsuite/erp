@@ -34,8 +34,8 @@ describe('Announcements Component', () => {
     jest.clearAllMocks();
   });
 
-  // TC-003: Component rendering and interactions - Happy Path
-  describe('TC-003: Component rendering and interactions - Happy Path', () => {
+  // TC-002: Frontend component testing - Happy Path
+  describe('TC-002: Frontend component testing - Happy Path', () => {
     it('should render announcements list correctly', () => {
       render(<Announcements {...mockProps} />);
       
@@ -82,8 +82,8 @@ describe('Announcements Component', () => {
     });
   });
 
-  // TC-003: Component rendering and interactions - Error Path
-  describe('TC-003: Component rendering and interactions - Error Path', () => {
+  // TC-002: Frontend component testing - Error Path
+  describe('TC-002: Frontend component testing - Error Path', () => {
     it('should display error message when error prop is provided', () => {
       const errorProps = { ...mockProps, error: 'Failed to load announcements' };
       render(<Announcements {...errorProps} />);

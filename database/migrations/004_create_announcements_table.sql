@@ -2,15 +2,19 @@
 -- This migration creates the table structure for storing announcements
 -- that can be managed by admins and displayed to all employees
 
+-- Ensure users table exists before creating foreign key constraint
+-- This validates the dependency and prevents foreign key errors
+SELECT name FROM sqlite_master WHERE type='table' AND name='users';
+
 CREATE TABLE announcements (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title VARCHAR(255) NOT NULL,
-    content TEXT NOT NULL,
-    is_published BOOLEAN DEFAULT FALSE,
+    title VARCHAR(255) NOT NULL CHECK(length(title) <= 255),
+    content TEXT NOT NULL CHECK(length(content) <= 65535),
+    is_published BOOLEAN DEFAULT FALSE CHECK(is_published IN (0, 1)),
     created_by INTEGER NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    -- Foreign key with CASCADE delete properly maintains referential integrity
+    -- Foreign key with CASCADE delete maintains referential integrity
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 );
 

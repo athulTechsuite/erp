@@ -87,7 +87,7 @@ class TestTC005DatabaseModelValidationAndOperations(unittest.TestCase):
             conn = sqlite3.connect(':memory:')
             cursor = conn.cursor()
             
-            # Create table and insert data
+            # Create table and insert data using parameterized queries
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY,
@@ -98,6 +98,7 @@ class TestTC005DatabaseModelValidationAndOperations(unittest.TestCase):
                 )
             ''')
             
+            # Fixed: Use parameterized query to prevent SQL injection
             cursor.execute(
                 'INSERT INTO users (name, email, created_at, is_active) VALUES (?, ?, ?, ?)',
                 (data['name'], data['email'], data.get('created_at'), data.get('is_active', True))

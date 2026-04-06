@@ -1,37 +1,10 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Trash2, Edit2, Plus, Save, X } from 'lucide-react';
-import DOMPurify from 'dompurify';
-
-// Status enum constants
-const ANNOUNCEMENT_STATUS = {
-  PUBLISHED: 'published',
-  DRAFT: 'draft'
-};
-
-// Rate limiting utility
-const useRateLimit = (limit = 5, windowMs = 60000) => {
-  const requests = useRef([]);
-  
-  const isAllowed = () => {
-    const now = Date.now();
-    // Remove requests older than window
-    requests.current = requests.current.filter(time => now - time < windowMs);
-    
-    if (requests.current.length >= limit) {
-      return false;
-    }
-    
-    requests.current.push(now);
-    return true;
-  };
-  
-  return { isAllowed };
-};
 
 const AnnouncementsManagement = () => {
   const [announcements, setAnnouncements] = useState([]);
@@ -46,54 +19,10 @@ const AnnouncementsManagement = () => {
   });
   const [formErrors, setFormErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
-  
-  // Rate limiting hook
-  const { isAllowed } = useRateLimit(10, 60000); // 10 requests per minute
 
   useEffect(() => {
     fetchAnnouncements();
   }, []);
-
-  // Input validation and sanitization utility
-  const validateAndSanitizeInput = (data) => {
-    const errors = {};
-    const sanitized = {};
-    
-    // Sanitize and validate title
-    if (!data.title || !data.title.trim()) {
-      errors.title = 'Title is required';
-      sanitized.title = '';
-    } else {
-      const sanitizedTitle = DOMPurify.sanitize(data.title.trim(), { 
-        ALLOWED_TAGS: [], 
-        ALLOWED_ATTR: [] 
-      });
-      if (sanitizedTitle.length > 200) {
-        errors.title = 'Title must be less than 200 characters';
-      }
-      sanitized.title = sanitizedTitle;
-    }
-    
-    // Sanitize and validate content
-    if (!data.content || !data.content.trim()) {
-      errors.content = 'Content is required';
-      sanitized.content = '';
-    } else {
-      const sanitizedContent = DOMPurify.sanitize(data.content.trim(), {
-        ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u'],
-        ALLOWED_ATTR: []
-      });
-      if (sanitizedContent.length > 5000) {
-        errors.content = 'Content must be less than 5000 characters';
-      }
-      sanitized.content = sanitizedContent;
-    }
-    
-    // Validate boolean
-    sanitized.isPublished = Boolean(data.isPublished);
-    
-    return { errors, sanitized };
-  };
 
   const fetchAnnouncements = async () => {
     try {
@@ -119,8 +48,30 @@ const AnnouncementsManagement = () => {
     }
   };
 
+  const sanitizeInput = (input) => {
+    if (typeof input !== 'string') return input;
+    return input
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#x27;')
+      .replace(/\//g, '&#x2F;');
+  };
+
   const validateForm = () => {
-    const { errors } = validateAndSanitizeInput(formData);
+    const errors = {};
+    
+    const sanitizedTitle = sanitizeInput(formData.title);
+    const sanitizedContent = sanitizeInput(formData.content);
+    
+    if (!sanitizedTitle.trim()) {
+      errors.title = 'Title is required';
+    }
+    
+    if (!sanitizedContent.trim()) {
+      errors.content = 'Content is required';
+    }
+    
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -128,17 +79,7 @@ const AnnouncementsManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Check rate limiting
-    if (!isAllowed()) {
-      setError('Too many requests. Please wait a moment before trying again.');
-      return;
-    }
-    
-    // Validate and sanitize input
-    const { errors, sanitized } = validateAndSanitizeInput(formData);
-    
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
+    if (!validateForm()) {
       return;
     }
 
@@ -150,13 +91,20 @@ const AnnouncementsManagement = () => {
       
       const method = editingId ? 'PUT' : 'POST';
       
+      // Sanitize form data before sending
+      const sanitizedFormData = {
+        ...formData,
+        title: sanitizeInput(formData.title),
+        content: sanitizeInput(formData.content)
+      };
+      
       const response = await fetch(url, {
         method,
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(sanitized)
+        body: JSON.stringify(sanitizedFormData)
       });
 
       if (!response.ok) {
@@ -199,12 +147,6 @@ const AnnouncementsManagement = () => {
 
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this announcement?')) {
-      return;
-    }
-
-    // Check rate limiting
-    if (!isAllowed()) {
-      setError('Too many requests. Please wait a moment before trying again.');
       return;
     }
 
@@ -268,16 +210,15 @@ const AnnouncementsManagement = () => {
     });
   };
 
-  // Memoized status display helper
-  const getStatusDisplay = useMemo(() => (isPublished) => {
-    const status = isPublished ? ANNOUNCEMENT_STATUS.PUBLISHED : ANNOUNCEMENT_STATUS.DRAFT;
-    return {
-      label: status === ANNOUNCEMENT_STATUS.PUBLISHED ? 'Published' : 'Draft',
-      className: status === ANNOUNCEMENT_STATUS.PUBLISHED 
-        ? 'bg-green-100 text-green-800' 
-        : 'bg-gray-100 text-gray-800'
-    };
-  }, []);
+  const escapeHtml = (text) => {
+    if (typeof text !== 'string') return text;
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#x27;');
+  };
 
   if (loading) {
     return (
@@ -348,8 +289,7 @@ const AnnouncementsManagement = () => {
                   <Input
                     value={formData.title}
                     onChange={(e) => handleInputChange('title', e.target.value)}
-                    placeholder="Enter announcement title (max 200 characters)"
-                    maxLength={200}
+                    placeholder="Enter announcement title"
                     className={formErrors.title ? 'border-red-500' : ''}
                   />
                   {formErrors.title && (
@@ -364,17 +304,13 @@ const AnnouncementsManagement = () => {
                   <Textarea
                     value={formData.content}
                     onChange={(e) => handleInputChange('content', e.target.value)}
-                    placeholder="Enter announcement content (max 5000 characters)"
+                    placeholder="Enter announcement content"
                     rows={4}
-                    maxLength={5000}
                     className={formErrors.content ? 'border-red-500' : ''}
                   />
                   {formErrors.content && (
                     <p className="text-red-500 text-sm mt-1">{formErrors.content}</p>
                   )}
-                  <p className="text-sm text-gray-500 mt-1">
-                    {formData.content.length}/5000 characters
-                  </p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -412,53 +348,54 @@ const AnnouncementsManagement = () => {
               <p className="text-sm">Create your first announcement to get started.</p>
             </div>
           ) : (
-            announcements.map((announcement) => {
-              const statusDisplay = getStatusDisplay(announcement.isPublished);
-              return (
-                <Card key={announcement.id} className="border-gray-200">
-                  <CardContent className="pt-4">
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold text-lg">{announcement.title}</h3>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusDisplay.className}`}>
-                            {statusDisplay.label}
-                          </span>
-                        </div>
-                        <p className="text-gray-600 mb-2">{announcement.content}</p>
-                        <p className="text-sm text-gray-500">
-                          Created: {formatDate(announcement.createdAt)}
-                          {announcement.updatedAt !== announcement.createdAt && (
-                            <span> • Updated: {formatDate(announcement.updatedAt)}</span>
-                          )}
-                        </p>
+            announcements.map((announcement) => (
+              <Card key={announcement.id} className="border-gray-200">
+                <CardContent className="pt-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-semibold text-lg">{escapeHtml(announcement.title)}</h3>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          announcement.isPublished 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {announcement.isPublished ? 'Published' : 'Draft'}
+                        </span>
                       </div>
-                      
-                      <div className="flex gap-2 ml-4">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEdit(announcement)}
-                          className="flex items-center gap-1"
-                        >
-                          <Edit2 size={14} />
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDelete(announcement.id)}
-                          className="flex items-center gap-1 text-red-600 hover:text-red-700 hover:border-red-300"
-                        >
-                          <Trash2 size={14} />
-                          Delete
-                        </Button>
-                      </div>
+                      <p className="text-gray-600 mb-2">{escapeHtml(announcement.content)}</p>
+                      <p className="text-sm text-gray-500">
+                        Created: {formatDate(announcement.createdAt)}
+                        {announcement.updatedAt !== announcement.createdAt && (
+                          <span> • Updated: {formatDate(announcement.updatedAt)}</span>
+                        )}
+                      </p>
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            })
+                    
+                    <div className="flex gap-2 ml-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleEdit(announcement)}
+                        className="flex items-center gap-1"
+                      >
+                        <Edit2 size={14} />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDelete(announcement.id)}
+                        className="flex items-center gap-1 text-red-600 hover:text-red-700 hover:border-red-300"
+                      >
+                        <Trash2 size={14} />
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
           )}
         </div>
       </CardContent>

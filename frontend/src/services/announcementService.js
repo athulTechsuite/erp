@@ -10,92 +10,42 @@ const API_ENDPOINTS = {
   ADMIN_ANNOUNCEMENTS_CHECK_PERMISSION: process.env.REACT_APP_ADMIN_ANNOUNCEMENTS_CHECK_PERMISSION_ENDPOINT || '/admin/announcements/check-permission'
 };
 
-// Error types for better error handling
-const ERROR_TYPES = {
-  NETWORK_ERROR: 'NETWORK_ERROR',
-  VALIDATION_ERROR: 'VALIDATION_ERROR',
-  AUTH_ERROR: 'AUTH_ERROR',
-  SERVER_ERROR: 'SERVER_ERROR',
-  NOT_FOUND_ERROR: 'NOT_FOUND_ERROR',
-  FORBIDDEN_ERROR: 'FORBIDDEN_ERROR'
-};
-
 class AnnouncementService {
   /**
-   * Handle API errors and provide meaningful error messages
+   * Handle network errors and provide user-friendly messages
    */
-  handleError(error, context = 'API request') {
-    let errorType = ERROR_TYPES.SERVER_ERROR;
-    let userMessage = 'An unexpected error occurred. Please try again.';
+  _handleNetworkError(error, operation) {
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      throw new Error(`Request timeout while ${operation}. Please check your connection and try again.`);
+    }
     
     if (!error.response) {
-      // Network error
-      errorType = ERROR_TYPES.NETWORK_ERROR;
-      userMessage = 'Network error. Please check your internet connection and try again.';
-    } else {
-      const status = error.response.status;
-      
-      switch (status) {
-        case 400:
-          errorType = ERROR_TYPES.VALIDATION_ERROR;
-          userMessage = error.response.data?.message || 'Invalid request data.';
-          break;
-        case 401:
-          errorType = ERROR_TYPES.AUTH_ERROR;
-          userMessage = 'You are not authorized. Please log in and try again.';
-          break;
-        case 403:
-          errorType = ERROR_TYPES.FORBIDDEN_ERROR;
-          userMessage = 'You do not have permission to perform this action.';
-          break;
-        case 404:
-          errorType = ERROR_TYPES.NOT_FOUND_ERROR;
-          userMessage = 'The requested resource was not found.';
-          break;
-        case 422:
-          errorType = ERROR_TYPES.VALIDATION_ERROR;
-          userMessage = error.response.data?.message || 'Validation failed.';
-          break;
-        case 500:
-          errorType = ERROR_TYPES.SERVER_ERROR;
-          userMessage = 'Server error. Please try again later.';
-          break;
-        default:
-          userMessage = error.response.data?.message || `Request failed with status ${status}`;
-      }
+      throw new Error(`Network error while ${operation}. Please check your internet connection.`);
     }
-
-    console.error(`${context} failed:`, {
-      errorType,
-      status: error.response?.status,
-      message: error.message,
-      data: error.response?.data
-    });
-
-    const enhancedError = new Error(userMessage);
-    enhancedError.type = errorType;
-    enhancedError.originalError = error;
-    enhancedError.status = error.response?.status;
     
-    return enhancedError;
-  }
-
-  /**
-   * Validate API response structure
-   */
-  validateResponse(response, expectedFields = []) {
-    if (!response || typeof response !== 'object') {
-      throw new Error('Invalid response format received from server');
+    const status = error.response?.status;
+    const message = error.response?.data?.message || error.message;
+    
+    switch (status) {
+      case 401:
+        throw new Error('Authentication required. Please log in again.');
+      case 403:
+        throw new Error('You do not have permission to perform this action.');
+      case 404:
+        throw new Error('The requested resource was not found.');
+      case 422:
+        throw new Error(message || 'Invalid data provided.');
+      case 429:
+        throw new Error('Too many requests. Please wait a moment before trying again.');
+      case 500:
+        throw new Error('Server error. Please try again later.');
+      case 502:
+      case 503:
+      case 504:
+        throw new Error('Service temporarily unavailable. Please try again later.');
+      default:
+        throw new Error(`Error while ${operation}: ${message}`);
     }
-
-    if (expectedFields.length > 0) {
-      const missingFields = expectedFields.filter(field => !(field in response));
-      if (missingFields.length > 0) {
-        throw new Error(`Response missing required fields: ${missingFields.join(', ')}`);
-      }
-    }
-
-    return true;
   }
 
   /**
@@ -104,33 +54,10 @@ class AnnouncementService {
   async getAllAnnouncements() {
     try {
       const response = await api.get(API_ENDPOINTS.ANNOUNCEMENTS);
-      
-      if (!response || !response.data) {
-        throw new Error('Invalid response format');
-      }
-
-      const data = response.data;
-      
-      // Validate response structure
-      if (Array.isArray(data)) {
-        // Validate each announcement has required fields
-        data.forEach((announcement, index) => {
-          if (!announcement.id || !announcement.title) {
-            console.warn(`Announcement at index ${index} is missing required fields`);
-          }
-        });
-      } else if (data.data && Array.isArray(data.data)) {
-        // Handle paginated response
-        data.data.forEach((announcement, index) => {
-          if (!announcement.id || !announcement.title) {
-            console.warn(`Announcement at index ${index} is missing required fields`);
-          }
-        });
-      }
-      
-      return data;
+      return response.data;
     } catch (error) {
-      throw this.handleError(error, 'Fetching announcements');
+      console.error('Error fetching announcements:', error);
+      this._handleNetworkError(error, 'fetching announcements');
     }
   }
 
@@ -140,14 +67,10 @@ class AnnouncementService {
   async getAnnouncementsForAdmin() {
     try {
       const response = await api.get(API_ENDPOINTS.ADMIN_ANNOUNCEMENTS);
-      
-      if (!response || !response.data) {
-        throw new Error('Invalid response format');
-      }
-
       return response.data;
     } catch (error) {
-      throw this.handleError(error, 'Fetching admin announcements');
+      console.error('Error fetching admin announcements:', error);
+      this._handleNetworkError(error, 'fetching admin announcements');
     }
   }
 
@@ -155,23 +78,12 @@ class AnnouncementService {
    * Get a specific announcement by ID
    */
   async getAnnouncementById(id) {
-    if (!id) {
-      throw new Error('Announcement ID is required');
-    }
-
     try {
       const response = await api.get(`${API_ENDPOINTS.ANNOUNCEMENTS}/${id}`);
-      
-      if (!response || !response.data) {
-        throw new Error('Invalid response format');
-      }
-
-      const announcement = response.data;
-      this.validateResponse(announcement, ['id', 'title', 'content']);
-      
-      return announcement;
+      return response.data;
     } catch (error) {
-      throw this.handleError(error, 'Fetching announcement');
+      console.error('Error fetching announcement:', error);
+      this._handleNetworkError(error, 'fetching announcement');
     }
   }
 
@@ -179,32 +91,12 @@ class AnnouncementService {
    * Create a new announcement (admin only)
    */
   async createAnnouncement(announcementData) {
-    if (!announcementData) {
-      throw new Error('Announcement data is required');
-    }
-
-    // Validate data before sending
-    const validation = this.validateAnnouncementData(announcementData);
-    if (!validation.isValid) {
-      const validationError = new Error('Validation failed');
-      validationError.type = ERROR_TYPES.VALIDATION_ERROR;
-      validationError.validationErrors = validation.errors;
-      throw validationError;
-    }
-
     try {
       const response = await api.post(API_ENDPOINTS.ADMIN_ANNOUNCEMENTS, announcementData);
-      
-      if (!response || !response.data) {
-        throw new Error('Invalid response format');
-      }
-
-      const createdAnnouncement = response.data;
-      this.validateResponse(createdAnnouncement, ['id', 'title']);
-      
-      return createdAnnouncement;
+      return response.data;
     } catch (error) {
-      throw this.handleError(error, 'Creating announcement');
+      console.error('Error creating announcement:', error);
+      this._handleNetworkError(error, 'creating announcement');
     }
   }
 
@@ -212,36 +104,12 @@ class AnnouncementService {
    * Update an existing announcement (admin only)
    */
   async updateAnnouncement(id, announcementData) {
-    if (!id) {
-      throw new Error('Announcement ID is required');
-    }
-    
-    if (!announcementData) {
-      throw new Error('Announcement data is required');
-    }
-
-    // Validate data before sending
-    const validation = this.validateAnnouncementData(announcementData);
-    if (!validation.isValid) {
-      const validationError = new Error('Validation failed');
-      validationError.type = ERROR_TYPES.VALIDATION_ERROR;
-      validationError.validationErrors = validation.errors;
-      throw validationError;
-    }
-
     try {
       const response = await api.put(`${API_ENDPOINTS.ADMIN_ANNOUNCEMENTS}/${id}`, announcementData);
-      
-      if (!response || !response.data) {
-        throw new Error('Invalid response format');
-      }
-
-      const updatedAnnouncement = response.data;
-      this.validateResponse(updatedAnnouncement, ['id', 'title']);
-      
-      return updatedAnnouncement;
+      return response.data;
     } catch (error) {
-      throw this.handleError(error, 'Updating announcement');
+      console.error('Error updating announcement:', error);
+      this._handleNetworkError(error, 'updating announcement');
     }
   }
 
@@ -249,20 +117,12 @@ class AnnouncementService {
    * Delete an announcement (admin only)
    */
   async deleteAnnouncement(id) {
-    if (!id) {
-      throw new Error('Announcement ID is required');
-    }
-
     try {
       const response = await api.delete(`${API_ENDPOINTS.ADMIN_ANNOUNCEMENTS}/${id}`);
-      
-      if (!response) {
-        throw new Error('Invalid response format');
-      }
-
-      return response.data || { success: true };
+      return response.data;
     } catch (error) {
-      throw this.handleError(error, 'Deleting announcement');
+      console.error('Error deleting announcement:', error);
+      this._handleNetworkError(error, 'deleting announcement');
     }
   }
 
@@ -270,23 +130,12 @@ class AnnouncementService {
    * Toggle announcement active status (admin only)
    */
   async toggleAnnouncementStatus(id) {
-    if (!id) {
-      throw new Error('Announcement ID is required');
-    }
-
     try {
       const response = await api.patch(`${API_ENDPOINTS.ADMIN_ANNOUNCEMENTS}/${id}/toggle-status`);
-      
-      if (!response || !response.data) {
-        throw new Error('Invalid response format');
-      }
-
-      const updatedAnnouncement = response.data;
-      this.validateResponse(updatedAnnouncement, ['id', 'is_active']);
-      
-      return updatedAnnouncement;
+      return response.data;
     } catch (error) {
-      throw this.handleError(error, 'Toggling announcement status');
+      console.error('Error toggling announcement status:', error);
+      this._handleNetworkError(error, 'toggling announcement status');
     }
   }
 
@@ -296,23 +145,10 @@ class AnnouncementService {
   async getAnnouncementStats() {
     try {
       const response = await api.get(API_ENDPOINTS.ADMIN_ANNOUNCEMENTS_STATS);
-      
-      if (!response || !response.data) {
-        throw new Error('Invalid response format');
-      }
-
-      const stats = response.data;
-      // Validate stats have expected numeric fields
-      const expectedFields = ['total', 'active', 'inactive'];
-      expectedFields.forEach(field => {
-        if (stats[field] !== undefined && typeof stats[field] !== 'number') {
-          console.warn(`Stats field '${field}' should be a number`);
-        }
-      });
-      
-      return stats;
+      return response.data;
     } catch (error) {
-      throw this.handleError(error, 'Fetching announcement stats');
+      console.error('Error fetching announcement stats:', error);
+      this._handleNetworkError(error, 'fetching announcement statistics');
     }
   }
 
@@ -320,46 +156,16 @@ class AnnouncementService {
    * Search announcements (admin only)
    */
   async searchAnnouncements(query, filters = {}) {
-    if (!query || typeof query !== 'string') {
-      throw new Error('Search query is required and must be a string');
-    }
-
-    if (query.trim().length < 2) {
-      throw new Error('Search query must be at least 2 characters long');
-    }
-
     try {
       const params = new URLSearchParams({
-        q: query.trim(),
+        q: query,
         ...filters
       });
-      
       const response = await api.get(`${API_ENDPOINTS.ADMIN_ANNOUNCEMENTS_SEARCH}?${params}`);
-      
-      if (!response || !response.data) {
-        throw new Error('Invalid response format');
-      }
-
-      const searchResults = response.data;
-      
-      // Validate search results structure
-      if (searchResults.results && Array.isArray(searchResults.results)) {
-        searchResults.results.forEach((announcement, index) => {
-          if (!announcement.id || !announcement.title) {
-            console.warn(`Search result at index ${index} is missing required fields`);
-          }
-        });
-      } else if (Array.isArray(searchResults)) {
-        searchResults.forEach((announcement, index) => {
-          if (!announcement.id || !announcement.title) {
-            console.warn(`Search result at index ${index} is missing required fields`);
-          }
-        });
-      }
-      
-      return searchResults;
+      return response.data;
     } catch (error) {
-      throw this.handleError(error, 'Searching announcements');
+      console.error('Error searching announcements:', error);
+      this._handleNetworkError(error, 'searching announcements');
     }
   }
 
@@ -367,35 +173,14 @@ class AnnouncementService {
    * Bulk delete announcements (admin only)
    */
   async bulkDeleteAnnouncements(announcementIds) {
-    if (!Array.isArray(announcementIds) || announcementIds.length === 0) {
-      throw new Error('Announcement IDs array is required and cannot be empty');
-    }
-
-    // Validate all IDs are present
-    const invalidIds = announcementIds.filter(id => !id || (typeof id !== 'string' && typeof id !== 'number'));
-    if (invalidIds.length > 0) {
-      throw new Error('All announcement IDs must be valid');
-    }
-
     try {
       const response = await api.post(API_ENDPOINTS.ADMIN_ANNOUNCEMENTS_BULK_DELETE, {
         ids: announcementIds
       });
-      
-      if (!response || !response.data) {
-        throw new Error('Invalid response format');
-      }
-
-      const result = response.data;
-      
-      // Validate bulk delete response
-      if (result.deleted_count !== undefined && typeof result.deleted_count !== 'number') {
-        console.warn('Bulk delete response should include numeric deleted_count');
-      }
-      
-      return result;
+      return response.data;
     } catch (error) {
-      throw this.handleError(error, 'Bulk deleting announcements');
+      console.error('Error bulk deleting announcements:', error);
+      this._handleNetworkError(error, 'bulk deleting announcements');
     }
   }
 
@@ -403,34 +188,19 @@ class AnnouncementService {
    * Format announcement data for display
    */
   formatAnnouncement(announcement) {
-    if (!announcement || typeof announcement !== 'object') {
-      throw new Error('Valid announcement object is required');
-    }
-
-    try {
-      return {
-        ...announcement,
-        formattedDate: announcement.created_at 
-          ? new Date(announcement.created_at).toLocaleDateString('en-US', {
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit'
-            })
-          : 'Date unavailable',
-        shortContent: announcement.content && announcement.content.length > 150 
-          ? announcement.content.substring(0, 150) + '...' 
-          : announcement.content || ''
-      };
-    } catch (error) {
-      console.error('Error formatting announcement:', error);
-      return {
-        ...announcement,
-        formattedDate: 'Invalid date',
-        shortContent: announcement.content || ''
-      };
-    }
+    return {
+      ...announcement,
+      formattedDate: new Date(announcement.created_at).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }),
+      shortContent: announcement.content.length > 150 
+        ? announcement.content.substring(0, 150) + '...' 
+        : announcement.content
+    };
   }
 
   /**
@@ -439,14 +209,7 @@ class AnnouncementService {
   validateAnnouncementData(data) {
     const errors = {};
 
-    if (!data || typeof data !== 'object') {
-      return {
-        isValid: false,
-        errors: { general: 'Invalid announcement data' }
-      };
-    }
-
-    if (!data.title || typeof data.title !== 'string' || data.title.trim().length < 3) {
+    if (!data.title || data.title.trim().length < 3) {
       errors.title = 'Title must be at least 3 characters long';
     }
 
@@ -454,22 +217,12 @@ class AnnouncementService {
       errors.title = 'Title must not exceed 200 characters';
     }
 
-    if (!data.content || typeof data.content !== 'string' || data.content.trim().length < 10) {
+    if (!data.content || data.content.trim().length < 10) {
       errors.content = 'Content must be at least 10 characters long';
     }
 
     if (data.content && data.content.length > 5000) {
       errors.content = 'Content must not exceed 5000 characters';
-    }
-
-    // Validate priority if provided
-    if (data.priority !== undefined && !['low', 'medium', 'high'].includes(data.priority)) {
-      errors.priority = 'Priority must be one of: low, medium, high';
-    }
-
-    // Validate is_active if provided
-    if (data.is_active !== undefined && typeof data.is_active !== 'boolean') {
-      errors.is_active = 'Active status must be a boolean value';
     }
 
     return {
@@ -484,22 +237,10 @@ class AnnouncementService {
   async checkManagementPermission() {
     try {
       const response = await api.get(API_ENDPOINTS.ADMIN_ANNOUNCEMENTS_CHECK_PERMISSION);
-      
-      if (!response || !response.data) {
-        console.warn('Invalid response format for permission check');
-        return false;
-      }
-
-      const hasPermission = response.data.hasPermission;
-      
-      if (typeof hasPermission !== 'boolean') {
-        console.warn('Permission check should return boolean value');
-        return false;
-      }
-      
-      return hasPermission;
+      return response.data.hasPermission;
     } catch (error) {
       console.error('Error checking announcement permission:', error);
+      // For permission checks, return false instead of throwing to allow graceful degradation
       return false;
     }
   }
@@ -525,6 +266,3 @@ export const {
   validateAnnouncementData,
   checkManagementPermission
 } = announcementService;
-
-// Export error types for use in components
-export { ERROR_TYPES };

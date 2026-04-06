@@ -11,6 +11,7 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -35,17 +36,22 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this announcement?')) {
-      return;
-    }
+    setShowDeleteConfirm(id);
+  };
 
+  const confirmDelete = async (id) => {
     try {
       await announcementService.deleteAnnouncement(id);
       setAnnouncements(announcements.filter(announcement => announcement.id !== id));
+      setShowDeleteConfirm(null);
     } catch (err) {
       setError('Failed to delete announcement');
       console.error('Error deleting announcement:', err);
     }
+  };
+
+  const cancelDelete = () => {
+    setShowDeleteConfirm(null);
   };
 
   const handleEdit = (id) => {
@@ -106,6 +112,29 @@ const AnnouncementList = ({ showActions = false, maxItems = null }) => {
 
   return (
     <div className="space-y-4">
+      {showDeleteConfirm && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4">
+            <div className="text-center">
+              <p className="text-gray-900 mb-4">Are you sure you want to delete this announcement?</p>
+              <div className="space-x-2">
+                <button
+                  onClick={() => confirmDelete(showDeleteConfirm)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                >
+                  Delete
+                </button>
+                <button
+                  onClick={cancelDelete}
+                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       {announcements.map((announcement) => (
         <Card key={announcement.id} className="border-l-4 border-l-blue-500">
           <CardHeader className="pb-2">

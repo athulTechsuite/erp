@@ -31,6 +31,32 @@ describe('TC-004: Input validation and error handling', () => {
       expect(result.isValid).toBe(true);
       expect(result.errors).toHaveLength(0);
     });
+
+    test('TC-004-HP-003: Maximum valid age should be accepted', () => {
+      const maxAgeInput = {
+        name: 'Senior User',
+        email: 'senior@example.com',
+        age: 120
+      };
+      
+      const result = validateInput(maxAgeInput);
+      
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('TC-004-HP-004: Long valid name should be accepted', () => {
+      const longNameInput = {
+        name: 'John Michael Christopher Alexander Smith-Johnson',
+        email: 'long.name@example.com',
+        age: 30
+      };
+      
+      const result = validateInput(longNameInput);
+      
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
     
   });
   
@@ -88,6 +114,114 @@ describe('TC-004: Input validation and error handling', () => {
       expect(nullResult.errors).toContain('Input cannot be null or undefined');
       expect(undefinedResult.errors).toContain('Input cannot be null or undefined');
     });
+
+    test('TC-004-EP-005: Empty object should be rejected', () => {
+      const emptyInput = {};
+      
+      const result = validateInput(emptyInput);
+      
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContain('Name is required');
+      expect(result.errors).toContain('Email is required');
+      expect(result.errors).toContain('Age is required');
+    });
+
+    test('TC-004-EP-006: Multiple invalid email formats should be rejected', () => {
+      const testCases = [
+        'plaintext',
+        '@example.com',
+        'test@',
+        'test..test@example.com',
+        'test@example',
+        'test@.com'
+      ];
+
+      testCases.forEach(email => {
+        const invalidInput = {
+          name: 'Test User',
+          email: email,
+          age: 25
+        };
+        
+        const result = validateInput(invalidInput);
+        
+        expect(result.isValid).toBe(false);
+        expect(result.errors).toContain('Invalid email format');
+      });
+    });
+
+    test('TC-004-EP-007: Various invalid age values should be rejected', () => {
+      const invalidAges = [-1, -100, 'not a number', NaN, Infinity, -Infinity];
+
+      invalidAges.forEach(age => {
+        const invalidInput = {
+          name: 'Test User',
+          email: 'test@example.com',
+          age: age
+        };
+        
+        const result = validateInput(invalidInput);
+        
+        expect(result.isValid).toBe(false);
+        expect(result.errors.length).toBeGreaterThan(0);
+      });
+    });
+
+    test('TC-004-EP-008: Whitespace-only name should be rejected', () => {
+      const invalidInput = {
+        name: '   ',
+        email: 'test@example.com',
+        age: 25
+      };
+      
+      const result = validateInput(invalidInput);
+      
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContain('Name is required');
+    });
+    
+  });
+
+  describe('Boundary testing', () => {
+    
+    test('TC-004-BT-001: Zero age should be handled correctly', () => {
+      const zeroAgeInput = {
+        name: 'Newborn',
+        email: 'parent@example.com',
+        age: 0
+      };
+      
+      const result = validateInput(zeroAgeInput);
+      
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('TC-004-BT-002: Single character name should be valid', () => {
+      const singleCharInput = {
+        name: 'X',
+        email: 'x@example.com',
+        age: 25
+      };
+      
+      const result = validateInput(singleCharInput);
+      
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('TC-004-BT-003: Minimum valid email should work', () => {
+      const minEmailInput = {
+        name: 'Test',
+        email: 'a@b.c',
+        age: 25
+      };
+      
+      const result = validateInput(minEmailInput);
+      
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
     
   });
   
@@ -117,7 +251,7 @@ function validateInput(input) {
   
   if (input.age === undefined || input.age === null) {
     errors.push('Age is required');
-  } else if (input.age < 0) {
+  } else if (typeof input.age === 'string' || isNaN(input.age) || !isFinite(input.age) || input.age < 0) {
     errors.push('Age must be a positive number');
   }
   

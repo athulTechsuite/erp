@@ -5,6 +5,7 @@ const { AuthError } = require('../src/auth/errors');
 const inputSanitizer = require('../src/utils/inputSanitizer');
 const dbService = require('../src/db/dbService');
 const { DatabaseError } = require('../src/db/errors');
+const announcementService = require('../src/services/announcementService');
 
 describe('TC-001: Authentication and authorization', () => {
   let authStub;
@@ -473,6 +474,270 @@ describe('TC-006: Database operations and constraints', () => {
       await expect(dbService.create('users', validData))
         .to.be.rejectedWith(DatabaseError, 'Database connection failed');
       expect(dbStub.create.calledOnceWith('users', validData)).to.be.true;
+    });
+  });
+});
+
+describe('TC-CRUD: Announcement CRUD operations', () => {
+  let announcementStub;
+
+  beforeEach(() => {
+    announcementStub = {
+      create: sinon.stub(announcementService, 'create'),
+      findById: sinon.stub(announcementService, 'findById'),
+      findAll: sinon.stub(announcementService, 'findAll'),
+      update: sinon.stub(announcementService, 'update'),
+      delete: sinon.stub(announcementService, 'delete')
+    };
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  describe('Happy path scenarios', () => {
+    it('should successfully create new announcement with valid data', async () => {
+      // Arrange
+      const validAnnouncementData = {
+        title: 'Important System Update',
+        content: 'The system will undergo maintenance on Friday at 10 PM.',
+        authorId: 1,
+        category: 'maintenance',
+        priority: 'high'
+      };
+      const expectedResult = {
+        id: 1,
+        ...validAnnouncementData,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      announcementStub.create.resolves(expectedResult);
+
+      // Act
+      const result = await announcementService.create(validAnnouncementData);
+
+      // Assert
+      expect(result).to.have.property('id', 1);
+      expect(result).to.have.property('title', 'Important System Update');
+      expect(result).to.have.property('content', 'The system will undergo maintenance on Friday at 10 PM.');
+      expect(result).to.have.property('authorId', 1);
+      expect(result).to.have.property('category', 'maintenance');
+      expect(result).to.have.property('priority', 'high');
+      expect(result).to.have.property('createdAt');
+      expect(announcementStub.create.calledOnceWith(validAnnouncementData)).to.be.true;
+    });
+
+    it('should successfully retrieve announcement by valid ID', async () => {
+      // Arrange
+      const validId = 1;
+      const expectedAnnouncement = {
+        id: 1,
+        title: 'Welcome Message',
+        content: 'Welcome to our new platform!',
+        authorId: 2,
+        category: 'general',
+        priority: 'medium',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      announcementStub.findById.resolves(expectedAnnouncement);
+
+      // Act
+      const result = await announcementService.findById(validId);
+
+      // Assert
+      expect(result).to.deep.equal(expectedAnnouncement);
+      expect(result).to.have.property('title', 'Welcome Message');
+      expect(result).to.have.property('category', 'general');
+      expect(announcementStub.findById.calledOnceWith(validId)).to.be.true;
+    });
+
+    it('should successfully retrieve all announcements with pagination', async () => {
+      // Arrange
+      const paginationOptions = { page: 1, limit: 10 };
+      const expectedAnnouncements = [
+        { id: 1, title: 'First Announcement', category: 'general' },
+        { id: 2, title: 'Second Announcement', category: 'maintenance' }
+      ];
+      const expectedResult = {
+        data: expectedAnnouncements,
+        totalCount: 2,
+        page: 1,
+        limit: 10
+      };
+      announcementStub.findAll.resolves(expectedResult);
+
+      // Act
+      const result = await announcementService.findAll(paginationOptions);
+
+      // Assert
+      expect(result).to.have.property('data');
+      expect(result.data).to.have.length(2);
+      expect(result).to.have.property('totalCount', 2);
+      expect(result).to.have.property('page', 1);
+      expect(announcementStub.findAll.calledOnceWith(paginationOptions)).to.be.true;
+    });
+
+    it('should successfully update announcement with valid data', async () => {
+      // Arrange
+      const announcementId = 1;
+      const updateData = {
+        title: 'Updated System Maintenance',
+        content: 'The maintenance has been rescheduled to Saturday at 11 PM.',
+        priority: 'critical'
+      };
+      const expectedResult = {
+        id: 1,
+        title: 'Updated System Maintenance',
+        content: 'The maintenance has been rescheduled to Saturday at 11 PM.',
+        priority: 'critical',
+        authorId: 1,
+        category: 'maintenance',
+        updatedAt: new Date()
+      };
+      announcementStub.update.resolves(expectedResult);
+
+      // Act
+      const result = await announcementService.update(announcementId, updateData);
+
+      // Assert
+      expect(result).to.have.property('title', 'Updated System Maintenance');
+      expect(result).to.have.property('priority', 'critical');
+      expect(result).to.have.property('updatedAt');
+      expect(announcementStub.update.calledOnceWith(announcementId, updateData)).to.be.true;
+    });
+
+    it('should successfully delete announcement by valid ID', async () => {
+      // Arrange
+      const announcementId = 1;
+      const expectedResult = { success: true, message: 'Announcement deleted successfully' };
+      announcementStub.delete.resolves(expectedResult);
+
+      // Act
+      const result = await announcementService.delete(announcementId);
+
+      // Assert
+      expect(result).to.have.property('success', true);
+      expect(result).to.have.property('message', 'Announcement deleted successfully');
+      expect(announcementStub.delete.calledOnceWith(announcementId)).to.be.true;
+    });
+  });
+
+  describe('Error path scenarios', () => {
+    it('should reject creation when required title field is missing', async () => {
+      // Arrange
+      const invalidData = {
+        content: 'Content without title',
+        authorId: 1,
+        category: 'general'
+      };
+      const expectedError = new Error('Title is required');
+      announcementStub.create.rejects(expectedError);
+
+      // Act & Assert
+      await expect(announcementService.create(invalidData))
+        .to.be.rejectedWith(Error, 'Title is required');
+      expect(announcementStub.create.calledOnceWith(invalidData)).to.be.true;
+    });
+
+    it('should reject creation when content exceeds maximum length', async () => {
+      // Arrange
+      const longContent = 'a'.repeat(5001); // Assuming 5000 char limit
+      const invalidData = {
+        title: 'Valid Title',
+        content: longContent,
+        authorId: 1,
+        category: 'general'
+      };
+      const expectedError = new Error('Content exceeds maximum length of 5000 characters');
+      announcementStub.create.rejects(expectedError);
+
+      // Act & Assert
+      await expect(announcementService.create(invalidData))
+        .to.be.rejectedWith(Error, 'Content exceeds maximum length of 5000 characters');
+      expect(announcementStub.create.calledOnceWith(invalidData)).to.be.true;
+    });
+
+    it('should return null when announcement with ID does not exist', async () => {
+      // Arrange
+      const nonExistentId = 999;
+      announcementStub.findById.resolves(null);
+
+      // Act
+      const result = await announcementService.findById(nonExistentId);
+
+      // Assert
+      expect(result).to.be.null;
+      expect(announcementStub.findById.calledOnceWith(nonExistentId)).to.be.true;
+    });
+
+    it('should reject update when announcement does not exist', async () => {
+      // Arrange
+      const nonExistentId = 999;
+      const updateData = { title: 'Updated Title' };
+      const expectedError = new Error('Announcement not found');
+      announcementStub.update.rejects(expectedError);
+
+      // Act & Assert
+      await expect(announcementService.update(nonExistentId, updateData))
+        .to.be.rejectedWith(Error, 'Announcement not found');
+      expect(announcementStub.update.calledOnceWith(nonExistentId, updateData)).to.be.true;
+    });
+
+    it('should reject update with invalid category', async () => {
+      // Arrange
+      const announcementId = 1;
+      const invalidUpdateData = {
+        category: 'invalid-category'
+      };
+      const expectedError = new Error('Invalid category provided');
+      announcementStub.update.rejects(expectedError);
+
+      // Act & Assert
+      await expect(announcementService.update(announcementId, invalidUpdateData))
+        .to.be.rejectedWith(Error, 'Invalid category provided');
+      expect(announcementStub.update.calledOnceWith(announcementId, invalidUpdateData)).to.be.true;
+    });
+
+    it('should reject delete when announcement does not exist', async () => {
+      // Arrange
+      const nonExistentId = 999;
+      const expectedError = new Error('Announcement not found');
+      announcementStub.delete.rejects(expectedError);
+
+      // Act & Assert
+      await expect(announcementService.delete(nonExistentId))
+        .to.be.rejectedWith(Error, 'Announcement not found');
+      expect(announcementStub.delete.calledOnceWith(nonExistentId)).to.be.true;
+    });
+
+    it('should reject delete when user lacks permission', async () => {
+      // Arrange
+      const announcementId = 1;
+      const expectedError = new Error('Insufficient permissions to delete announcement');
+      announcementStub.delete.rejects(expectedError);
+
+      // Act & Assert
+      await expect(announcementService.delete(announcementId))
+        .to.be.rejectedWith(Error, 'Insufficient permissions to delete announcement');
+      expect(announcementStub.delete.calledOnceWith(announcementId)).to.be.true;
+    });
+
+    it('should handle database connection errors during CRUD operations', async () => {
+      // Arrange
+      const validData = {
+        title: 'Test Announcement',
+        content: 'Test content',
+        authorId: 1,
+        category: 'general'
+      };
+      const expectedError = new DatabaseError('Database connection failed');
+      announcementStub.create.rejects(expectedError);
+
+      // Act & Assert
+      await expect(announcementService.create(validData))
+        .to.be.rejectedWith(DatabaseError, 'Database connection failed');
+      expect(announcementStub.create.calledOnceWith(validData)).to.be.true;
     });
   });
 });

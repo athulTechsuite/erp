@@ -3,6 +3,94 @@ const { validationResult } = require('express-validator');
 const DOMPurify = require('isomorphic-dompurify');
 const mongoose = require('mongoose');
 
+// Distributed locking mechanism for critical operations
+class DistributedLock {
+  constructor(collection = 'locks') {
+    this.collection = collection;
+    this.lockTimeout = 30000; // 30 seconds default timeout
+  }
+
+  async acquireLock(resource, sessionId, timeout = this.lockTimeout) {
+    const lockId = `announcement_${resource}`;
+    const expiresAt = new Date(Date.now() + timeout);
+    
+    try {
+      // Try to create a lock document
+      const result = await mongoose.connection.db.collection(this.collection).insertOne({
+        _id: lockId,
+        sessionId,
+        resource,
+        createdAt: new Date(),
+        expiresAt,
+        type: 'announcement_operation'
+      });
+      
+      return result.acknowledged;
+    } catch (error) {
+      // If lock already exists, check if it's expired
+      if (error.code === 11000) {
+        const existingLock = await mongoose.connection.db.collection(this.collection)
+          .findOne({ _id: lockId });
+        
+        if (existingLock && existingLock.expiresAt < new Date()) {
+          // Remove expired lock and retry
+          await this.releaseLock(resource, existingLock.sessionId);
+          return this.acquireLock(resource, sessionId, timeout);
+        }
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async releaseLock(resource, sessionId) {
+    const lockId = `announcement_${resource}`;
+    
+    try {
+      const result = await mongoose.connection.db.collection(this.collection).deleteOne({
+        _id: lockId,
+        sessionId
+      });
+      
+      return result.deletedCount > 0;
+    } catch (error) {
+      // Log error but don't throw to avoid blocking cleanup
+      console.error(`Failed to release lock for ${resource}:`, error.message);
+      return false;
+    }
+  }
+
+  async withLock(resource, operation, timeout = this.lockTimeout) {
+    const sessionId = new mongoose.Types.ObjectId().toString();
+    const maxRetries = 3;
+    let attempt = 0;
+
+    while (attempt < maxRetries) {
+      const lockAcquired = await this.acquireLock(resource, sessionId, timeout);
+      
+      if (lockAcquired) {
+        try {
+          return await operation();
+        } finally {
+          await this.releaseLock(resource, sessionId);
+        }
+      }
+
+      // If lock not acquired, wait and retry
+      attempt++;
+      if (attempt < maxRetries) {
+        const delay = Math.floor(Math.random() * (100 * Math.pow(2, attempt)));
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    throw new Error('Could not acquire distributed lock after maximum retries');
+  }
+}
+
+// Initialize distributed lock instance
+const distributedLock = new DistributedLock();
+
 // Input sanitization middleware
 const sanitizeInput = (input) => {
   if (typeof input !== 'string') return input;
@@ -32,29 +120,46 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-// Enhanced transaction wrapper for database operations with retry mechanism
+// Enhanced transaction wrapper with improved concurrency handling
 const withTransaction = async (operation, retries = 3) => {
   let attempt = 0;
   
   while (attempt < retries) {
     const session = await mongoose.startSession();
-    session.startTransaction({
-      readConcern: { level: "majority" },
-      writeConcern: { w: "majority" }
-    });
     
     try {
+      // Use stronger isolation for critical operations
+      session.startTransaction({
+        readConcern: { level: "snapshot" },
+        writeConcern: { w: "majority", j: true },
+        readPreference: "primary" // Ensure consistent reads
+      });
+      
       const result = await operation(session);
       await session.commitTransaction();
       return result;
     } catch (error) {
       await session.abortTransaction();
       
-      // Retry on write conflicts or transient errors
-      if ((error.code === 112 || error.code === 11000 || error.name === 'WriteConflictError') && attempt < retries - 1) {
+      // Enhanced retry logic for various conflict scenarios
+      const retryableErrors = [
+        112, // WriteConflictError
+        11000, // DuplicateKeyError
+        16500, // TransientTransactionError
+        251, // NoSuchTransaction
+        50 // ExceededTimeLimit
+      ];
+      
+      const isRetryable = retryableErrors.includes(error.code) || 
+                         error.name === 'WriteConflictError' ||
+                         error.hasErrorLabel?.('TransientTransactionError');
+      
+      if (isRetryable && attempt < retries - 1) {
         attempt++;
-        // Exponential backoff with jitter
-        const delay = Math.floor(Math.random() * (50 * Math.pow(2, attempt)));
+        // Progressive backoff with jitter
+        const baseDelay = 50 * Math.pow(2, attempt);
+        const jitter = Math.floor(Math.random() * baseDelay * 0.1);
+        const delay = baseDelay + jitter;
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
@@ -66,9 +171,27 @@ const withTransaction = async (operation, retries = 3) => {
   }
 };
 
-// Enhanced atomic operation helper for concurrent-safe operations
+// Enhanced atomic operation helper with distributed locking
 const performAtomicOperation = async (operation, options = {}) => {
-  const { maxRetries = 3, baseDelay = 50 } = options;
+  const { 
+    maxRetries = 3, 
+    baseDelay = 50, 
+    useDistributedLock = false, 
+    lockResource = null,
+    lockTimeout = 30000 
+  } = options;
+  
+  if (useDistributedLock && lockResource) {
+    return await distributedLock.withLock(
+      lockResource,
+      async () => {
+        return await withTransaction(async (session) => {
+          return await operation(session);
+        }, maxRetries);
+      },
+      lockTimeout
+    );
+  }
   
   return await withTransaction(async (session) => {
     return await operation(session);
@@ -122,7 +245,7 @@ const getAnnouncementsForAdmin = async (req, res) => {
   }
 };
 
-// Create new announcement (admin only) - Enhanced with race condition protection
+// Create new announcement (admin only) - Enhanced with distributed locking
 const createAnnouncement = async (req, res) => {
   try {
     // Check for validation errors
@@ -170,27 +293,45 @@ const createAnnouncement = async (req, res) => {
     const sanitizedTitle = sanitizeInput(title.trim());
     const sanitizedContent = sanitizeInput(content.trim());
 
-    // Enhanced atomic operation with race condition protection
+    // Create lock resource identifier based on user and title
+    const lockResource = `create_${req.user._id}_${Buffer.from(sanitizedTitle).toString('base64').substring(0, 20)}`;
+
+    // Enhanced atomic operation with distributed locking
     const result = await performAtomicOperation(async (session) => {
       // Generate unique identifier for this creation request
       const creationTimestamp = new Date();
       const uniqueId = new mongoose.Types.ObjectId();
       
-      // Check for potential duplicate creation attempts by the same user with same title
-      // within a short time window (prevents accidental double-clicks)
-      const recentDuplicate = await Announcement.findOne({
-        title: sanitizedTitle,
-        createdBy: new mongoose.Types.ObjectId(req.user._id),
-        createdAt: { 
-          $gte: new Date(creationTimestamp.getTime() - 5000) // 5 seconds window
-        }
-      }, null, { session });
+      // Enhanced duplicate detection with broader time window and content similarity
+      const duplicateQuery = {
+        $or: [
+          {
+            title: sanitizedTitle,
+            createdBy: new mongoose.Types.ObjectId(req.user._id),
+            createdAt: { 
+              $gte: new Date(creationTimestamp.getTime() - 10000) // 10 seconds window
+            }
+          },
+          {
+            title: sanitizedTitle,
+            content: sanitizedContent,
+            createdAt: {
+              $gte: new Date(creationTimestamp.getTime() - 60000) // 1 minute for exact content match
+            }
+          }
+        ]
+      };
+
+      const recentDuplicate = await Announcement.findOne(duplicateQuery, null, { 
+        session,
+        readConcern: { level: "snapshot" }
+      });
 
       if (recentDuplicate) {
-        throw new Error('DUPLICATE_REQUEST: Announcement with same title was just created');
+        throw new Error('DUPLICATE_REQUEST: Similar announcement was recently created');
       }
 
-      // Create announcement with atomic operation
+      // Create announcement with atomic operation and version tracking
       const announcementData = {
         _id: uniqueId,
         title: sanitizedTitle,
@@ -198,10 +339,11 @@ const createAnnouncement = async (req, res) => {
         isActive: Boolean(isActive),
         createdBy: new mongoose.Types.ObjectId(req.user._id),
         createdAt: creationTimestamp,
-        updatedAt: creationTimestamp
+        updatedAt: creationTimestamp,
+        version: 1 // Add version field for optimistic locking
       };
 
-      // Use insertOne for better control over concurrent insertions
+      // Use insertOne with session for transactional consistency
       const insertResult = await Announcement.collection.insertOne(
         announcementData,
         { session }
@@ -216,6 +358,10 @@ const createAnnouncement = async (req, res) => {
         .populate('createdBy', 'name email');
       
       return savedAnnouncement;
+    }, {
+      useDistributedLock: true,
+      lockResource,
+      lockTimeout: 15000 // 15 second lock timeout for creation
     });
 
     res.status(201).json({
@@ -224,11 +370,18 @@ const createAnnouncement = async (req, res) => {
       data: result
     });
   } catch (error) {
-    // Handle specific duplicate request error
-    if (error.message === 'DUPLICATE_REQUEST: Announcement with same title was just created') {
+    // Handle specific error types
+    if (error.message.includes('DUPLICATE_REQUEST')) {
       return res.status(409).json({
         success: false,
-        message: 'Duplicate request detected. Announcement with same title was recently created.'
+        message: 'Duplicate request detected. Similar announcement was recently created.'
+      });
+    }
+
+    if (error.message.includes('Could not acquire distributed lock')) {
+      return res.status(429).json({
+        success: false,
+        message: 'System is busy processing similar requests. Please try again shortly.'
       });
     }
 
@@ -297,7 +450,7 @@ const getAnnouncementById = async (req, res) => {
   }
 };
 
-// Update announcement (admin only) - Enhanced with optimistic locking
+// Update announcement (admin only) - Enhanced with distributed locking and version control
 const updateAnnouncement = async (req, res) => {
   try {
     // Check for validation errors
@@ -352,22 +505,29 @@ const updateAnnouncement = async (req, res) => {
       }
     }
 
-    // Enhanced atomic update operation with optimistic locking
+    // Create lock resource for this specific announcement update
+    const lockResource = `update_${id}`;
+
+    // Enhanced atomic update operation with distributed locking
     const result = await performAtomicOperation(async (session) => {
-      // First, get current document with version for optimistic locking
+      // Get current document with stronger read consistency
       const currentAnnouncement = await Announcement.findById(
         new mongoose.Types.ObjectId(id),
         null,
-        { session }
+        { 
+          session,
+          readConcern: { level: "snapshot" }
+        }
       );
 
       if (!currentAnnouncement) {
         throw new Error('Announcement not found');
       }
 
-      // Build update object
+      // Build update object with version increment
       const updateData = {
-        updatedAt: new Date()
+        updatedAt: new Date(),
+        $inc: { version: 1 }
       };
 
       if (title !== undefined) {
@@ -380,25 +540,29 @@ const updateAnnouncement = async (req, res) => {
         updateData.isActive = Boolean(isActive);
       }
 
-      // Use findOneAndUpdate with optimistic locking pattern
+      // Use findOneAndUpdate with enhanced optimistic locking
       const announcement = await Announcement.findOneAndUpdate(
         { 
           _id: new mongoose.Types.ObjectId(id),
-          updatedAt: currentAnnouncement.updatedAt // Optimistic locking check
+          version: currentAnnouncement.version // Version-based optimistic locking
         },
-        { $set: updateData },
+        updateData,
         { 
           new: true, 
           runValidators: true,
-          session 
+          session
         }
       ).populate('createdBy', 'name email');
 
       if (!announcement) {
-        throw new Error('Update conflict detected. Document was modified by another process.');
+        throw new Error('UPDATE_CONFLICT: Document was modified by another process');
       }
 
       return announcement;
+    }, {
+      useDistributedLock: true,
+      lockResource,
+      lockTimeout: 10000 // 10 second lock timeout for updates
     });
 
     res.json({
@@ -414,10 +578,17 @@ const updateAnnouncement = async (req, res) => {
       });
     }
 
-    if (error.message === 'Update conflict detected. Document was modified by another process.') {
+    if (error.message.includes('UPDATE_CONFLICT')) {
       return res.status(409).json({
         success: false,
         message: 'Update conflict. The announcement was modified by another user. Please refresh and try again.'
+      });
+    }
+
+    if (error.message.includes('Could not acquire distributed lock')) {
+      return res.status(429).json({
+        success: false,
+        message: 'Another update operation is in progress. Please try again shortly.'
       });
     }
 
@@ -429,7 +600,7 @@ const updateAnnouncement = async (req, res) => {
   }
 };
 
-// Delete announcement (admin only) - Enhanced with atomic operation
+// Delete announcement (admin only) - Enhanced with distributed locking
 const deleteAnnouncement = async (req, res) => {
   try {
     const { id } = req.params;
@@ -442,18 +613,40 @@ const deleteAnnouncement = async (req, res) => {
       });
     }
 
-    // Enhanced atomic delete operation
+    // Create lock resource for this specific announcement deletion
+    const lockResource = `delete_${id}`;
+
+    // Enhanced atomic delete operation with distributed locking
     const result = await performAtomicOperation(async (session) => {
+      // First verify the announcement exists
+      const existingAnnouncement = await Announcement.findById(
+        new mongoose.Types.ObjectId(id),
+        null,
+        { 
+          session,
+          readConcern: { level: "snapshot" }
+        }
+      );
+
+      if (!existingAnnouncement) {
+        throw new Error('Announcement not found');
+      }
+
+      // Perform atomic deletion
       const announcement = await Announcement.findOneAndDelete(
         { _id: new mongoose.Types.ObjectId(id) },
         { session }
       );
 
       if (!announcement) {
-        throw new Error('Announcement not found');
+        throw new Error('DELETE_CONFLICT: Announcement was already deleted');
       }
 
       return announcement;
+    }, {
+      useDistributedLock: true,
+      lockResource,
+      lockTimeout: 10000 // 10 second lock timeout for deletion
     });
 
     res.json({
@@ -468,6 +661,20 @@ const deleteAnnouncement = async (req, res) => {
       });
     }
 
+    if (error.message.includes('DELETE_CONFLICT')) {
+      return res.status(409).json({
+        success: false,
+        message: 'Delete conflict. The announcement may have been already deleted.'
+      });
+    }
+
+    if (error.message.includes('Could not acquire distributed lock')) {
+      return res.status(429).json({
+        success: false,
+        message: 'Another operation is in progress on this announcement. Please try again shortly.'
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Error deleting announcement',
@@ -476,7 +683,7 @@ const deleteAnnouncement = async (req, res) => {
   }
 };
 
-// Toggle announcement active status (admin only) - Enhanced with race condition protection
+// Toggle announcement active status (admin only) - Enhanced with distributed locking
 const toggleAnnouncementStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -489,34 +696,41 @@ const toggleAnnouncementStatus = async (req, res) => {
       });
     }
 
-    // Enhanced atomic toggle operation with race condition protection
+    // Create lock resource for this specific announcement toggle
+    const lockResource = `toggle_${id}`;
+
+    // Enhanced atomic toggle operation with distributed locking
     const result = await performAtomicOperation(async (session) => {
-      // Get current announcement with session for consistency
+      // Get current announcement with stronger consistency
       const currentAnnouncement = await Announcement.findOne(
         { _id: new mongoose.Types.ObjectId(id) },
         null,
-        { session }
+        { 
+          session,
+          readConcern: { level: "snapshot" }
+        }
       );
 
       if (!currentAnnouncement) {
         throw new Error('Announcement not found');
       }
 
-      // Store current state for optimistic locking
-      const currentUpdatedAt = currentAnnouncement.updatedAt;
+      // Store current state for version-based locking
+      const currentVersion = currentAnnouncement.version || 0;
       const newStatus = !currentAnnouncement.isActive;
 
-      // Atomic toggle with optimistic locking
+      // Atomic toggle with version-based optimistic locking
       const announcement = await Announcement.findOneAndUpdate(
         { 
           _id: new mongoose.Types.ObjectId(id),
-          updatedAt: currentUpdatedAt // Ensure no concurrent modifications
+          version: currentVersion // Version-based locking
         },
         { 
           $set: { 
             isActive: newStatus,
             updatedAt: new Date()
-          }
+          },
+          $inc: { version: 1 }
         },
         { 
           new: true, 
@@ -525,10 +739,14 @@ const toggleAnnouncementStatus = async (req, res) => {
       ).populate('createdBy', 'name email');
 
       if (!announcement) {
-        throw new Error('Status toggle conflict. Document was modified by another process.');
+        throw new Error('TOGGLE_CONFLICT: Document was modified by another process');
       }
 
       return announcement;
+    }, {
+      useDistributedLock: true,
+      lockResource,
+      lockTimeout: 5000 // 5 second lock timeout for status toggle
     });
 
     res.json({
@@ -544,10 +762,17 @@ const toggleAnnouncementStatus = async (req, res) => {
       });
     }
 
-    if (error.message === 'Status toggle conflict. Document was modified by another process.') {
+    if (error.message.includes('TOGGLE_CONFLICT')) {
       return res.status(409).json({
         success: false,
         message: 'Status update conflict. The announcement was modified by another user. Please refresh and try again.'
+      });
+    }
+
+    if (error.message.includes('Could not acquire distributed lock')) {
+      return res.status(429).json({
+        success: false,
+        message: 'Another operation is in progress. Please try again shortly.'
       });
     }
 

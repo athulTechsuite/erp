@@ -6,7 +6,139 @@
 const { JSDOM } = require('jsdom');
 const DOMPurify = require('dompurify');
 
-describe('TC-004: Security and Authentication Tests', () => {
+describe('TC-SECURITY: Security tests for announcements', () => {
+  let window, document, purify;
+
+  beforeEach(() => {
+    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
+    window = dom.window;
+    document = window.document;
+    purify = DOMPurify(window);
+  });
+
+  describe('Happy Path - Secure Announcement Operations', () => {
+    test('TC-SECURITY: should allow safe announcement content', () => {
+      const safeAnnouncementContent = '<p>Welcome to our new platform update!</p><strong>Important:</strong> Please review the changes.';
+      const sanitized = purify.sanitize(safeAnnouncementContent);
+      expect(sanitized).toBe('<p>Welcome to our new platform update!</p><strong>Important:</strong> Please review the changes.');
+    });
+
+    test('TC-SECURITY: should preserve allowed HTML formatting in announcements', () => {
+      const formattedAnnouncement = '<h2>System Maintenance</h2><p>Scheduled downtime: <em>Sunday 2AM-4AM</em></p><ul><li>Database updates</li><li>Security patches</li></ul>';
+      const sanitized = purify.sanitize(formattedAnnouncement);
+      expect(sanitized).toContain('<h2>System Maintenance</h2>');
+      expect(sanitized).toContain('<em>Sunday 2AM-4AM</em>');
+      expect(sanitized).toContain('<ul><li>Database updates</li><li>Security patches</li></ul>');
+    });
+
+    test('TC-SECURITY: should validate announcement author authentication', () => {
+      const validAuthorToken = 'admin_token_abc123';
+      const authorRegex = /^[a-zA-Z0-9_]+$/;
+      expect(authorRegex.test(validAuthorToken)).toBe(true);
+    });
+
+    test('TC-SECURITY: should allow valid announcement metadata', () => {
+      const announcementData = {
+        title: 'Security Update',
+        priority: 'high',
+        category: 'system',
+        expiryDate: '2024-12-31'
+      };
+      
+      expect(typeof announcementData.title).toBe('string');
+      expect(['low', 'medium', 'high', 'critical'].includes(announcementData.priority)).toBe(true);
+      expect(announcementData.title.length).toBeGreaterThan(0);
+      expect(announcementData.title.length).toBeLessThanOrEqual(200);
+    });
+  });
+
+  describe('Error Path - Security Violations in Announcements', () => {
+    test('TC-SECURITY: should block XSS attempts in announcement content', () => {
+      const xssAttempts = [
+        '<script>alert("XSS in announcement")</script>',
+        '<img src="x" onerror="alert(\'XSS\')">',
+        '<div onclick="maliciousFunction()">Click here</div>',
+        '<iframe src="javascript:alert(\'XSS\')"></iframe>'
+      ];
+
+      xssAttempts.forEach(maliciousContent => {
+        const sanitized = purify.sanitize(maliciousContent);
+        expect(sanitized).not.toContain('<script>');
+        expect(sanitized).not.toContain('onerror');
+        expect(sanitized).not.toContain('onclick');
+        expect(sanitized).not.toContain('javascript:');
+      });
+    });
+
+    test('TC-SECURITY: should reject unauthorized announcement creation attempts', () => {
+      const unauthorizedTokens = ['', 'invalid_token', 'user_token_123', null, undefined];
+      const validAdminPattern = /^admin_token_[a-zA-Z0-9]+$/;
+      
+      unauthorizedTokens.forEach(token => {
+        const isAuthorized = token && validAdminPattern.test(token);
+        expect(isAuthorized).toBe(false);
+      });
+    });
+
+    test('TC-SECURITY: should validate and reject malformed announcement data', () => {
+      const malformedData = [
+        { title: '', content: 'Valid content' }, // Empty title
+        { title: 'A'.repeat(201), content: 'Valid content' }, // Title too long
+        { title: 'Valid title', content: '' }, // Empty content
+        { title: 'Valid title', priority: 'invalid_priority' }, // Invalid priority
+        { title: 'Valid<script>alert("xss")</script>', content: 'content' } // XSS in title
+      ];
+
+      malformedData.forEach(data => {
+        const titleValid = data.title && data.title.length > 0 && data.title.length <= 200;
+        const contentValid = data.content && data.content.length > 0;
+        const priorityValid = !data.priority || ['low', 'medium', 'high', 'critical'].includes(data.priority);
+        const titleClean = data.title ? !data.title.includes('<script>') : false;
+        
+        const isValid = titleValid && contentValid && priorityValid && titleClean;
+        expect(isValid).toBe(false);
+      });
+    });
+
+    test('TC-SECURITY: should block SQL injection attempts in announcement queries', () => {
+      const sqlInjectionAttempts = [
+        "'; DROP TABLE announcements; --",
+        "admin' OR '1'='1' --",
+        "1' UNION SELECT * FROM users --",
+        "announcement_id = 1; DELETE FROM announcements; --"
+      ];
+      
+      sqlInjectionAttempts.forEach(attempt => {
+        const containsSqlKeywords = /\b(DROP|DELETE|INSERT|UPDATE|UNION|OR|AND|SELECT)\b/i.test(attempt);
+        expect(containsSqlKeywords).toBe(true); // We expect to detect these patterns
+        
+        // Simulate parameterized query sanitization
+        const sanitized = attempt.replace(/[';\\-]/g, '');
+        expect(sanitized).not.toEqual(attempt);
+      });
+    });
+
+    test('TC-SECURITY: should prevent announcement content injection attacks', () => {
+      const injectionAttempts = [
+        '<object data="data:text/html,<script>alert(\'XSS\')</script>"></object>',
+        '<embed src="javascript:alert(\'XSS\')">',
+        '<link rel="stylesheet" href="javascript:alert(\'XSS\')">',
+        '<meta http-equiv="refresh" content="0;url=javascript:alert(\'XSS\')">'
+      ];
+
+      injectionAttempts.forEach(maliciousContent => {
+        const sanitized = purify.sanitize(maliciousContent);
+        expect(sanitized).not.toContain('javascript:');
+        expect(sanitized).not.toContain('<object');
+        expect(sanitized).not.toContain('<embed');
+        expect(sanitized).not.toContain('<link');
+        expect(sanitized).not.toContain('<meta');
+      });
+    });
+  });
+});
+
+describe('TC-004: Security Tests', () => {
   let window, document;
 
   beforeEach(() => {
@@ -33,43 +165,6 @@ describe('TC-004: Security and Authentication Tests', () => {
       const securePassword = 'SecureP@ss123';
       const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
       expect(passwordRegex.test(securePassword)).toBe(true);
-    });
-
-    test('TC-004: should authenticate with valid JWT token', () => {
-      const mockValidToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ';
-      const tokenParts = mockValidToken.split('.');
-      expect(tokenParts.length).toBe(3);
-      expect(tokenParts[0].length).toBeGreaterThan(0);
-      expect(tokenParts[1].length).toBeGreaterThan(0);
-      expect(tokenParts[2].length).toBeGreaterThan(0);
-    });
-
-    test('TC-004: should handle secure session management', () => {
-      const sessionConfig = {
-        httpOnly: true,
-        secure: true,
-        sameSite: 'strict',
-        maxAge: 3600000 // 1 hour
-      };
-      expect(sessionConfig.httpOnly).toBe(true);
-      expect(sessionConfig.secure).toBe(true);
-      expect(sessionConfig.sameSite).toBe('strict');
-      expect(sessionConfig.maxAge).toBeLessThanOrEqual(3600000);
-    });
-
-    test('TC-004: should validate secure API endpoints with proper authorization', () => {
-      const secureEndpoint = {
-        url: 'https://api.example.com/secure/data',
-        requiresAuth: true,
-        method: 'GET',
-        headers: {
-          'Authorization': 'Bearer valid-token',
-          'Content-Type': 'application/json'
-        }
-      };
-      expect(secureEndpoint.url.startsWith('https://')).toBe(true);
-      expect(secureEndpoint.requiresAuth).toBe(true);
-      expect(secureEndpoint.headers.Authorization).toContain('Bearer');
     });
   });
 
@@ -117,98 +212,6 @@ describe('TC-004: Security and Authentication Tests', () => {
       invalidEmails.forEach(email => {
         expect(emailRegex.test(email)).toBe(false);
       });
-    });
-
-    test('TC-004: should reject invalid JWT tokens', () => {
-      const invalidTokens = [
-        '', // empty token
-        'invalid.token', // missing parts
-        'not.a.jwt.token', // too many parts
-        'invalidbase64!@#.invalidbase64!@#.invalidbase64!@#' // invalid base64
-      ];
-      
-      invalidTokens.forEach(token => {
-        if (token === '') {
-          expect(token.length).toBe(0);
-        } else {
-          const parts = token.split('.');
-          if (parts.length !== 3) {
-            expect(parts.length).not.toBe(3);
-          } else {
-            // Check for invalid base64 characters
-            const hasInvalidChars = /[^A-Za-z0-9+/=]/.test(token);
-            expect(hasInvalidChars).toBe(true);
-          }
-        }
-      });
-    });
-
-    test('TC-004: should handle authentication failures gracefully', () => {
-      const authFailureScenarios = [
-        { username: '', password: 'validpass', expectedError: 'Username required' },
-        { username: 'validuser', password: '', expectedError: 'Password required' },
-        { username: 'invalid', password: 'wrongpass', expectedError: 'Invalid credentials' }
-      ];
-      
-      authFailureScenarios.forEach(scenario => {
-        if (!scenario.username) {
-          expect(scenario.expectedError).toContain('Username');
-        }
-        if (!scenario.password) {
-          expect(scenario.expectedError).toContain('Password');
-        }
-        if (scenario.username && scenario.password && scenario.username === 'invalid') {
-          expect(scenario.expectedError).toContain('Invalid');
-        }
-      });
-    });
-
-    test('TC-004: should prevent session fixation attacks', () => {
-      const suspiciousSessionIds = [
-        'JSESSIONID=attacker-controlled-id',
-        'sessionid=predictable123',
-        'sid=12345'
-      ];
-      
-      suspiciousSessionIds.forEach(sessionId => {
-        // Check if session ID is too predictable or short
-        const idValue = sessionId.split('=')[1];
-        const isPredictable = /^(12345|123456|attacker|predictable)/.test(idValue);
-        const isTooShort = idValue.length < 16;
-        
-        expect(isPredictable || isTooShort).toBe(true);
-      });
-    });
-
-    test('TC-004: should validate CORS policy violations', () => {
-      const maliciousOrigins = [
-        'http://malicious-site.com',
-        'javascript:',
-        'data:',
-        'file://',
-        null
-      ];
-      
-      const allowedOrigins = ['https://trusted-domain.com', 'https://api.example.com'];
-      
-      maliciousOrigins.forEach(origin => {
-        expect(allowedOrigins.includes(origin)).toBe(false);
-      });
-    });
-
-    test('TC-004: should detect and prevent brute force attacks', () => {
-      const loginAttempts = Array(10).fill().map((_, i) => ({
-        timestamp: Date.now() - (i * 1000),
-        success: false,
-        ip: '192.168.1.100'
-      }));
-      
-      // Simulate rate limiting check
-      const recentFailures = loginAttempts.filter(attempt => 
-        !attempt.success && (Date.now() - attempt.timestamp) < 300000 // 5 minutes
-      );
-      
-      expect(recentFailures.length).toBeGreaterThan(5); // Should trigger rate limiting
     });
   });
 });

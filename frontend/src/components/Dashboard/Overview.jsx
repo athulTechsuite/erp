@@ -12,10 +12,13 @@ import {
   AlertCircle,
   CheckCircle,
   XCircle,
-  PendingIcon
+  PendingIcon,
+  Megaphone,
+  Calendar as CalendarIcon
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { dashboardService } from '@/services/dashboardService';
+import { announcementsService } from '@/services/announcementsService';
 
 const Overview = () => {
   const { user } = useAuth();
@@ -35,8 +38,20 @@ const Overview = () => {
     error: null
   });
 
+  const [announcements, setAnnouncements] = useState({
+    items: [],
+    loading: true,
+    error: null
+  });
+
   useEffect(() => {
     fetchDashboardData();
+    fetchAnnouncements();
+    
+    // Set up polling for announcements every 30 seconds
+    const interval = setInterval(fetchAnnouncements, 30000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   const fetchDashboardData = async () => {
@@ -55,6 +70,24 @@ const Overview = () => {
         loading: false,
         error: 'Failed to load dashboard data'
       }));
+    }
+  };
+
+  const fetchAnnouncements = async () => {
+    try {
+      setAnnouncements(prev => ({ ...prev, loading: true }));
+      const data = await announcementsService.getPublishedAnnouncements();
+      setAnnouncements({
+        items: data.slice(0, 5), // Limit to 5 announcements
+        loading: false,
+        error: null
+      });
+    } catch (error) {
+      setAnnouncements({
+        items: [],
+        loading: false,
+        error: 'Failed to load announcements'
+      });
     }
   };
 
@@ -110,6 +143,71 @@ const Overview = () => {
     </Card>
   );
 
+  const AnnouncementsWidget = () => (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center">
+          <Megaphone className="h-5 w-5 mr-2" />
+          Company Announcements
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {announcements.loading ? (
+            <div className="space-y-3">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="animate-pulse">
+                  <div className="h-4 bg-gray-300 rounded w-3/4 mb-2"></div>
+                  <div className="h-3 bg-gray-300 rounded w-full mb-1"></div>
+                  <div className="h-3 bg-gray-300 rounded w-2/3"></div>
+                </div>
+              ))}
+            </div>
+          ) : announcements.error ? (
+            <div className="text-center py-4">
+              <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">
+                {announcements.error}
+              </p>
+              <Button 
+                onClick={fetchAnnouncements} 
+                variant="outline" 
+                size="sm" 
+                className="mt-2"
+              >
+                Retry
+              </Button>
+            </div>
+          ) : announcements.items.length === 0 ? (
+            <p className="text-muted-foreground text-center py-4">
+              No announcements at this time
+            </p>
+          ) : (
+            announcements.items.map((announcement) => (
+              <div key={announcement.id} className="p-3 rounded-lg border bg-blue-50 border-blue-200">
+                <div className="flex justify-between items-start mb-2">
+                  <h4 className="text-sm font-semibold text-blue-900">
+                    {announcement.title}
+                  </h4>
+                  <div className="flex items-center text-xs text-blue-600 ml-2 flex-shrink-0">
+                    <CalendarIcon className="h-3 w-3 mr-1" />
+                    {new Date(announcement.createdAt).toLocaleDateString()}
+                  </div>
+                </div>
+                <div className="text-sm text-blue-800 leading-relaxed">
+                  {announcement.content.length > 150 
+                    ? `${announcement.content.substring(0, 150)}...`
+                    : announcement.content
+                  }
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
   if (dashboardData.loading) {
     return (
       <div className="p-6 space-y-6">
@@ -156,6 +254,9 @@ const Overview = () => {
           Refresh Data
         </Button>
       </div>
+
+      {/* Company Announcements Widget */}
+      <AnnouncementsWidget />
 
       {/* Key Metrics */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">

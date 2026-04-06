@@ -160,6 +160,26 @@ const canManageLeave = (req, res, next) => {
   }
 };
 
+// Middleware to check if user can manage announcements
+const canManageAnnouncements = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ 
+      success: false, 
+      message: 'Authentication required' 
+    });
+  }
+
+  // Only admins can create, edit, or delete announcements
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ 
+      success: false, 
+      message: 'Only administrators can manage announcements' 
+    });
+  }
+
+  next();
+};
+
 // Rate limiting middleware for sensitive operations
 const createRateLimit = (windowMs = 15 * 60 * 1000, max = 5) => {
   const requests = new Map();
@@ -207,6 +227,7 @@ module.exports = {
   requireOwnershipOrAdmin,
   optionalAuth,
   canManageLeave,
+  canManageAnnouncements,
   createRateLimit,
   logActivity
 };

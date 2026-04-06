@@ -1,0 +1,224 @@
+const request = require('supertest');
+const jwt = require('jsonwebtoken');
+const app = require('../src/app');
+const { User } = require('../src/models');
+const authMiddleware = require('../src/middleware/auth');
+
+describe('TC-006: Authorization middleware testing', () => {
+  describe('Happy path', () => {
+    it('should allow access with valid JWT token', async () => {
+      const user = { id: 1, email: 'test@example.com' };
+      const token = jwt.sign(user, process.env.JWT_SECRET || 'test-secret');
+      
+      const response = await request(app)
+        .get('/api/protected-endpoint')
+        .set('Authorization', `Bearer ${token}`);
+      
+      expect(response.status).not.toBe(401);
+      expect(response.status).not.toBe(403);
+    });
+
+    it('should attach user data to request object', (done) => {
+      const mockReq = {
+        headers: {
+          authorization: `Bearer ${jwt.sign({ id: 1, email: 'test@example.com' }, process.env.JWT_SECRET || 'test-secret')}`
+        }
+      };
+      const mockRes = {};
+      const mockNext = () => {
+        expect(mockReq.user).toBeDefined();
+        expect(mockReq.user.id).toBe(1);
+        expect(mockReq.user.email).toBe('test@example.com');
+        done();
+      };
+
+      authMiddleware(mockReq, mockRes, mockNext);
+    });
+  });
+
+  describe('Error path', () => {
+    it('should return 401 when no authorization header is provided', (done) => {
+      const mockReq = { headers: {} };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn((data) => {
+          expect(mockRes.status).toHaveBeenCalledWith(401);
+          expect(data.error).toContain('token');
+          done();
+        })
+      };
+      const mockNext = jest.fn();
+
+      authMiddleware(mockReq, mockRes, mockNext);
+    });
+
+    it('should return 401 when invalid token is provided', (done) => {
+      const mockReq = {
+        headers: {
+          authorization: 'Bearer invalid-token'
+        }
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn((data) => {
+          expect(mockRes.status).toHaveBeenCalledWith(401);
+          expect(data.error).toContain('token');
+          done();
+        })
+      };
+      const mockNext = jest.fn();
+
+      authMiddleware(mockReq, mockRes, mockNext);
+    });
+
+    it('should return 401 when expired token is provided', (done) => {
+      const expiredToken = jwt.sign(
+        { id: 1, email: 'test@example.com', exp: Math.floor(Date.now() / 1000) - 60 },
+        process.env.JWT_SECRET || 'test-secret'
+      );
+      
+      const mockReq = {
+        headers: {
+          authorization: `Bearer ${expiredToken}`
+        }
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn((data) => {
+          expect(mockRes.status).toHaveBeenCalledWith(401);
+          expect(data.error).toContain('token');
+          done();
+        })
+      };
+      const mockNext = jest.fn();
+
+      authMiddleware(mockReq, mockRes, mockNext);
+    });
+  });
+});
+
+describe('TC-007: Database model unit tests', () => {
+  describe('Happy path', () => {
+    it('should create a new user with valid data', async () => {
+      const userData = {
+        email: 'test@example.com',
+        password: 'password123',
+        name: 'Test User'
+      };
+
+      const user = await User.create(userData);
+
+      expect(user).toBeDefined();
+      expect(user.email).toBe(userData.email);
+      expect(user.name).toBe(userData.name);
+      expect(user.id).toBeDefined();
+    });
+
+    it('should find user by email', async () => {
+      const userData = {
+        email: 'findme@example.com',
+        password: 'password123',
+        name: 'Find Me'
+      };
+
+      await User.create(userData);
+      const foundUser = await User.findOne({ where: { email: userData.email } });
+
+      expect(foundUser).toBeDefined();
+      expect(foundUser.email).toBe(userData.email);
+      expect(foundUser.name).toBe(userData.name);
+    });
+
+    it('should update user data', async () => {
+      const userData = {
+        email: 'update@example.com',
+        password: 'password123',
+        name: 'Update Me'
+      };
+
+      const user = await User.create(userData);
+      const updatedName = 'Updated Name';
+      
+      await user.update({ name: updatedName });
+      await user.reload();
+
+      expect(user.name).toBe(updatedName);
+      expect(user.email).toBe(userData.email);
+    });
+
+    it('should delete user', async () => {
+      const userData = {
+        email: 'delete@example.com',
+        password: 'password123',
+        name: 'Delete Me'
+      };
+
+      const user = await User.create(userData);
+      const userId = user.id;
+      
+      await user.destroy();
+      const deletedUser = await User.findByPk(userId);
+
+      expect(deletedUser).toBeNull();
+    });
+  });
+
+  describe('Error path', () => {
+    it('should fail to create user with invalid email', async () => {
+      const invalidUserData = {
+        email: 'invalid-email',
+        password: 'password123',
+        name: 'Test User'
+      };
+
+      await expect(User.create(invalidUserData)).rejects.toThrow();
+    });
+
+    it('should fail to create user with missing required fields', async () => {
+      const incompleteUserData = {
+        email: 'test@example.com'
+        // missing password and name
+      };
+
+      await expect(User.create(incompleteUserData)).rejects.toThrow();
+    });
+
+    it('should fail to create user with duplicate email', async () => {
+      const userData = {
+        email: 'duplicate@example.com',
+        password: 'password123',
+        name: 'First User'
+      };
+
+      await User.create(userData);
+      
+      const duplicateUserData = {
+        email: 'duplicate@example.com',
+        password: 'password456',
+        name: 'Second User'
+      };
+
+      await expect(User.create(duplicateUserData)).rejects.toThrow();
+    });
+
+    it('should return null when finding non-existent user', async () => {
+      const nonExistentUser = await User.findOne({ 
+        where: { email: 'nonexistent@example.com' } 
+      });
+
+      expect(nonExistentUser).toBeNull();
+    });
+
+    it('should fail to update user with invalid data', async () => {
+      const userData = {
+        email: 'valid@example.com',
+        password: 'password123',
+        name: 'Valid User'
+      };
+
+      const user = await User.create(userData);
+
+      await expect(user.update({ email: 'invalid-email' })).rejects.toThrow();
+    });
+  });
+});

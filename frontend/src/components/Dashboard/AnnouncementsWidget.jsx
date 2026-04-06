@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Loader2, AlertCircle, Megaphone, Calendar } from 'lucide-react';
@@ -8,6 +8,7 @@ const AnnouncementsWidget = () => {
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const isMountedRef = useRef(true);
 
   const fetchAnnouncements = async () => {
     try {
@@ -24,13 +25,23 @@ const AnnouncementsWidget = () => {
       }
 
       const data = await response.json();
-      setAnnouncements(data.slice(0, 5)); // Limit to 5 announcements
-      setError(null);
+      
+      // Only update state if component is still mounted
+      if (isMountedRef.current) {
+        setAnnouncements(data.slice(0, 5)); // Limit to 5 announcements
+        setError(null);
+      }
     } catch (err) {
-      setError('Unable to load company announcements. Please try again later.');
-      console.error('Error fetching announcements:', err);
+      // Only update state if component is still mounted
+      if (isMountedRef.current) {
+        setError('Unable to load company announcements. Please try again later.');
+        console.error('Error fetching announcements:', err);
+      }
     } finally {
-      setLoading(false);
+      // Only update state if component is still mounted
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -40,7 +51,10 @@ const AnnouncementsWidget = () => {
     // Poll for updates every 30 seconds
     const interval = setInterval(fetchAnnouncements, 30000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      isMountedRef.current = false;
+    };
   }, []);
 
   const formatDate = (dateString) => {

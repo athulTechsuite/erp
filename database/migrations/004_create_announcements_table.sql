@@ -10,6 +10,7 @@ CREATE TABLE announcements (
     created_by INTEGER NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- Foreign key with CASCADE delete maintains referential integrity
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 );
 

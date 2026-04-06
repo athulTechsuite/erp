@@ -1,0 +1,189 @@
+// security.test.js - TC-005: Authentication, Authorization, and XSS Protection
+const request = require('supertest');
+const app = require('../app');
+const { expect } = require('chai');
+
+describe('TC-005: Authentication, Authorization, and XSS Protection', () => {
+  describe('Authentication Tests', () => {
+    it('TC-005: should authenticate valid user credentials (happy path)', async () => {
+      const validCredentials = {
+        username: 'testuser',
+        password: 'validPassword123'
+      };
+
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send(validCredentials)
+        .expect(200);
+
+      expect(response.body).to.have.property('token');
+      expect(response.body).to.have.property('user');
+      expect(response.body.user).to.not.have.property('password');
+    });
+
+    it('TC-005: should reject invalid credentials (error path)', async () => {
+      const invalidCredentials = {
+        username: 'testuser',
+        password: 'wrongPassword'
+      };
+
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send(invalidCredentials)
+        .expect(401);
+
+      expect(response.body).to.have.property('error');
+      expect(response.body.error).to.include('Invalid credentials');
+    });
+
+    it('TC-005: should reject missing authentication fields (error path)', async () => {
+      const incompleteCredentials = {
+        username: 'testuser'
+        // missing password
+      };
+
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send(incompleteCredentials)
+        .expect(400);
+
+      expect(response.body).to.have.property('error');
+    });
+  });
+
+  describe('Authorization Tests', () => {
+    let authToken;
+
+    beforeEach(async () => {
+      // Setup authenticated user for authorization tests
+      const loginResponse = await request(app)
+        .post('/api/auth/login')
+        .send({ username: 'testuser', password: 'validPassword123' });
+      authToken = loginResponse.body.token;
+    });
+
+    it('TC-005: should allow access to protected resource with valid token (happy path)', async () => {
+      const response = await request(app)
+        .get('/api/protected/user-profile')
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(200);
+
+      expect(response.body).to.have.property('profile');
+    });
+
+    it('TC-005: should deny access without authentication token (error path)', async () => {
+      const response = await request(app)
+        .get('/api/protected/user-profile')
+        .expect(401);
+
+      expect(response.body).to.have.property('error');
+      expect(response.body.error).to.include('No token provided');
+    });
+
+    it('TC-005: should deny access with invalid token (error path)', async () => {
+      const response = await request(app)
+        .get('/api/protected/user-profile')
+        .set('Authorization', 'Bearer invalidtoken123')
+        .expect(401);
+
+      expect(response.body).to.have.property('error');
+      expect(response.body.error).to.include('Invalid token');
+    });
+
+    it('TC-005: should deny access to admin resources for regular users (error path)', async () => {
+      const response = await request(app)
+        .get('/api/admin/users')
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(403);
+
+      expect(response.body).to.have.property('error');
+      expect(response.body.error).to.include('Insufficient permissions');
+    });
+  });
+
+  describe('XSS Protection Tests', () => {
+    it('TC-005: should sanitize user input and prevent script injection (happy path)', async () => {
+      const userInput = {
+        name: 'John Doe',
+        message: 'This is a normal message'
+      };
+
+      const response = await request(app)
+        .post('/api/user/message')
+        .send(userInput)
+        .expect(200);
+
+      expect(response.body.message).to.equal(userInput.message);
+      expect(response.body.name).to.equal(userInput.name);
+    });
+
+    it('TC-005: should sanitize malicious script tags in input (error path)', async () => {
+      const maliciousInput = {
+        name: '<script>alert("XSS")</script>',
+        message: '<img src="x" onerror="alert(\'XSS\')">'
+      };
+
+      const response = await request(app)
+        .post('/api/user/message')
+        .send(maliciousInput)
+        .expect(200);
+
+      // Verify script tags are sanitized
+      expect(response.body.name).to.not.include('<script>');
+      expect(response.body.message).to.not.include('onerror=');
+      expect(response.body.name).to.not.include('alert');
+    });
+
+    it('TC-005: should handle HTML entities in user input (happy path)', async () => {
+      const htmlInput = {
+        name: 'John &amp; Jane',
+        message: 'Price: $5 &lt; $10'
+      };
+
+      const response = await request(app)
+        .post('/api/user/message')
+        .send(htmlInput)
+        .expect(200);
+
+      expect(response.body).to.have.property('name');
+      expect(response.body).to.have.property('message');
+    });
+
+    it('TC-005: should reject suspicious payloads (error path)', async () => {
+      const suspiciousInput = {
+        name: 'javascript:void(0)',
+        message: 'data:text/html,<script>alert(1)</script>'
+      };
+
+      const response = await request(app)
+        .post('/api/user/message')
+        .send(suspiciousInput)
+        .expect(400);
+
+      expect(response.body).to.have.property('error');
+      expect(response.body.error).to.include('Invalid input detected');
+    });
+  });
+
+  describe('Security Headers Tests', () => {
+    it('TC-005: should include security headers in response (happy path)', async () => {
+      const response = await request(app)
+        .get('/api/health')
+        .expect(200);
+
+      expect(response.headers).to.have.property('x-content-type-options', 'nosniff');
+      expect(response.headers).to.have.property('x-frame-options', 'DENY');
+      expect(response.headers).to.have.property('x-xss-protection', '1; mode=block');
+    });
+
+    it('TC-005: should set proper CORS headers (happy path)', async () => {
+      const response = await request(app)
+        .options('/api/user/message')
+        .set('Origin', 'https://trusted-domain.com')
+        .expect(200);
+
+      expect(response.headers).to.have.property('access-control-allow-origin');
+      expect(response.headers).to.have.property('access-control-allow-methods');
+    });
+  });
+});

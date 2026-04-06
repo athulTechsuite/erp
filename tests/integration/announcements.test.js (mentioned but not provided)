@@ -1,0 +1,283 @@
+const request = require('supertest');
+const app = require('../../src/app');
+const { Announcement } = require('../../src/models');
+const { setupTestDB, clearTestDB } = require('../helpers/database');
+
+describe('TC-001: Announcement CRUD Operations', () => {
+  beforeAll(async () => {
+    await setupTestDB();
+  });
+
+  beforeEach(async () => {
+    await clearTestDB();
+  });
+
+  afterAll(async () => {
+    await clearTestDB();
+  });
+
+  describe('CREATE - Happy Path', () => {
+    it('should create a new announcement with valid data', async () => {
+      const announcementData = {
+        title: 'Test Announcement',
+        content: 'This is a test announcement content',
+        priority: 'medium',
+        active: true
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(announcementData)
+        .expect(201);
+
+      expect(response.body).toMatchObject({
+        title: announcementData.title,
+        content: announcementData.content,
+        priority: announcementData.priority,
+        active: announcementData.active
+      });
+      expect(response.body.id).toBeDefined();
+    });
+  });
+
+  describe('CREATE - Error Path', () => {
+    it('should return 400 when required fields are missing', async () => {
+      const invalidData = {
+        content: 'Missing title'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(invalidData)
+        .expect(400);
+
+      expect(response.body.error).toContain('title');
+    });
+
+    it('should return 400 when priority is invalid', async () => {
+      const invalidData = {
+        title: 'Test',
+        content: 'Test content',
+        priority: 'invalid_priority'
+      };
+
+      await request(app)
+        .post('/api/announcements')
+        .send(invalidData)
+        .expect(400);
+    });
+  });
+
+  describe('READ - Happy Path', () => {
+    let createdAnnouncement;
+
+    beforeEach(async () => {
+      createdAnnouncement = await Announcement.create({
+        title: 'Test Announcement',
+        content: 'Test content',
+        priority: 'high',
+        active: true
+      });
+    });
+
+    it('should retrieve all announcements', async () => {
+      const response = await request(app)
+        .get('/api/announcements')
+        .expect(200);
+
+      expect(Array.isArray(response.body)).toBe(true);
+      expect(response.body).toHaveLength(1);
+      expect(response.body[0]).toMatchObject({
+        title: 'Test Announcement',
+        content: 'Test content'
+      });
+    });
+
+    it('should retrieve a specific announcement by id', async () => {
+      const response = await request(app)
+        .get(`/api/announcements/${createdAnnouncement.id}`)
+        .expect(200);
+
+      expect(response.body).toMatchObject({
+        id: createdAnnouncement.id,
+        title: 'Test Announcement',
+        content: 'Test content'
+      });
+    });
+  });
+
+  describe('READ - Error Path', () => {
+    it('should return 404 when announcement not found', async () => {
+      const nonExistentId = 99999;
+
+      const response = await request(app)
+        .get(`/api/announcements/${nonExistentId}`)
+        .expect(404);
+
+      expect(response.body.error).toContain('not found');
+    });
+
+    it('should return 400 for invalid announcement id format', async () => {
+      await request(app)
+        .get('/api/announcements/invalid-id')
+        .expect(400);
+    });
+  });
+
+  describe('UPDATE - Happy Path', () => {
+    let createdAnnouncement;
+
+    beforeEach(async () => {
+      createdAnnouncement = await Announcement.create({
+        title: 'Original Title',
+        content: 'Original content',
+        priority: 'low',
+        active: true
+      });
+    });
+
+    it('should update an announcement with valid data', async () => {
+      const updateData = {
+        title: 'Updated Title',
+        content: 'Updated content',
+        priority: 'high'
+      };
+
+      const response = await request(app)
+        .put(`/api/announcements/${createdAnnouncement.id}`)
+        .send(updateData)
+        .expect(200);
+
+      expect(response.body).toMatchObject(updateData);
+    });
+
+    it('should partially update an announcement', async () => {
+      const updateData = { title: 'Partially Updated Title' };
+
+      const response = await request(app)
+        .put(`/api/announcements/${createdAnnouncement.id}`)
+        .send(updateData)
+        .expect(200);
+
+      expect(response.body.title).toBe(updateData.title);
+      expect(response.body.content).toBe('Original content');
+    });
+  });
+
+  describe('UPDATE - Error Path', () => {
+    it('should return 404 when updating non-existent announcement', async () => {
+      const nonExistentId = 99999;
+      const updateData = { title: 'Updated Title' };
+
+      const response = await request(app)
+        .put(`/api/announcements/${nonExistentId}`)
+        .send(updateData)
+        .expect(404);
+
+      expect(response.body.error).toContain('not found');
+    });
+
+    it('should return 400 when update data is invalid', async () => {
+      const announcement = await Announcement.create({
+        title: 'Test',
+        content: 'Test content',
+        priority: 'medium'
+      });
+
+      const invalidUpdateData = { priority: 'invalid_priority' };
+
+      await request(app)
+        .put(`/api/announcements/${announcement.id}`)
+        .send(invalidUpdateData)
+        .expect(400);
+    });
+  });
+
+  describe('DELETE - Happy Path', () => {
+    let createdAnnouncement;
+
+    beforeEach(async () => {
+      createdAnnouncement = await Announcement.create({
+        title: 'To Be Deleted',
+        content: 'Delete me',
+        priority: 'low',
+        active: false
+      });
+    });
+
+    it('should delete an announcement successfully', async () => {
+      await request(app)
+        .delete(`/api/announcements/${createdAnnouncement.id}`)
+        .expect(204);
+
+      // Verify deletion
+      await request(app)
+        .get(`/api/announcements/${createdAnnouncement.id}`)
+        .expect(404);
+    });
+  });
+
+  describe('DELETE - Error Path', () => {
+    it('should return 404 when deleting non-existent announcement', async () => {
+      const nonExistentId = 99999;
+
+      const response = await request(app)
+        .delete(`/api/announcements/${nonExistentId}`)
+        .expect(404);
+
+      expect(response.body.error).toContain('not found');
+    });
+
+    it('should return 400 for invalid id format in delete', async () => {
+      await request(app)
+        .delete('/api/announcements/invalid-id')
+        .expect(400);
+    });
+  });
+
+  describe('Business Logic Validation', () => {
+    it('should only return active announcements when filtered', async () => {
+      await Announcement.create({
+        title: 'Active Announcement',
+        content: 'Active content',
+        priority: 'high',
+        active: true
+      });
+
+      await Announcement.create({
+        title: 'Inactive Announcement',
+        content: 'Inactive content',
+        priority: 'low',
+        active: false
+      });
+
+      const response = await request(app)
+        .get('/api/announcements?active=true')
+        .expect(200);
+
+      expect(response.body).toHaveLength(1);
+      expect(response.body[0].title).toBe('Active Announcement');
+    });
+
+    it('should order announcements by priority', async () => {
+      await Announcement.create({
+        title: 'Low Priority',
+        content: 'Content',
+        priority: 'low'
+      });
+
+      await Announcement.create({
+        title: 'High Priority',
+        content: 'Content',
+        priority: 'high'
+      });
+
+      const response = await request(app)
+        .get('/api/announcements?sort=priority')
+        .expect(200);
+
+      expect(response.body[0].priority).toBe('high');
+      expect(response.body[1].priority).toBe('low');
+    });
+  });
+});

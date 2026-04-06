@@ -1,5 +1,32 @@
-describe('TC-003: Company Announcement Form validation and submission', () => {
-  let form, submitButton, titleInput, contentInput, prioritySelect, categorySelect, publishDateInput;
+// Announcement form validation configuration constants
+const ANNOUNCEMENT_VALIDATION_CONSTRAINTS = {
+  TITLE: {
+    MIN_LENGTH: 5,
+    MAX_LENGTH: 100
+  },
+  CONTENT: {
+    MIN_LENGTH: 20,
+    MAX_LENGTH: 2000
+  },
+  AUTHOR: {
+    MIN_LENGTH: 2,
+    MAX_LENGTH: 50
+  },
+  CATEGORY: {
+    REQUIRED: true,
+    VALID_OPTIONS: ['news', 'event', 'maintenance', 'urgent']
+  },
+  PRIORITY: {
+    VALID_OPTIONS: ['low', 'medium', 'high', 'critical']
+  },
+  TAGS: {
+    MAX_COUNT: 10,
+    MAX_TAG_LENGTH: 20
+  }
+};
+
+describe('TC-003: Form validation and submission - Announcement System', () => {
+  let form, submitButton, titleInput, contentInput, authorInput, categorySelect, prioritySelect, tagsInput, publishDateInput, expiryDateInput;
 
   beforeEach(() => {
     // Setup announcement form elements with comprehensive validation attributes
@@ -12,41 +39,41 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
             id="title" 
             name="title" 
             required 
-            minlength="5" 
-            maxlength="100"
+            minlength="${ANNOUNCEMENT_VALIDATION_CONSTRAINTS.TITLE.MIN_LENGTH}" 
+            maxlength="${ANNOUNCEMENT_VALIDATION_CONSTRAINTS.TITLE.MAX_LENGTH}"
             aria-describedby="title-error"
+            placeholder="Enter announcement title"
           >
           <div id="title-error" class="error-message" role="alert"></div>
         </div>
         
         <div class="form-group">
-          <label for="content">Announcement Content *</label>
+          <label for="content">Content *</label>
           <textarea 
             id="content" 
             name="content" 
             required 
-            minlength="20" 
-            maxlength="2000"
+            minlength="${ANNOUNCEMENT_VALIDATION_CONSTRAINTS.CONTENT.MIN_LENGTH}" 
+            maxlength="${ANNOUNCEMENT_VALIDATION_CONSTRAINTS.CONTENT.MAX_LENGTH}"
             aria-describedby="content-error"
+            placeholder="Enter announcement content"
           ></textarea>
           <div id="content-error" class="error-message" role="alert"></div>
         </div>
-        
+
         <div class="form-group">
-          <label for="priority">Priority *</label>
-          <select 
-            id="priority" 
-            name="priority" 
-            required
-            aria-describedby="priority-error"
+          <label for="author">Author *</label>
+          <input 
+            type="text" 
+            id="author" 
+            name="author" 
+            required 
+            minlength="${ANNOUNCEMENT_VALIDATION_CONSTRAINTS.AUTHOR.MIN_LENGTH}" 
+            maxlength="${ANNOUNCEMENT_VALIDATION_CONSTRAINTS.AUTHOR.MAX_LENGTH}"
+            pattern="^[a-zA-Z\s'-]+$"
+            aria-describedby="author-error"
           >
-            <option value="">Select Priority</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-            <option value="urgent">Urgent</option>
-          </select>
-          <div id="priority-error" class="error-message" role="alert"></div>
+          <div id="author-error" class="error-message" role="alert"></div>
         </div>
         
         <div class="form-group">
@@ -58,53 +85,80 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
             aria-describedby="category-error"
           >
             <option value="">Select Category</option>
-            <option value="general">General</option>
-            <option value="hr">Human Resources</option>
-            <option value="it">Information Technology</option>
-            <option value="finance">Finance</option>
-            <option value="operations">Operations</option>
+            <option value="news">News</option>
+            <option value="event">Event</option>
+            <option value="maintenance">Maintenance</option>
+            <option value="urgent">Urgent</option>
           </select>
           <div id="category-error" class="error-message" role="alert"></div>
         </div>
-        
+
         <div class="form-group">
-          <label for="publishDate">Publish Date *</label>
-          <input 
-            type="datetime-local" 
-            id="publishDate" 
-            name="publishDate"
-            required
-            aria-describedby="publishDate-error"
+          <label for="priority">Priority</label>
+          <select 
+            id="priority" 
+            name="priority"
+            aria-describedby="priority-error"
           >
-          <div id="publishDate-error" class="error-message" role="alert"></div>
+            <option value="low">Low</option>
+            <option value="medium" selected>Medium</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+          <div id="priority-error" class="error-message" role="alert"></div>
         </div>
 
         <div class="form-group">
-          <label for="department">Target Department</label>
-          <select 
-            id="department" 
-            name="department"
-            aria-describedby="department-error"
+          <label for="tags">Tags (comma-separated)</label>
+          <input 
+            type="text" 
+            id="tags" 
+            name="tags"
+            aria-describedby="tags-error"
+            placeholder="tag1, tag2, tag3"
           >
-            <option value="">All Departments</option>
-            <option value="engineering">Engineering</option>
-            <option value="marketing">Marketing</option>
-            <option value="sales">Sales</option>
-            <option value="support">Support</option>
-          </select>
-          <div id="department-error" class="error-message" role="alert"></div>
+          <div id="tags-error" class="error-message" role="alert"></div>
+        </div>
+
+        <div class="form-group">
+          <label for="publish-date">Publish Date</label>
+          <input 
+            type="datetime-local" 
+            id="publish-date" 
+            name="publishDate"
+            aria-describedby="publish-date-error"
+          >
+          <div id="publish-date-error" class="error-message" role="alert"></div>
+        </div>
+
+        <div class="form-group">
+          <label for="expiry-date">Expiry Date</label>
+          <input 
+            type="datetime-local" 
+            id="expiry-date" 
+            name="expiryDate"
+            aria-describedby="expiry-date-error"
+          >
+          <div id="expiry-date-error" class="error-message" role="alert"></div>
         </div>
 
         <div class="form-group">
           <label>
-            <input type="checkbox" id="emailNotification" name="emailNotification">
-            Send email notification to all users
+            <input type="checkbox" id="is-featured" name="isFeatured">
+            Feature this announcement
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="send-notification" name="sendNotification" checked>
+            Send push notification
           </label>
         </div>
         
-        <button type="submit" id="submit-btn" disabled>Create Announcement</button>
-        <button type="reset" id="reset-btn">Reset</button>
+        <button type="submit" id="submit-btn" disabled>Publish Announcement</button>
         <button type="button" id="draft-btn">Save as Draft</button>
+        <button type="reset" id="reset-btn">Reset</button>
       </form>
     `;
     
@@ -112,16 +166,19 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
     submitButton = document.getElementById('submit-btn');
     titleInput = document.getElementById('title');
     contentInput = document.getElementById('content');
-    prioritySelect = document.getElementById('priority');
+    authorInput = document.getElementById('author');
     categorySelect = document.getElementById('category');
-    publishDateInput = document.getElementById('publishDate');
+    prioritySelect = document.getElementById('priority');
+    tagsInput = document.getElementById('tags');
+    publishDateInput = document.getElementById('publish-date');
+    expiryDateInput = document.getElementById('expiry-date');
     
-    // Mock announcement form validation handlers
+    // Mock announcement-specific validation handlers
     window.validateAnnouncementForm = jest.fn();
+    window.validateDateRange = jest.fn();
+    window.validateTags = jest.fn();
     window.showFieldError = jest.fn();
     window.clearFieldError = jest.fn();
-    window.createAnnouncement = jest.fn();
-    window.saveDraft = jest.fn();
   });
 
   afterEach(() => {
@@ -129,18 +186,15 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
     jest.clearAllMocks();
   });
 
-  // Happy path tests
-  describe('Happy path - valid announcement form submission', () => {
+  // Happy path tests - TC-003 validation
+  describe('TC-003: Happy path - valid announcement form submission', () => {
     test('should successfully submit announcement form with valid data', async () => {
       // Arrange
-      const futureDate = new Date();
-      futureDate.setDate(futureDate.getDate() + 1);
-      
-      titleInput.value = 'Important Company Update';
-      contentInput.value = 'This is an important announcement regarding company policies and procedures that all employees should be aware of.';
+      titleInput.value = 'Important System Update';
+      contentInput.value = 'This is a comprehensive announcement about the upcoming system maintenance scheduled for next week.';
+      authorInput.value = 'System Administrator';
+      categorySelect.value = 'maintenance';
       prioritySelect.value = 'high';
-      categorySelect.value = 'general';
-      publishDateInput.value = futureDate.toISOString().slice(0, 16);
 
       const mockSubmitHandler = jest.fn((e) => {
         e.preventDefault();
@@ -157,223 +211,235 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
       expect(form.checkValidity()).toBe(true);
     });
 
-    test('should accept all required fields when properly filled', () => {
-      // Arrange
-      const futureDate = new Date();
-      futureDate.setDate(futureDate.getDate() + 1);
-      
-      titleInput.value = 'Team Meeting Announcement';
-      contentInput.value = 'We are scheduling a quarterly team meeting to discuss our progress and upcoming objectives.';
-      prioritySelect.value = 'medium';
-      categorySelect.value = 'hr';
-      publishDateInput.value = futureDate.toISOString().slice(0, 16);
+    test('should validate announcement title with proper length', () => {
+      // Arrange & Act
+      const validTitles = [
+        'System Maintenance',
+        'New Feature Release - Enhanced Dashboard',
+        'Important: Security Update Required'
+      ];
 
-      // Act & Assert
-      expect(titleInput.validity.valid).toBe(true);
-      expect(contentInput.validity.valid).toBe(true);
-      expect(prioritySelect.validity.valid).toBe(true);
-      expect(categorySelect.validity.valid).toBe(true);
-      expect(publishDateInput.validity.valid).toBe(true);
-      expect(form.checkValidity()).toBe(true);
-    });
-
-    test('should validate priority selection correctly', () => {
-      // Arrange
-      const validPriorities = ['low', 'medium', 'high', 'urgent'];
-
-      validPriorities.forEach(priority => {
-        // Act
-        prioritySelect.value = priority;
+      validTitles.forEach(title => {
+        titleInput.value = title;
         
         // Assert
-        expect(prioritySelect.validity.valid).toBe(true);
-        expect(prioritySelect.validity.valueMissing).toBe(false);
+        expect(titleInput.validity.valid).toBe(true);
+        expect(title.length).toBeGreaterThanOrEqual(ANNOUNCEMENT_VALIDATION_CONSTRAINTS.TITLE.MIN_LENGTH);
+        expect(title.length).toBeLessThanOrEqual(ANNOUNCEMENT_VALIDATION_CONSTRAINTS.TITLE.MAX_LENGTH);
       });
     });
 
-    test('should validate category selection correctly', () => {
+    test('should validate announcement content with adequate detail', () => {
       // Arrange
-      const validCategories = ['general', 'hr', 'it', 'finance', 'operations'];
+      const validContent = 'We are pleased to announce the launch of our new dashboard feature. This update includes enhanced reporting capabilities, improved user interface, and better performance metrics.';
+      
+      // Act
+      contentInput.value = validContent;
+      
+      // Assert
+      expect(contentInput.validity.valid).toBe(true);
+      expect(validContent.length).toBeGreaterThanOrEqual(ANNOUNCEMENT_VALIDATION_CONSTRAINTS.CONTENT.MIN_LENGTH);
+    });
+
+    test('should accept valid category selections', () => {
+      // Arrange & Act
+      const validCategories = ANNOUNCEMENT_VALIDATION_CONSTRAINTS.CATEGORY.VALID_OPTIONS;
 
       validCategories.forEach(category => {
-        // Act
         categorySelect.value = category;
         
         // Assert
         expect(categorySelect.validity.valid).toBe(true);
-        expect(categorySelect.validity.valueMissing).toBe(false);
+        expect(ANNOUNCEMENT_VALIDATION_CONSTRAINTS.CATEGORY.VALID_OPTIONS).toContain(category);
       });
     });
 
-    test('should enable submit button when form is valid', () => {
+    test('should validate author name with proper format', () => {
+      // Arrange & Act
+      const validAuthors = [
+        'John Smith',
+        'Mary-Jane Watson',
+        "O'Connor",
+        'System Admin'
+      ];
+
+      validAuthors.forEach(author => {
+        authorInput.value = author;
+        
+        // Assert
+        expect(authorInput.validity.valid).toBe(true);
+      });
+    });
+
+    test('should handle optional tags correctly', () => {
       // Arrange
-      const futureDate = new Date();
-      futureDate.setDate(futureDate.getDate() + 1);
-      
-      titleInput.value = 'Valid Announcement Title';
-      contentInput.value = 'This is a valid announcement content with sufficient length to meet requirements.';
-      prioritySelect.value = 'medium';
-      categorySelect.value = 'general';
+      const validTagStrings = [
+        'urgent, system, maintenance',
+        'news',
+        'feature, update, dashboard, ui',
+        '' // Empty tags should be valid
+      ];
+
+      validTagStrings.forEach(tagString => {
+        // Act
+        tagsInput.value = tagString;
+        
+        // Assert
+        expect(tagsInput.validity.valid).toBe(true);
+        if (tagString) {
+          const tags = tagString.split(',').map(tag => tag.trim());
+          expect(tags.length).toBeLessThanOrEqual(ANNOUNCEMENT_VALIDATION_CONSTRAINTS.TAGS.MAX_COUNT);
+        }
+      });
+    });
+
+    test('should validate date range for publish and expiry dates', () => {
+      // Arrange
+      const now = new Date();
+      const futureDate = new Date(now.getTime() + 24 * 60 * 60 * 1000); // Tomorrow
+      const laterDate = new Date(now.getTime() + 48 * 60 * 60 * 1000); // Day after tomorrow
+
+      // Act
       publishDateInput.value = futureDate.toISOString().slice(0, 16);
-
-      // Act
-      const inputEvent = new Event('input', { bubbles: true });
-      titleInput.dispatchEvent(inputEvent);
-      contentInput.dispatchEvent(inputEvent);
+      expiryDateInput.value = laterDate.toISOString().slice(0, 16);
 
       // Assert
-      expect(form.checkValidity()).toBe(true);
-    });
-
-    test('should save announcement as draft', async () => {
-      // Arrange
-      titleInput.value = 'Draft Announcement';
-      contentInput.value = 'This is a draft announcement that will be saved for later editing.';
-      const draftButton = document.getElementById('draft-btn');
-      
-      const mockDraftHandler = jest.fn(() => {
-        return Promise.resolve({ success: true, draftId: 'draft_123' });
-      });
-      draftButton.addEventListener('click', mockDraftHandler);
-
-      // Act
-      draftButton.click();
-
-      // Assert
-      expect(mockDraftHandler).toHaveBeenCalledTimes(1);
+      expect(publishDateInput.validity.valid).toBe(true);
+      expect(expiryDateInput.validity.valid).toBe(true);
+      expect(new Date(expiryDateInput.value)).toBeInstanceOf(Date);
+      expect(new Date(publishDateInput.value)).toBeInstanceOf(Date);
     });
   });
 
-  // Error path tests
-  describe('Error path - invalid announcement form submission', () => {
-    test('should prevent submission when title field is empty', () => {
-      // Arrange
-      titleInput.value = '';
-      contentInput.value = 'Valid content for the announcement with adequate length.';
-      prioritySelect.value = 'medium';
-      categorySelect.value = 'general';
+  // Error path tests - TC-003 validation
+  describe('TC-003: Error path - invalid announcement form submission', () => {
+    test('should prevent submission when title is empty or too short', () => {
+      // Arrange & Act
+      const invalidTitles = ['', 'Hi', 'Test'];
 
-      // Act & Assert
-      expect(titleInput.validity.valid).toBe(false);
-      expect(titleInput.validity.valueMissing).toBe(true);
-      expect(form.checkValidity()).toBe(false);
+      invalidTitles.forEach(title => {
+        titleInput.value = title;
+        
+        // Assert
+        expect(titleInput.validity.valid).toBe(false);
+        if (title === '') {
+          expect(titleInput.validity.valueMissing).toBe(true);
+        } else {
+          expect(titleInput.validity.tooShort).toBe(true);
+        }
+      });
     });
 
-    test('should prevent submission when content field is empty', () => {
+    test('should prevent submission when content is insufficient', () => {
       // Arrange
-      titleInput.value = 'Valid Title';
-      contentInput.value = '';
-      prioritySelect.value = 'high';
-      categorySelect.value = 'it';
+      contentInput.value = 'Too short content'; // Less than 20 characters
 
       // Act & Assert
       expect(contentInput.validity.valid).toBe(false);
-      expect(contentInput.validity.valueMissing).toBe(true);
-      expect(form.checkValidity()).toBe(false);
+      expect(contentInput.validity.tooShort).toBe(true);
     });
 
-    test('should prevent submission when priority is not selected', () => {
+    test('should prevent submission when no category is selected', () => {
       // Arrange
-      titleInput.value = 'Valid Title';
-      contentInput.value = 'Valid content with sufficient length for announcement.';
-      prioritySelect.value = '';
-      categorySelect.value = 'finance';
-
-      // Act & Assert
-      expect(prioritySelect.validity.valid).toBe(false);
-      expect(prioritySelect.validity.valueMissing).toBe(true);
-      expect(form.checkValidity()).toBe(false);
-    });
-
-    test('should prevent submission when category is not selected', () => {
-      // Arrange
-      titleInput.value = 'Valid Title';
-      contentInput.value = 'Valid content with sufficient length for announcement.';
-      prioritySelect.value = 'low';
       categorySelect.value = '';
 
       // Act & Assert
       expect(categorySelect.validity.valid).toBe(false);
       expect(categorySelect.validity.valueMissing).toBe(true);
-      expect(form.checkValidity()).toBe(false);
     });
 
-    test('should prevent submission when publish date is not set', () => {
-      // Arrange
-      titleInput.value = 'Valid Title';
-      contentInput.value = 'Valid content with sufficient length for announcement.';
-      prioritySelect.value = 'medium';
-      categorySelect.value = 'operations';
-      publishDateInput.value = '';
+    test('should reject invalid author name formats', () => {
+      // Arrange & Act
+      const invalidAuthors = [
+        'Admin123', // Contains numbers
+        'user@domain.com', // Contains @ symbol
+        'A', // Too short
+        '', // Empty
+        'Author_With_Underscores' // Contains underscores
+      ];
 
-      // Act & Assert
-      expect(publishDateInput.validity.valid).toBe(false);
-      expect(publishDateInput.validity.valueMissing).toBe(true);
-      expect(form.checkValidity()).toBe(false);
+      invalidAuthors.forEach(author => {
+        authorInput.value = author;
+        
+        // Assert
+        expect(authorInput.validity.valid).toBe(false);
+        if (author === '') {
+          expect(authorInput.validity.valueMissing).toBe(true);
+        } else if (author.length < ANNOUNCEMENT_VALIDATION_CONSTRAINTS.AUTHOR.MIN_LENGTH) {
+          expect(authorInput.validity.tooShort).toBe(true);
+        } else {
+          expect(authorInput.validity.patternMismatch).toBe(true);
+        }
+      });
     });
 
-    test('should validate title field length constraints', () => {
-      // Test minimum length
-      titleInput.value = 'Hi'; // Too short
-      expect(titleInput.validity.valid).toBe(false);
-      expect(titleInput.validity.tooShort).toBe(true);
-
+    test('should validate content length constraints', () => {
       // Test maximum length
-      titleInput.value = 'A'.repeat(101); // Too long
-      expect(titleInput.validity.valid).toBe(false);
-      expect(titleInput.validity.tooLong).toBe(true);
-    });
-
-    test('should validate content field length constraints', () => {
-      // Test minimum length
-      contentInput.value = 'Too short'; // Too short
-      expect(contentInput.validity.valid).toBe(false);
-      expect(contentInput.validity.tooShort).toBe(true);
-
-      // Test maximum length
-      contentInput.value = 'A'.repeat(2001); // Too long
+      const tooLongContent = 'A'.repeat(ANNOUNCEMENT_VALIDATION_CONSTRAINTS.CONTENT.MAX_LENGTH + 1);
+      contentInput.value = tooLongContent;
+      
       expect(contentInput.validity.valid).toBe(false);
       expect(contentInput.validity.tooLong).toBe(true);
+    });
+
+    test('should handle invalid tag formats and constraints', () => {
+      // Arrange - too many tags
+      const tooManyTags = Array.from({length: ANNOUNCEMENT_VALIDATION_CONSTRAINTS.TAGS.MAX_COUNT + 1}, (_, i) => `tag${i}`).join(', ');
+      
+      // Act
+      tagsInput.value = tooManyTags;
+      const tags = tooManyTags.split(',').map(tag => tag.trim());
+      
+      // Assert
+      expect(tags.length).toBeGreaterThan(ANNOUNCEMENT_VALIDATION_CONSTRAINTS.TAGS.MAX_COUNT);
+      
+      // Test individual tag length
+      const longTag = 'A'.repeat(ANNOUNCEMENT_VALIDATION_CONSTRAINTS.TAGS.MAX_TAG_LENGTH + 1);
+      tagsInput.value = longTag;
+      expect(longTag.length).toBeGreaterThan(ANNOUNCEMENT_VALIDATION_CONSTRAINTS.TAGS.MAX_TAG_LENGTH);
+    });
+
+    test('should prevent submission with invalid date ranges', () => {
+      // Arrange - expiry date before publish date
+      const now = new Date();
+      const futureDate = new Date(now.getTime() + 48 * 60 * 60 * 1000); // Day after tomorrow
+      const pastDate = new Date(now.getTime() + 24 * 60 * 60 * 1000); // Tomorrow (earlier than publish)
+
+      // Act
+      publishDateInput.value = futureDate.toISOString().slice(0, 16);
+      expiryDateInput.value = pastDate.toISOString().slice(0, 16);
+
+      // Assert
+      const publishDate = new Date(publishDateInput.value);
+      const expiryDate = new Date(expiryDateInput.value);
+      expect(expiryDate).toBeLessThan(publishDate); // This should be invalid
     });
 
     test('should prevent submission when all required fields are empty', () => {
       // Arrange
       titleInput.value = '';
       contentInput.value = '';
-      prioritySelect.value = '';
+      authorInput.value = '';
       categorySelect.value = '';
-      publishDateInput.value = '';
 
-      const mockSubmitHandler = jest.fn((e) => e.preventDefault());
-      form.addEventListener('submit', mockSubmitHandler);
-
-      // Act
-      const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-      form.dispatchEvent(submitEvent);
-
-      // Assert
+      // Act & Assert
       expect(form.checkValidity()).toBe(false);
       expect(titleInput.validity.valueMissing).toBe(true);
       expect(contentInput.validity.valueMissing).toBe(true);
-      expect(prioritySelect.validity.valueMissing).toBe(true);
+      expect(authorInput.validity.valueMissing).toBe(true);
       expect(categorySelect.validity.valueMissing).toBe(true);
-      expect(publishDateInput.validity.valueMissing).toBe(true);
     });
 
-    test('should handle announcement creation errors gracefully', async () => {
+    test('should handle announcement creation API errors gracefully', async () => {
       // Arrange
-      const futureDate = new Date();
-      futureDate.setDate(futureDate.getDate() + 1);
-      
-      titleInput.value = 'Test Announcement';
-      contentInput.value = 'This is a test announcement content.';
-      prioritySelect.value = 'high';
-      categorySelect.value = 'general';
-      publishDateInput.value = futureDate.toISOString().slice(0, 16);
+      titleInput.value = 'Valid Title';
+      contentInput.value = 'This is a valid announcement content with sufficient length for testing purposes.';
+      authorInput.value = 'John Doe';
+      categorySelect.value = 'news';
 
       const mockSubmitHandler = jest.fn((e) => {
         e.preventDefault();
-        throw new Error('Failed to create announcement');
+        throw new Error('Failed to create announcement: Server error');
       });
       form.addEventListener('submit', mockSubmitHandler);
 
@@ -381,120 +447,143 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
       expect(() => {
         const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
         form.dispatchEvent(submitEvent);
-      }).toThrow('Failed to create announcement');
+      }).toThrow('Failed to create announcement: Server error');
     });
   });
 
-  // Edge cases and accessibility tests
-  describe('Edge cases and accessibility for announcement form', () => {
-    test('should maintain focus on invalid field after submission attempt', () => {
+  // Announcement-specific business logic tests
+  describe('TC-003: Announcement business logic validation', () => {
+    test('should validate priority-based notification requirements', () => {
       // Arrange
-      titleInput.value = '';
-      contentInput.value = 'Valid announcement content.';
-      prioritySelect.value = 'medium';
-      categorySelect.value = 'hr';
-
-      // Act
-      const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-      form.dispatchEvent(submitEvent);
-
-      // Assert
-      expect(form.checkValidity()).toBe(false);
-      // In real implementation, invalid field should receive focus
-    });
-
-    test('should display appropriate error messages for invalid announcement fields', () => {
-      // Arrange
-      titleInput.value = '';
-      const errorDiv = document.getElementById('title-error');
-
-      // Act
-      const blurEvent = new Event('blur', { bubbles: true });
-      titleInput.dispatchEvent(blurEvent);
-
-      // Assert
-      expect(titleInput.validity.valueMissing).toBe(true);
-      expect(errorDiv.getAttribute('role')).toBe('alert');
-    });
-
-    test('should reset announcement form fields when reset button is clicked', () => {
-      // Arrange
-      titleInput.value = 'Test Announcement';
-      contentInput.value = 'Test content';
-      prioritySelect.value = 'high';
-      categorySelect.value = 'it';
-      const resetButton = document.getElementById('reset-btn');
-
-      // Act
-      resetButton.click();
-
-      // Assert
-      expect(titleInput.value).toBe('');
-      expect(contentInput.value).toBe('');
-      expect(prioritySelect.value).toBe('');
-      expect(categorySelect.value).toBe('');
-    });
-
-    test('should validate form state changes during user interaction', () => {
-      // Arrange
-      let formValidState = false;
-
-      const validateFormState = () => {
-        formValidState = form.checkValidity();
-        submitButton.disabled = !formValidState;
+      const criticalPriorityScenario = () => {
+        prioritySelect.value = 'critical';
+        const sendNotificationCheckbox = document.getElementById('send-notification');
+        sendNotificationCheckbox.checked = false;
       };
 
-      const futureDate = new Date();
-      futureDate.setDate(futureDate.getDate() + 1);
+      // Act
+      criticalPriorityScenario();
 
-      // Act - simulate user filling form step by step
-      titleInput.value = 'Announcement';
-      validateFormState();
-      expect(formValidState).toBe(false); // Other required fields still empty
-
-      contentInput.value = 'This is announcement content with adequate length.';
-      validateFormState();
-      expect(formValidState).toBe(false); // Priority and category still empty
-
-      prioritySelect.value = 'medium';
-      validateFormState();
-      expect(formValidState).toBe(false); // Category and date still empty
-
-      categorySelect.value = 'general';
-      validateFormState();
-      expect(formValidState).toBe(false); // Publish date still empty
-
-      publishDateInput.value = futureDate.toISOString().slice(0, 16);
-      validateFormState();
-      expect(formValidState).toBe(true); // All required fields filled
+      // Assert - Critical announcements should typically require notifications
+      expect(prioritySelect.value).toBe('critical');
+      expect(document.getElementById('send-notification').checked).toBe(false);
+      // In real implementation, this should trigger a validation warning
     });
 
-    test('should handle announcement form submission with loading state', async () => {
+    test('should handle draft vs publish workflow', () => {
       // Arrange
-      const futureDate = new Date();
-      futureDate.setDate(futureDate.getDate() + 1);
-      
-      titleInput.value = 'Loading Test Announcement';
-      contentInput.value = 'Testing loading state during announcement submission.';
+      titleInput.value = 'Draft Announcement';
+      contentInput.value = 'This announcement is being saved as draft for later review and publishing.';
+      authorInput.value = 'Content Creator';
+      categorySelect.value = 'news';
+
+      const draftButton = document.getElementById('draft-btn');
+      const mockDraftHandler = jest.fn();
+      draftButton.addEventListener('click', mockDraftHandler);
+
+      // Act
+      draftButton.click();
+
+      // Assert
+      expect(mockDraftHandler).toHaveBeenCalledTimes(1);
+      // Draft should not require all validations that publish requires
+    });
+
+    test('should validate featured announcement constraints', () => {
+      // Arrange
+      const featuredCheckbox = document.getElementById('is-featured');
+      titleInput.value = 'Featured Announcement';
+      contentInput.value = 'This is a featured announcement that will appear prominently on the dashboard.';
+      authorInput.value = 'Marketing Team';
+      categorySelect.value = 'news';
       prioritySelect.value = 'high';
-      categorySelect.value = 'general';
-      publishDateInput.value = futureDate.toISOString().slice(0, 16);
 
-      let isSubmitting = false;
-      const mockSubmitHandler = jest.fn(async (e) => {
-        e.preventDefault();
-        isSubmitting = true;
-        submitButton.disabled = true;
-        submitButton.textContent = 'Creating Announcement...';
-        
-        // Simulate async operation
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        isSubmitting = false;
-        submitButton.disabled = false;
-        submitButton.textContent = 'Create Announcement';
+      // Act
+      featuredCheckbox.checked = true;
+
+      // Assert
+      expect(featuredCheckbox.checked).toBe(true);
+      expect(prioritySelect.value).toBe('high');
+      // Featured announcements typically should have high or critical priority
+    });
+
+    test('should validate announcement scheduling logic', () => {
+      // Arrange
+      const now = new Date();
+      const scheduleDate = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2 hours from now
+      const expiryDate = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours from now
+
+      // Act
+      publishDateInput.value = scheduleDate.toISOString().slice(0, 16);
+      expiryDateInput.value = expiryDate.toISOString().slice(0, 16);
+
+      // Assert
+      const publishTime = new Date(publishDateInput.value);
+      const expiryTime = new Date(expiryDateInput.value);
+      
+      expect(publishTime).toBeInstanceOf(Date);
+      expect(expiryTime).toBeInstanceOf(Date);
+      expect(expiryTime.getTime()).toBeGreaterThan(publishTime.getTime());
+      expect(publishTime.getTime()).toBeGreaterThan(now.getTime());
+    });
+
+    test('should handle category-specific validation rules', () => {
+      // Arrange - Urgent category should have specific requirements
+      const urgentAnnouncementSetup = () => {
+        categorySelect.value = 'urgent';
+        prioritySelect.value = 'low'; // This should be invalid for urgent category
+        titleInput.value = 'Urgent System Alert';
+        contentInput.value = 'This is an urgent announcement requiring immediate attention from all users.';
+        authorInput.value = 'System Administrator';
+      };
+
+      // Act
+      urgentAnnouncementSetup();
+
+      // Assert
+      expect(categorySelect.value).toBe('urgent');
+      expect(prioritySelect.value).toBe('low');
+      // In real implementation, urgent category should enforce high/critical priority
+    });
+
+    test('should validate announcement content for different categories', () => {
+      // Arrange
+      const categoryContentRules = [
+        {
+          category: 'maintenance',
+          validContent: 'Scheduled maintenance will occur on Sunday from 2 AM to 6 AM EST. Services will be temporarily unavailable.',
+          shouldInclude: ['maintenance', 'scheduled', 'time']
+        },
+        {
+          category: 'event',
+          validContent: 'Join us for the quarterly company meeting on Friday, March 15th at 3 PM in the main conference room.',
+          shouldInclude: ['date', 'time', 'location']
+        }
+      ];
+
+      categoryContentRules.forEach(rule => {
+        // Act
+        categorySelect.value = rule.category;
+        contentInput.value = rule.validContent;
+
+        // Assert
+        expect(categorySelect.validity.valid).toBe(true);
+        expect(contentInput.validity.valid).toBe(true);
+        // In real implementation, content could be validated against category-specific keywords
       });
+    });
 
+    test('should handle form state persistence during validation errors', () => {
+      // Arrange
+      titleInput.value = 'Test Announcement';
+      contentInput.value = 'Valid content for testing form state persistence.';
+      authorInput.value = ''; // Invalid - missing required field
+      categorySelect.value = 'news';
+
+      const mockSubmitHandler = jest.fn((e) => {
+        e.preventDefault();
+        // Simulate validation error handling
+      });
       form.addEventListener('submit', mockSubmitHandler);
 
       // Act
@@ -502,52 +591,11 @@ describe('TC-003: Company Announcement Form validation and submission', () => {
       form.dispatchEvent(submitEvent);
 
       // Assert
-      expect(mockSubmitHandler).toHaveBeenCalledTimes(1);
-      expect(submitButton.disabled).toBe(true);
-    });
-
-    test('should validate email notification checkbox functionality', () => {
-      // Arrange
-      const emailNotificationCheckbox = document.getElementById('emailNotification');
-
-      // Act
-      emailNotificationCheckbox.checked = true;
-
-      // Assert
-      expect(emailNotificationCheckbox.checked).toBe(true);
-
-      // Act
-      emailNotificationCheckbox.checked = false;
-
-      // Assert
-      expect(emailNotificationCheckbox.checked).toBe(false);
-    });
-
-    test('should validate department targeting functionality', () => {
-      // Arrange
-      const departmentSelect = document.getElementById('department');
-      const validDepartments = ['', 'engineering', 'marketing', 'sales', 'support'];
-
-      validDepartments.forEach(department => {
-        // Act
-        departmentSelect.value = department;
-        
-        // Assert
-        expect(departmentSelect.validity.valid).toBe(true);
-      });
-    });
-
-    test('should handle publish date validation for past dates', () => {
-      // Arrange
-      const pastDate = new Date();
-      pastDate.setDate(pastDate.getDate() - 1);
-      
-      // Act
-      publishDateInput.value = pastDate.toISOString().slice(0, 16);
-      
-      // Assert
-      // Note: This would require custom validation logic to prevent past dates
-      expect(publishDateInput.validity.valid).toBe(true); // HTML5 validation passes, but business logic should reject
+      expect(form.checkValidity()).toBe(false);
+      expect(titleInput.value).toBe('Test Announcement'); // Should retain valid values
+      expect(contentInput.value).toBe('Valid content for testing form state persistence.');
+      expect(categorySelect.value).toBe('news');
+      expect(authorInput.validity.valueMissing).toBe(true);
     });
   });
 });

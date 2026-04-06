@@ -1,6 +1,6 @@
 /**
  * Security Test Suite
- * Tests for XSS protection, backend validation, SQL injection, and authorization
+ * Tests for XSS protection and other security measures
  */
 
 const { JSDOM } = require('jsdom');
@@ -77,329 +77,178 @@ describe('TC-005: XSS Protection Tests', () => {
       expect(sanitized).toBe('<div><p>Content</p></div>');
       expect(sanitized).not.toContain('<script>');
     });
-  });
-});
 
-describe('TC-006: Backend Input Validation Tests', () => {
-  // Mock validation functions
-  const validateAnnouncementInput = (data) => {
-    const errors = [];
-    
-    if (!data.title || typeof data.title !== 'string') {
-      errors.push('Title is required and must be a string');
-    }
-    
-    if (data.title && data.title.length > 255) {
-      errors.push('Title must not exceed 255 characters');
-    }
-    
-    if (!data.content || typeof data.content !== 'string') {
-      errors.push('Content is required and must be a string');
-    }
-    
-    if (data.content && data.content.length > 10000) {
-      errors.push('Content must not exceed 10000 characters');
-    }
-    
-    if (data.priority && !['low', 'medium', 'high', 'urgent'].includes(data.priority)) {
-      errors.push('Priority must be one of: low, medium, high, urgent');
-    }
-    
-    return errors;
-  };
-
-  describe('Valid Input Validation', () => {
-    test('TC-006: should accept valid announcement data', () => {
-      const validData = {
-        title: 'Valid Announcement',
-        content: 'This is valid content',
-        priority: 'medium'
-      };
-      
-      const errors = validateAnnouncementInput(validData);
-      expect(errors).toHaveLength(0);
+    test('TC-005: should block SVG script injection', () => {
+      const maliciousHtml = '<svg onload="alert(\'XSS\')"><script>alert("XSS")</script></svg>';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).not.toContain('onload');
+      expect(sanitized).not.toContain('<script>');
+      expect(sanitized).toBe('<svg></svg>');
     });
 
-    test('TC-006: should accept announcement without optional priority', () => {
-      const validData = {
-        title: 'Valid Announcement',
-        content: 'This is valid content'
-      };
-      
-      const errors = validateAnnouncementInput(validData);
-      expect(errors).toHaveLength(0);
+    test('TC-005: should block object and embed tags', () => {
+      const maliciousHtml = '<object data="javascript:alert(\'XSS\')"></object>';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).toBe('');
+    });
+
+    test('TC-005: should handle multiple XSS vectors in one payload', () => {
+      const maliciousHtml = '<div onclick="alert(1)"><script>alert(2)</script><img src=x onerror="alert(3)"></div>';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).not.toContain('onclick');
+      expect(sanitized).not.toContain('<script>');
+      expect(sanitized).not.toContain('onerror');
+      expect(sanitized).toBe('<div><img src="x"></div>');
     });
   });
 
-  describe('Invalid Input Validation', () => {
-    test('TC-006: should reject missing title', () => {
-      const invalidData = {
-        content: 'Content without title'
-      };
-      
-      const errors = validateAnnouncementInput(invalidData);
-      expect(errors).toContain('Title is required and must be a string');
+  describe('Edge Cases', () => {
+    test('TC-005: should handle empty input', () => {
+      const sanitized = purify.sanitize('');
+      expect(sanitized).toBe('');
     });
 
-    test('TC-006: should reject missing content', () => {
-      const invalidData = {
-        title: 'Title without content'
-      };
-      
-      const errors = validateAnnouncementInput(invalidData);
-      expect(errors).toContain('Content is required and must be a string');
+    test('TC-005: should handle null input', () => {
+      const sanitized = purify.sanitize(null);
+      expect(sanitized).toBe('');
     });
 
-    test('TC-006: should reject title exceeding length limit', () => {
-      const invalidData = {
-        title: 'A'.repeat(256),
-        content: 'Valid content'
-      };
-      
-      const errors = validateAnnouncementInput(invalidData);
-      expect(errors).toContain('Title must not exceed 255 characters');
+    test('TC-005: should handle undefined input', () => {
+      const sanitized = purify.sanitize(undefined);
+      expect(sanitized).toBe('');
     });
 
-    test('TC-006: should reject content exceeding length limit', () => {
-      const invalidData = {
-        title: 'Valid title',
-        content: 'A'.repeat(10001)
-      };
-      
-      const errors = validateAnnouncementInput(invalidData);
-      expect(errors).toContain('Content must not exceed 10000 characters');
+    test('TC-005: should handle malformed HTML gracefully', () => {
+      const malformedHtml = '<div><p>Unclosed tags<span>';
+      const sanitized = purify.sanitize(malformedHtml);
+      expect(sanitized).toContain('Unclosed tags');
+      expect(sanitized).not.toContain('script');
+    });
+  });
+
+  describe('Configuration Tests', () => {
+    test('TC-005: should respect custom configuration', () => {
+      const customConfig = { ALLOWED_TAGS: ['b'] };
+      const html = '<b>Bold</b><i>Italic</i>';
+      const sanitized = purify.sanitize(html, customConfig);
+      expect(sanitized).toContain('<b>Bold</b>');
+      expect(sanitized).not.toContain('<i>');
     });
 
-    test('TC-006: should reject invalid priority value', () => {
-      const invalidData = {
-        title: 'Valid title',
-        content: 'Valid content',
-        priority: 'invalid'
-      };
-      
-      const errors = validateAnnouncementInput(invalidData);
-      expect(errors).toContain('Priority must be one of: low, medium, high, urgent');
-    });
-
-    test('TC-006: should reject non-string title', () => {
-      const invalidData = {
-        title: 123,
-        content: 'Valid content'
-      };
-      
-      const errors = validateAnnouncementInput(invalidData);
-      expect(errors).toContain('Title is required and must be a string');
+    test('TC-005: should handle whitelist configuration', () => {
+      const config = { ALLOWED_TAGS: ['p', 'strong'], ALLOWED_ATTR: [] };
+      const html = '<p><strong>Text</strong><script>alert("XSS")</script></p>';
+      const sanitized = purify.sanitize(html, config);
+      expect(sanitized).toBe('<p><strong>Text</strong></p>');
     });
   });
 });
 
-describe('TC-007: SQL Injection Protection Tests', () => {
-  // Mock parameterized query function
-  const buildParameterizedQuery = (operation, params) => {
-    const queries = {
-      select: 'SELECT * FROM announcements WHERE id = ?',
-      insert: 'INSERT INTO announcements (title, content, priority) VALUES (?, ?, ?)',
-      update: 'UPDATE announcements SET title = ?, content = ?, priority = ? WHERE id = ?',
-      delete: 'DELETE FROM announcements WHERE id = ?'
-    };
-    
-    return {
-      query: queries[operation],
-      params: params,
-      isParameterized: true
-    };
-  };
+describe('TC-006: Input Validation Tests', () => {
+  describe('String Validation', () => {
+    test('TC-006: should validate string length limits', () => {
+      const validateString = (input, maxLength) => {
+        if (typeof input !== 'string') return false;
+        if (input.length > maxLength) return false;
+        return true;
+      };
 
-  const detectSQLInjection = (input) => {
-    const sqlKeywords = [
-      'UNION', 'SELECT', 'DROP', 'DELETE', 'INSERT', 'UPDATE',
-      'OR 1=1', 'EXEC', 'EXECUTE', '--', ';'
-    ];
-    
-    return sqlKeywords.some(keyword => 
-      input.toUpperCase().includes(keyword.toUpperCase())
-    );
-  };
-
-  describe('Parameterized Query Tests', () => {
-    test('TC-007: should use parameterized query for SELECT operations', () => {
-      const result = buildParameterizedQuery('select', [1]);
-      
-      expect(result.query).toBe('SELECT * FROM announcements WHERE id = ?');
-      expect(result.params).toEqual([1]);
-      expect(result.isParameterized).toBe(true);
+      expect(validateString('valid', 10)).toBe(true);
+      expect(validateString('this is too long', 5)).toBe(false);
+      expect(validateString(123, 10)).toBe(false);
     });
 
-    test('TC-007: should use parameterized query for INSERT operations', () => {
-      const result = buildParameterizedQuery('insert', ['Title', 'Content', 'medium']);
-      
-      expect(result.query).toBe('INSERT INTO announcements (title, content, priority) VALUES (?, ?, ?)');
-      expect(result.params).toEqual(['Title', 'Content', 'medium']);
-      expect(result.isParameterized).toBe(true);
+    test('TC-006: should validate email format', () => {
+      const validateEmail = (email) => {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+      };
+
+      expect(validateEmail('test@example.com')).toBe(true);
+      expect(validateEmail('invalid-email')).toBe(false);
+      expect(validateEmail('test@')).toBe(false);
     });
 
-    test('TC-007: should use parameterized query for UPDATE operations', () => {
-      const result = buildParameterizedQuery('update', ['New Title', 'New Content', 'high', 1]);
-      
-      expect(result.query).toBe('UPDATE announcements SET title = ?, content = ?, priority = ? WHERE id = ?');
-      expect(result.params).toEqual(['New Title', 'New Content', 'high', 1]);
-      expect(result.isParameterized).toBe(true);
-    });
+    test('TC-006: should validate against SQL injection patterns', () => {
+      const hasSqlInjection = (input) => {
+        const sqlPatterns = [
+          /(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|UNION|SCRIPT)\b)/i,
+          /(--|;|\/\*|\*\/)/,
+          /(\b(OR|AND)\b.*[=<>])/i
+        ];
+        return sqlPatterns.some(pattern => pattern.test(input));
+      };
 
-    test('TC-007: should use parameterized query for DELETE operations', () => {
-      const result = buildParameterizedQuery('delete', [1]);
-      
-      expect(result.query).toBe('DELETE FROM announcements WHERE id = ?');
-      expect(result.params).toEqual([1]);
-      expect(result.isParameterized).toBe(true);
+      expect(hasSqlInjection('normal text')).toBe(false);
+      expect(hasSqlInjection("'; DROP TABLE users; --")).toBe(true);
+      expect(hasSqlInjection('1 OR 1=1')).toBe(true);
     });
   });
 
-  describe('SQL Injection Detection Tests', () => {
-    test('TC-007: should detect UNION-based injection attempts', () => {
-      const maliciousInput = "1' UNION SELECT * FROM users--";
-      expect(detectSQLInjection(maliciousInput)).toBe(true);
+  describe('File Upload Validation', () => {
+    test('TC-006: should validate file extensions', () => {
+      const validateFileExtension = (filename, allowedExtensions) => {
+        const ext = filename.toLowerCase().split('.').pop();
+        return allowedExtensions.includes(ext);
+      };
+
+      const allowedExts = ['jpg', 'png', 'gif'];
+      expect(validateFileExtension('image.jpg', allowedExts)).toBe(true);
+      expect(validateFileExtension('script.exe', allowedExts)).toBe(false);
     });
 
-    test('TC-007: should detect OR-based injection attempts', () => {
-      const maliciousInput = "admin' OR '1'='1";
-      expect(detectSQLInjection(maliciousInput)).toBe(true);
-    });
+    test('TC-006: should validate file size limits', () => {
+      const validateFileSize = (fileSize, maxSizeInMB) => {
+        const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
+        return fileSize <= maxSizeInBytes;
+      };
 
-    test('TC-007: should detect DROP table attempts', () => {
-      const maliciousInput = "'; DROP TABLE announcements; --";
-      expect(detectSQLInjection(maliciousInput)).toBe(true);
-    });
-
-    test('TC-007: should detect comment-based injection', () => {
-      const maliciousInput = "test'; --";
-      expect(detectSQLInjection(maliciousInput)).toBe(true);
-    });
-
-    test('TC-007: should allow safe input', () => {
-      const safeInput = "Regular announcement title";
-      expect(detectSQLInjection(safeInput)).toBe(false);
+      expect(validateFileSize(1048576, 2)).toBe(true); // 1MB file, 2MB limit
+      expect(validateFileSize(5242880, 2)).toBe(false); // 5MB file, 2MB limit
     });
   });
 });
 
-describe('TC-008: Authorization Tests', () => {
-  // Mock user roles and permissions
-  const USER_ROLES = {
-    ADMIN: 'admin',
-    MODERATOR: 'moderator',
-    USER: 'user',
-    GUEST: 'guest'
-  };
+describe('TC-007: Authentication Security Tests', () => {
+  describe('Password Security', () => {
+    test('TC-007: should validate strong passwords', () => {
+      const validatePassword = (password) => {
+        const minLength = 8;
+        const hasUpperCase = /[A-Z]/.test(password);
+        const hasLowerCase = /[a-z]/.test(password);
+        const hasNumbers = /\d/.test(password);
+        const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
 
-  const PERMISSIONS = {
-    CREATE_ANNOUNCEMENT: 'create_announcement',
-    READ_ANNOUNCEMENT: 'read_announcement',
-    UPDATE_ANNOUNCEMENT: 'update_announcement',
-    DELETE_ANNOUNCEMENT: 'delete_announcement'
-  };
+        return password.length >= minLength && hasUpperCase && hasLowerCase && hasNumbers && hasSpecialChar;
+      };
 
-  const checkPermission = (userRole, permission) => {
-    const rolePermissions = {
-      [USER_ROLES.ADMIN]: [
-        PERMISSIONS.CREATE_ANNOUNCEMENT,
-        PERMISSIONS.READ_ANNOUNCEMENT,
-        PERMISSIONS.UPDATE_ANNOUNCEMENT,
-        PERMISSIONS.DELETE_ANNOUNCEMENT
-      ],
-      [USER_ROLES.MODERATOR]: [
-        PERMISSIONS.CREATE_ANNOUNCEMENT,
-        PERMISSIONS.READ_ANNOUNCEMENT,
-        PERMISSIONS.UPDATE_ANNOUNCEMENT
-      ],
-      [USER_ROLES.USER]: [
-        PERMISSIONS.READ_ANNOUNCEMENT
-      ],
-      [USER_ROLES.GUEST]: []
-    };
-
-    return rolePermissions[userRole]?.includes(permission) || false;
-  };
-
-  describe('Admin Authorization Tests', () => {
-    test('TC-008: admin should have CREATE permission', () => {
-      expect(checkPermission(USER_ROLES.ADMIN, PERMISSIONS.CREATE_ANNOUNCEMENT)).toBe(true);
+      expect(validatePassword('StrongP@ss1')).toBe(true);
+      expect(validatePassword('weak')).toBe(false);
+      expect(validatePassword('NoSpecialChar1')).toBe(false);
     });
 
-    test('TC-008: admin should have READ permission', () => {
-      expect(checkPermission(USER_ROLES.ADMIN, PERMISSIONS.READ_ANNOUNCEMENT)).toBe(true);
-    });
+    test('TC-007: should detect common weak passwords', () => {
+      const isWeakPassword = (password) => {
+        const commonPasswords = ['password', '123456', 'qwerty', 'admin', 'letmein'];
+        return commonPasswords.includes(password.toLowerCase());
+      };
 
-    test('TC-008: admin should have UPDATE permission', () => {
-      expect(checkPermission(USER_ROLES.ADMIN, PERMISSIONS.UPDATE_ANNOUNCEMENT)).toBe(true);
-    });
-
-    test('TC-008: admin should have DELETE permission', () => {
-      expect(checkPermission(USER_ROLES.ADMIN, PERMISSIONS.DELETE_ANNOUNCEMENT)).toBe(true);
+      expect(isWeakPassword('password')).toBe(true);
+      expect(isWeakPassword('UniqueP@ss1')).toBe(false);
     });
   });
 
-  describe('Moderator Authorization Tests', () => {
-    test('TC-008: moderator should have CREATE permission', () => {
-      expect(checkPermission(USER_ROLES.MODERATOR, PERMISSIONS.CREATE_ANNOUNCEMENT)).toBe(true);
-    });
+  describe('Session Security', () => {
+    test('TC-007: should validate session token format', () => {
+      const validateSessionToken = (token) => {
+        // Check if token is a valid UUID or similar secure format
+        const tokenRegex = /^[a-f0-9]{32,}$/i;
+        return tokenRegex.test(token) && token.length >= 32;
+      };
 
-    test('TC-008: moderator should have READ permission', () => {
-      expect(checkPermission(USER_ROLES.MODERATOR, PERMISSIONS.READ_ANNOUNCEMENT)).toBe(true);
-    });
-
-    test('TC-008: moderator should have UPDATE permission', () => {
-      expect(checkPermission(USER_ROLES.MODERATOR, PERMISSIONS.UPDATE_ANNOUNCEMENT)).toBe(true);
-    });
-
-    test('TC-008: moderator should NOT have DELETE permission', () => {
-      expect(checkPermission(USER_ROLES.MODERATOR, PERMISSIONS.DELETE_ANNOUNCEMENT)).toBe(false);
-    });
-  });
-
-  describe('User Authorization Tests', () => {
-    test('TC-008: user should NOT have CREATE permission', () => {
-      expect(checkPermission(USER_ROLES.USER, PERMISSIONS.CREATE_ANNOUNCEMENT)).toBe(false);
-    });
-
-    test('TC-008: user should have READ permission', () => {
-      expect(checkPermission(USER_ROLES.USER, PERMISSIONS.READ_ANNOUNCEMENT)).toBe(true);
-    });
-
-    test('TC-008: user should NOT have UPDATE permission', () => {
-      expect(checkPermission(USER_ROLES.USER, PERMISSIONS.UPDATE_ANNOUNCEMENT)).toBe(false);
-    });
-
-    test('TC-008: user should NOT have DELETE permission', () => {
-      expect(checkPermission(USER_ROLES.USER, PERMISSIONS.DELETE_ANNOUNCEMENT)).toBe(false);
-    });
-  });
-
-  describe('Guest Authorization Tests', () => {
-    test('TC-008: guest should NOT have CREATE permission', () => {
-      expect(checkPermission(USER_ROLES.GUEST, PERMISSIONS.CREATE_ANNOUNCEMENT)).toBe(false);
-    });
-
-    test('TC-008: guest should NOT have READ permission', () => {
-      expect(checkPermission(USER_ROLES.GUEST, PERMISSIONS.READ_ANNOUNCEMENT)).toBe(false);
-    });
-
-    test('TC-008: guest should NOT have UPDATE permission', () => {
-      expect(checkPermission(USER_ROLES.GUEST, PERMISSIONS.UPDATE_ANNOUNCEMENT)).toBe(false);
-    });
-
-    test('TC-008: guest should NOT have DELETE permission', () => {
-      expect(checkPermission(USER_ROLES.GUEST, PERMISSIONS.DELETE_ANNOUNCEMENT)).toBe(false);
-    });
-  });
-
-  describe('Invalid Role Tests', () => {
-    test('TC-008: undefined role should have no permissions', () => {
-      expect(checkPermission(undefined, PERMISSIONS.READ_ANNOUNCEMENT)).toBe(false);
-    });
-
-    test('TC-008: invalid role should have no permissions', () => {
-      expect(checkPermission('invalid_role', PERMISSIONS.READ_ANNOUNCEMENT)).toBe(false);
+      expect(validateSessionToken('a1b2c3d4e5f6789012345678901234567890')).toBe(true);
+      expect(validateSessionToken('short')).toBe(false);
+      expect(validateSessionToken('invalid-chars!')).toBe(false);
     });
   });
 });

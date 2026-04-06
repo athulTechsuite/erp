@@ -1,7 +1,20 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const db = require('../config/database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+
+// Rate limiting middleware for announcements
+const announcementLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: { error: 'Too many requests, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply rate limiting to all routes
+router.use(announcementLimiter);
 
 // Get all active announcements (accessible to all authenticated users)
 router.get('/', authenticateToken, async (req, res) => {

@@ -93,8 +93,8 @@ describe('TC-004: Input validation and error handling', () => {
 
 // TC-005: Authentication and Authorization test coverage
 describe('TC-005: Authentication and Authorization', () => {
-  // Authentication tests
-  describe('User authentication', () => {
+  // Authentication tests - Happy Path
+  describe('User authentication - Happy Path', () => {
     test('TC-005: should authenticate valid user credentials', () => {
       const credentials = { username: 'testuser', password: 'password123' };
       const result = authenticateUser(credentials);
@@ -103,6 +103,38 @@ describe('TC-005: Authentication and Authorization', () => {
       expect(result.user.role).toBeDefined();
     });
 
+    test('TC-005: should validate valid JWT token', () => {
+      const validToken = 'valid.jwt.token';
+      const result = validateToken(validToken);
+      expect(result.valid).toBe(true);
+      expect(result.payload).toBeDefined();
+      expect(result.user).toBeDefined();
+    });
+
+    test('TC-005: should allow admin access to all endpoints', () => {
+      const user = { id: 1, role: 'admin' };
+      const endpoint = '/admin/users';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(true);
+    });
+
+    test('TC-005: should allow user access to own resources', () => {
+      const user = { id: 1, role: 'user' };
+      const endpoint = '/user/1/profile';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(true);
+    });
+
+    test('TC-005: should grant access with sufficient permissions', () => {
+      const user = { id: 1, role: 'user', permissions: ['read', 'write'] };
+      const requiredPermissions = ['read'];
+      const result = checkPermissions(user, requiredPermissions);
+      expect(result.authorized).toBe(true);
+    });
+  });
+
+  // Authentication tests - Error Path
+  describe('User authentication - Error Path', () => {
     test('TC-005: should reject invalid credentials', () => {
       const credentials = { username: 'testuser', password: 'wrongpassword' };
       const result = authenticateUser(credentials);
@@ -124,22 +156,19 @@ describe('TC-005: Authentication and Authorization', () => {
       expect(result.valid).toBe(false);
       expect(result.error).toBe('Token expired');
     });
-  });
 
-  // Role-based authorization tests
-  describe('Role-based authorization', () => {
-    test('TC-005: should allow admin access to all endpoints', () => {
-      const user = { id: 1, role: 'admin' };
-      const endpoint = '/admin/users';
-      const result = checkAuthorization(user, endpoint);
-      expect(result.authorized).toBe(true);
+    test('TC-005: should handle invalid token format', () => {
+      const invalidToken = 'invalid.token';
+      const result = validateToken(invalidToken);
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe('Invalid token format');
     });
 
-    test('TC-005: should allow user access to own resources', () => {
-      const user = { id: 1, role: 'user' };
-      const endpoint = '/user/1/profile';
-      const result = checkAuthorization(user, endpoint);
-      expect(result.authorized).toBe(true);
+    test('TC-005: should handle tampered tokens', () => {
+      const tamperedToken = 'tampered.jwt.signature';
+      const result = validateToken(tamperedToken);
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe('Token signature verification failed');
     });
 
     test('TC-005: should deny user access to other user resources', () => {
@@ -158,29 +187,12 @@ describe('TC-005: Authentication and Authorization', () => {
       expect(result.error).toBe('Authentication required');
     });
 
-    test('TC-005: should allow moderator access to moderation endpoints', () => {
-      const user = { id: 1, role: 'moderator' };
-      const endpoint = '/moderate/content';
-      const result = checkAuthorization(user, endpoint);
-      expect(result.authorized).toBe(true);
-    });
-
     test('TC-005: should deny regular user access to admin endpoints', () => {
       const user = { id: 1, role: 'user' };
       const endpoint = '/admin/settings';
       const result = checkAuthorization(user, endpoint);
       expect(result.authorized).toBe(false);
       expect(result.error).toBe('Access denied: admin role required');
-    });
-  });
-
-  // Permission-based access tests
-  describe('Permission-based access control', () => {
-    test('TC-005: should grant access with sufficient permissions', () => {
-      const user = { id: 1, role: 'user', permissions: ['read', 'write'] };
-      const requiredPermissions = ['read'];
-      const result = checkPermissions(user, requiredPermissions);
-      expect(result.authorized).toBe(true);
     });
 
     test('TC-005: should deny access with insufficient permissions', () => {
@@ -189,6 +201,51 @@ describe('TC-005: Authentication and Authorization', () => {
       const result = checkPermissions(user, requiredPermissions);
       expect(result.authorized).toBe(false);
       expect(result.error).toBe('Insufficient permissions');
+    });
+  });
+
+  // Role-based authorization tests
+  describe('Role-based authorization', () => {
+    test('TC-005: should allow moderator access to moderation endpoints', () => {
+      const user = { id: 1, role: 'moderator' };
+      const endpoint = '/moderate/content';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(true);
+    });
+
+    test('TC-005: should handle unknown roles gracefully', () => {
+      const user = { id: 1, role: 'unknown' };
+      const endpoint = '/user/profile';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(false);
+      expect(result.error).toBe('Unknown user role');
+    });
+
+    test('TC-005: should handle null user object', () => {
+      const user = null;
+      const endpoint = '/user/profile';
+      const result = checkAuthorization(user, endpoint);
+      expect(result.authorized).toBe(false);
+      expect(result.error).toBe('User object is required');
+    });
+  });
+
+  // Permission-based access tests
+  describe('Permission-based access control', () => {
+    test('TC-005: should handle empty permissions array', () => {
+      const user = { id: 1, role: 'user', permissions: [] };
+      const requiredPermissions = ['read'];
+      const result = checkPermissions(user, requiredPermissions);
+      expect(result.authorized).toBe(false);
+      expect(result.error).toBe('No permissions assigned');
+    });
+
+    test('TC-005: should handle missing permissions property', () => {
+      const user = { id: 1, role: 'user' };
+      const requiredPermissions = ['read'];
+      const result = checkPermissions(user, requiredPermissions);
+      expect(result.authorized).toBe(false);
+      expect(result.error).toBe('Permissions not defined');
     });
   });
 });

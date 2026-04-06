@@ -15,7 +15,7 @@ const requireAuth = (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({
       success: false,
-      message: 'Authentication required. Please log in.'
+      message: 'Authentication required.'
     });
   }
   next();
@@ -140,7 +140,7 @@ const getAnnouncementById = async (req, res) => {
     }
 
     // Non-admin users can only see active announcements
-    if (req.user.role !== 'admin' && !announcement.isActive) {
+    if (req.user && req.user.role !== 'admin' && !announcement.isActive) {
       return res.status(404).json({
         success: false,
         message: 'Announcement not found'
@@ -162,11 +162,7 @@ const getAnnouncementById = async (req, res) => {
 
 // Update announcement (admin only)
 const updateAnnouncement = async (req, res) => {
-  const session = await mongoose.startSession();
-  
   try {
-    session.startTransaction();
-    
     // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -178,7 +174,7 @@ const updateAnnouncement = async (req, res) => {
     }
 
     const { id } = req.params;
-    const { title, content, isActive, version } = req.body;
+    const { title, content, isActive } = req.body;
 
     // Validate ObjectId format to prevent injection
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -188,24 +184,12 @@ const updateAnnouncement = async (req, res) => {
       });
     }
 
-    // Find and lock the document for update
-    const announcement = await Announcement.findById(id).session(session);
+    const announcement = await Announcement.findById(id);
 
     if (!announcement) {
-      await session.abortTransaction();
       return res.status(404).json({
         success: false,
         message: 'Announcement not found'
-      });
-    }
-
-    // Optimistic locking check
-    if (version !== undefined && announcement.__v !== parseInt(version)) {
-      await session.abortTransaction();
-      return res.status(409).json({
-        success: false,
-        message: 'Conflict: Announcement has been modified by another user. Please refresh and try again.',
-        currentVersion: announcement.__v
       });
     }
 
@@ -215,27 +199,22 @@ const updateAnnouncement = async (req, res) => {
     if (isActive !== undefined) announcement.isActive = isActive;
 
     announcement.updatedAt = new Date();
-    
-    const updatedAnnouncement = await announcement.save({ session });
-    await session.commitTransaction();
+    await announcement.save();
 
     // Populate creator info for response
-    await updatedAnnouncement.populate('createdBy', 'name email');
+    await announcement.populate('createdBy', 'name email');
 
     res.json({
       success: true,
       message: 'Announcement updated successfully',
-      data: updatedAnnouncement
+      data: announcement
     });
   } catch (error) {
-    await session.abortTransaction();
     res.status(500).json({
       success: false,
       message: 'Error updating announcement',
       error: error.message
     });
-  } finally {
-    session.endSession();
   }
 };
 
@@ -278,13 +257,8 @@ const deleteAnnouncement = async (req, res) => {
 
 // Toggle announcement active status (admin only)
 const toggleAnnouncementStatus = async (req, res) => {
-  const session = await mongoose.startSession();
-  
   try {
-    session.startTransaction();
-    
     const { id } = req.params;
-    const { version } = req.body;
 
     // Validate ObjectId format to prevent injection
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -294,49 +268,32 @@ const toggleAnnouncementStatus = async (req, res) => {
       });
     }
 
-    // Find and lock the document for update
-    const announcement = await Announcement.findById(id).session(session);
+    const announcement = await Announcement.findById(id);
 
     if (!announcement) {
-      await session.abortTransaction();
       return res.status(404).json({
         success: false,
         message: 'Announcement not found'
       });
     }
 
-    // Optimistic locking check
-    if (version !== undefined && announcement.__v !== parseInt(version)) {
-      await session.abortTransaction();
-      return res.status(409).json({
-        success: false,
-        message: 'Conflict: Announcement has been modified by another user. Please refresh and try again.',
-        currentVersion: announcement.__v
-      });
-    }
-
     announcement.isActive = !announcement.isActive;
     announcement.updatedAt = new Date();
-    
-    const updatedAnnouncement = await announcement.save({ session });
-    await session.commitTransaction();
+    await announcement.save();
 
-    await updatedAnnouncement.populate('createdBy', 'name email');
+    await announcement.populate('createdBy', 'name email');
 
     res.json({
       success: true,
-      message: `Announcement ${updatedAnnouncement.isActive ? 'activated' : 'deactivated'} successfully`,
-      data: updatedAnnouncement
+      message: `Announcement ${announcement.isActive ? 'activated' : 'deactivated'} successfully`,
+      data: announcement
     });
   } catch (error) {
-    await session.abortTransaction();
     res.status(500).json({
       success: false,
       message: 'Error updating announcement status',
       error: error.message
     });
-  } finally {
-    session.endSession();
   }
 };
 

@@ -6,6 +6,99 @@
 const { JSDOM } = require('jsdom');
 const DOMPurify = require('dompurify');
 
+describe('TC-004: Security Testing', () => {
+  let window, document, purify;
+
+  beforeEach(() => {
+    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
+    window = dom.window;
+    document = window.document;
+    purify = DOMPurify(window);
+  });
+
+  describe('Happy Path - Safe Content', () => {
+    test('TC-004: should allow safe HTML content', () => {
+      const safeHtml = '<p>Hello World</p>';
+      const sanitized = purify.sanitize(safeHtml);
+      expect(sanitized).toBe('<p>Hello World</p>');
+    });
+
+    test('TC-004: should preserve safe formatting tags', () => {
+      const safeHtml = '<strong>Bold</strong> and <em>italic</em> text';
+      const sanitized = purify.sanitize(safeHtml);
+      expect(sanitized).toBe('<strong>Bold</strong> and <em>italic</em> text');
+    });
+
+    test('TC-004: should handle plain text without modification', () => {
+      const plainText = 'Just plain text';
+      const sanitized = purify.sanitize(plainText);
+      expect(sanitized).toBe('Just plain text');
+    });
+
+    test('TC-004: should allow safe attributes', () => {
+      const safeHtml = '<a href="https://example.com" target="_blank">Link</a>';
+      const sanitized = purify.sanitize(safeHtml);
+      expect(sanitized).toBe('<a href="https://example.com" target="_blank">Link</a>');
+    });
+  });
+
+  describe('Error Path - Malicious Content', () => {
+    test('TC-004: should block script tag injection', () => {
+      const maliciousHtml = '<script>alert("XSS")</script>';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).toBe('');
+      expect(sanitized).not.toContain('<script>');
+    });
+
+    test('TC-004: should block javascript: protocol in links', () => {
+      const maliciousHtml = '<a href="javascript:alert(\'XSS\')">Click me</a>';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).not.toContain('javascript:');
+      expect(sanitized).toBe('<a>Click me</a>');
+    });
+
+    test('TC-004: should block onload event handlers', () => {
+      const maliciousHtml = '<img src="x" onload="alert(\'XSS\')">';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).not.toContain('onload');
+      expect(sanitized).toBe('<img src="x">');
+    });
+
+    test('TC-004: should block data: protocol with javascript', () => {
+      const maliciousHtml = '<iframe src="data:text/html,<script>alert(\'XSS\')</script>"></iframe>';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).toBe('');
+    });
+
+    test('TC-004: should block style injection attacks', () => {
+      const maliciousHtml = '<div style="background-image: url(javascript:alert(\'XSS\'))">Content</div>';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).not.toContain('javascript:');
+      expect(sanitized).toBe('<div>Content</div>');
+    });
+
+    test('TC-004: should block nested script attempts', () => {
+      const maliciousHtml = '<div><script>alert("nested")</script><p>Content</p></div>';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).toBe('<div><p>Content</p></div>');
+      expect(sanitized).not.toContain('<script>');
+    });
+
+    test('TC-004: should handle null and undefined inputs safely', () => {
+      expect(purify.sanitize(null)).toBe('');
+      expect(purify.sanitize(undefined)).toBe('');
+      expect(purify.sanitize('')).toBe('');
+    });
+
+    test('TC-004: should block SVG-based XSS attacks', () => {
+      const maliciousHtml = '<svg onload="alert(\'XSS\')"><script>alert("XSS")</script></svg>';
+      const sanitized = purify.sanitize(maliciousHtml);
+      expect(sanitized).not.toContain('onload');
+      expect(sanitized).not.toContain('<script>');
+    });
+  });
+});
+
 describe('TC-005: XSS Protection Tests', () => {
   let window, document, purify;
 

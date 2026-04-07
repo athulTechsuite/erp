@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, createContext, useContext, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import {
@@ -32,11 +32,53 @@ import {
   Settings as SettingsIcon,
   Logout as LogoutIcon,
   Notifications as NotificationsIcon,
+  LightMode as LightModeIcon,
+  DarkMode as DarkModeIcon,
   Badge
 } from '@mui/icons-material';
 
+// Theme Context
+const ThemeToggleContext = createContext();
+
+export const useThemeToggle = () => {
+  const context = useContext(ThemeToggleContext);
+  if (!context) {
+    throw new Error('useThemeToggle must be used within a ThemeToggleProvider');
+  }
+  return context;
+};
+
+export const ThemeToggleProvider = ({ children }) => {
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const savedTheme = localStorage.getItem('erp-theme');
+    return savedTheme === 'dark';
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (isDarkMode) {
+      root.setAttribute('data-theme', 'dark');
+      localStorage.setItem('erp-theme', 'dark');
+    } else {
+      root.setAttribute('data-theme', 'light');
+      localStorage.setItem('erp-theme', 'light');
+    }
+  }, [isDarkMode]);
+
+  const toggleTheme = () => {
+    setIsDarkMode(prev => !prev);
+  };
+
+  return (
+    <ThemeToggleContext.Provider value={{ isDarkMode, toggleTheme }}>
+      {children}
+    </ThemeToggleContext.Provider>
+  );
+};
+
 const Navbar = () => {
   const { user, logout } = useAuth();
+  const { isDarkMode, toggleTheme } = useThemeToggle();
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
@@ -200,6 +242,21 @@ const Navbar = () => {
           <Box sx={{ flexGrow: 1 }} />
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {/* Theme Toggle */}
+            <IconButton
+              color="inherit"
+              onClick={toggleTheme}
+              aria-label={`Switch to ${isDarkMode ? 'light' : 'dark'} mode`}
+              sx={{
+                transition: 'transform 0.2s ease-in-out',
+                '&:hover': {
+                  transform: 'scale(1.1)'
+                }
+              }}
+            >
+              {isDarkMode ? <LightModeIcon /> : <DarkModeIcon />}
+            </IconButton>
+
             {/* Notifications */}
             <IconButton
               color="inherit"

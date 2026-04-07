@@ -15,16 +15,26 @@ export const ThemeProvider = ({ children }) => {
 
   // Load theme from localStorage on component mount
   useEffect(() => {
-    const savedTheme = localStorage.getItem('erp-theme');
-    if (savedTheme && (savedTheme === 'light' || savedTheme === 'dark')) {
-      setTheme(savedTheme);
+    try {
+      const savedTheme = localStorage.getItem('erp-theme');
+      if (savedTheme && (savedTheme === 'light' || savedTheme === 'dark')) {
+        setTheme(savedTheme);
+      }
+    } catch (error) {
+      console.warn('Failed to load theme from localStorage:', error);
+      // Continue with default theme if localStorage access fails
     }
   }, []);
 
   // Apply theme to document root and save to localStorage when theme changes
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('erp-theme', theme);
+    try {
+      localStorage.setItem('erp-theme', theme);
+    } catch (error) {
+      console.warn('Failed to save theme to localStorage:', error);
+      // Continue without saving if localStorage access fails
+    }
   }, [theme]);
 
   const toggleTheme = () => {

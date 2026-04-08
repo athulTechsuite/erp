@@ -1,0 +1,1378 @@
+const { expect } = require('chai');
+const sinon = require('sinon');
+const AnnouncementManager = require('../src/AnnouncementManager');
+const AnnouncementForm = require('../src/AnnouncementForm');
+const DatabaseMigration = require('../src/DatabaseMigration');
+
+describe('Announcement System Tests', () => {
+  
+  // TC-001: Announcement CRUD operations
+  describe('TC-001: Announcement CRUD operations', () => {
+    let announcementManager;
+    let mockDb;
+
+    beforeEach(() => {
+      mockDb = {
+        create: sinon.stub(),
+        findById: sinon.stub(),
+        update: sinon.stub(),
+        delete: sinon.stub(),
+        findAll: sinon.stub()
+      };
+      announcementManager = new AnnouncementManager(mockDb);
+    });
+
+    describe('Happy Path', () => {
+      it('should create announcement successfully', async () => {
+        const announcementData = {
+          title: 'Test Announcement',
+          content: 'This is a test announcement',
+          priority: 'high'
+        };
+        const expectedResult = { id: 1, ...announcementData };
+        
+        mockDb.create.resolves(expectedResult);
+        
+        const result = await announcementManager.createAnnouncement(announcementData);
+        
+        expect(result).to.deep.equal(expectedResult);
+        expect(mockDb.create.calledOnceWith(announcementData)).to.be.true;
+      });
+
+      it('should read announcement successfully', async () => {
+        const announcementId = 1;
+        const expectedAnnouncement = {
+          id: 1,
+          title: 'Test Announcement',
+          content: 'Content',
+          priority: 'medium'
+        };
+        
+        mockDb.findById.resolves(expectedAnnouncement);
+        
+        const result = await announcementManager.getAnnouncement(announcementId);
+        
+        expect(result).to.deep.equal(expectedAnnouncement);
+        expect(mockDb.findById.calledOnceWith(announcementId)).to.be.true;
+      });
+
+      it('should update announcement successfully', async () => {
+        const announcementId = 1;
+        const updateData = { title: 'Updated Title' };
+        const expectedResult = { id: 1, title: 'Updated Title', content: 'Content' };
+        
+        mockDb.update.resolves(expectedResult);
+        
+        const result = await announcementManager.updateAnnouncement(announcementId, updateData);
+        
+        expect(result).to.deep.equal(expectedResult);
+        expect(mockDb.update.calledOnceWith(announcementId, updateData)).to.be.true;
+      });
+
+      it('should delete announcement successfully', async () => {
+        const announcementId = 1;
+        
+        mockDb.delete.resolves(true);
+        
+        const result = await announcementManager.deleteAnnouncement(announcementId);
+        
+        expect(result).to.be.true;
+        expect(mockDb.delete.calledOnceWith(announcementId)).to.be.true;
+      });
+
+      it('should list all announcements successfully', async () => {
+        const expectedAnnouncements = [
+          { id: 1, title: 'First', content: 'Content 1' },
+          { id: 2, title: 'Second', content: 'Content 2' }
+        ];
+        
+        mockDb.findAll.resolves(expectedAnnouncements);
+        
+        const result = await announcementManager.getAllAnnouncements();
+        
+        expect(result).to.deep.equal(expectedAnnouncements);
+        expect(mockDb.findAll.calledOnce).to.be.true;
+      });
+    });
+
+    describe('Error Path', () => {
+      it('should handle create announcement database error', async () => {
+        const announcementData = { title: 'Test' };
+        const dbError = new Error('Database connection failed');
+        
+        mockDb.create.rejects(dbError);
+        
+        await expect(announcementManager.createAnnouncement(announcementData))
+          .to.be.rejectedWith('Database connection failed');
+      });
+
+      it('should handle create announcement with invalid data', async () => {
+        const invalidData = { title: null, content: '' };
+        const validationError = new Error('Invalid announcement data');
+        
+        mockDb.create.rejects(validationError);
+        
+        await expect(announcementManager.createAnnouncement(invalidData))
+          .to.be.rejectedWith('Invalid announcement data');
+      });
+
+      it('should handle read announcement not found', async () => {
+        const announcementId = 999;
+        
+        mockDb.findById.resolves(null);
+        
+        const result = await announcementManager.getAnnouncement(announcementId);
+        
+        expect(result).to.be.null;
+      });
+
+      it('should handle read announcement database error', async () => {
+        const announcementId = 1;
+        const dbError = new Error('Query execution failed');
+        
+        mockDb.findById.rejects(dbError);
+        
+        await expect(announcementManager.getAnnouncement(announcementId))
+          .to.be.rejectedWith('Query execution failed');
+      });
+
+      it('should handle update announcement validation error', async () => {
+        const announcementId = 1;
+        const invalidData = { title: '' };
+        const validationError = new Error('Title cannot be empty');
+        
+        mockDb.update.rejects(validationError);
+        
+        await expect(announcementManager.updateAnnouncement(announcementId, invalidData))
+          .to.be.rejectedWith('Title cannot be empty');
+      });
+
+      it('should handle update announcement not found', async () => {
+        const announcementId = 999;
+        const updateData = { title: 'New Title' };
+        const notFoundError = new Error('Announcement not found');
+        
+        mockDb.update.rejects(notFoundError);
+        
+        await expect(announcementManager.updateAnnouncement(announcementId, updateData))
+          .to.be.rejectedWith('Announcement not found');
+      });
+
+      it('should handle delete announcement not found', async () => {
+        const announcementId = 999;
+        
+        mockDb.delete.resolves(false);
+        
+        const result = await announcementManager.deleteAnnouncement(announcementId);
+        
+        expect(result).to.be.false;
+      });
+
+      it('should handle delete announcement database error', async () => {
+        const announcementId = 1;
+        const dbError = new Error('Connection lost');
+        
+        mockDb.delete.rejects(dbError);
+        
+        await expect(announcementManager.deleteAnnouncement(announcementId))
+          .to.be.rejectedWith('Connection lost');
+      });
+
+      it('should handle list announcements database error', async () => {
+        const dbError = new Error('Table does not exist');
+        
+        mockDb.findAll.rejects(dbError);
+        
+        await expect(announcementManager.getAllAnnouncements())
+          .to.be.rejectedWith('Table does not exist');
+      });
+    });
+  });
+
+  // TC-002: Announcement CRUD operations
+  describe('TC-002: Announcement CRUD operations', () => {
+    let announcementManager;
+    let mockDb;
+    let mockAuthService;
+
+    beforeEach(() => {
+      mockDb = {
+        create: sinon.stub(),
+        findById: sinon.stub(),
+        update: sinon.stub(),
+        delete: sinon.stub(),
+        findAll: sinon.stub(),
+        findByQuery: sinon.stub(),
+        transaction: sinon.stub(),
+        bulkCreate: sinon.stub(),
+        bulkUpdate: sinon.stub(),
+        bulkDelete: sinon.stub()
+      };
+      mockAuthService = {
+        verifyUser: sinon.stub(),
+        checkPermissions: sinon.stub(),
+        getUserRoles: sinon.stub()
+      };
+      announcementManager = new AnnouncementManager(mockDb);
+    });
+
+    describe('Happy Path', () => {
+      it('should create announcement with valid data successfully', async () => {
+        const announcementData = {
+          title: 'Test Announcement',
+          content: 'This is a test announcement',
+          priority: 'high',
+          category: 'general'
+        };
+        const expectedResult = { id: 1, ...announcementData, createdAt: new Date() };
+        
+        mockDb.create.resolves(expectedResult);
+        
+        const result = await announcementManager.createAnnouncement(announcementData);
+        
+        expect(result).to.deep.equal(expectedResult);
+        expect(mockDb.create.calledOnceWith(announcementData)).to.be.true;
+      });
+
+      it('should read announcement by ID successfully', async () => {
+        const announcementId = 1;
+        const expectedAnnouncement = {
+          id: 1,
+          title: 'Test Announcement',
+          content: 'Content',
+          priority: 'medium',
+          category: 'general'
+        };
+        
+        mockDb.findById.resolves(expectedAnnouncement);
+        
+        const result = await announcementManager.getAnnouncement(announcementId);
+        
+        expect(result).to.deep.equal(expectedAnnouncement);
+        expect(mockDb.findById.calledOnceWith(announcementId)).to.be.true;
+      });
+
+      it('should update announcement with partial data successfully', async () => {
+        const announcementId = 1;
+        const updateData = { title: 'Updated Title', priority: 'high' };
+        const expectedResult = { 
+          id: 1, 
+          title: 'Updated Title', 
+          content: 'Original Content',
+          priority: 'high',
+          updatedAt: new Date()
+        };
+        
+        mockDb.update.resolves(expectedResult);
+        
+        const result = await announcementManager.updateAnnouncement(announcementId, updateData);
+        
+        expect(result).to.deep.equal(expectedResult);
+        expect(mockDb.update.calledOnceWith(announcementId, updateData)).to.be.true;
+      });
+
+      it('should delete announcement successfully', async () => {
+        const announcementId = 1;
+        
+        mockDb.delete.resolves(true);
+        
+        const result = await announcementManager.deleteAnnouncement(announcementId);
+        
+        expect(result).to.be.true;
+        expect(mockDb.delete.calledOnceWith(announcementId)).to.be.true;
+      });
+
+      it('should list announcements with pagination successfully', async () => {
+        const expectedAnnouncements = [
+          { id: 1, title: 'First', content: 'Content 1', priority: 'high' },
+          { id: 2, title: 'Second', content: 'Content 2', priority: 'medium' }
+        ];
+        const pagination = { page: 1, limit: 10 };
+        
+        mockDb.findAll.resolves(expectedAnnouncements);
+        
+        const result = await announcementManager.getAllAnnouncements(pagination);
+        
+        expect(result).to.deep.equal(expectedAnnouncements);
+        expect(mockDb.findAll.calledOnceWith(pagination)).to.be.true;
+      });
+
+      it('should filter announcements by priority successfully', async () => {
+        const priority = 'high';
+        const expectedAnnouncements = [
+          { id: 1, title: 'High Priority', content: 'Important content', priority: 'high' }
+        ];
+        
+        mockDb.findByQuery.resolves(expectedAnnouncements);
+        
+        const result = await announcementManager.getAnnouncementsByPriority(priority);
+        
+        expect(result).to.deep.equal(expectedAnnouncements);
+        expect(mockDb.findByQuery.calledOnceWith({ priority })).to.be.true;
+      });
+
+      it('should perform bulk create operations successfully', async () => {
+        const announcementDataList = [
+          { title: 'Bulk 1', content: 'Content 1', priority: 'medium' },
+          { title: 'Bulk 2', content: 'Content 2', priority: 'high' }
+        ];
+        const expectedResults = [
+          { id: 1, ...announcementDataList[0] },
+          { id: 2, ...announcementDataList[1] }
+        ];
+        
+        mockDb.bulkCreate.resolves(expectedResults);
+        
+        const result = await announcementManager.bulkCreateAnnouncements(announcementDataList);
+        
+        expect(result).to.deep.equal(expectedResults);
+        expect(mockDb.bulkCreate.calledOnceWith(announcementDataList)).to.be.true;
+      });
+    });
+
+    describe('Error Path', () => {
+      it('should handle create announcement with missing required fields', async () => {
+        const invalidData = { content: 'Missing title' };
+        const validationError = new Error('Title is required');
+        
+        mockDb.create.rejects(validationError);
+        
+        await expect(announcementManager.createAnnouncement(invalidData))
+          .to.be.rejectedWith('Title is required');
+      });
+
+      it('should handle create announcement with database constraint violation', async () => {
+        const announcementData = { title: 'Test', priority: 'invalid_priority' };
+        const constraintError = new Error('Invalid priority value');
+        constraintError.code = 'ER_DATA_TOO_LONG';
+        
+        mockDb.create.rejects(constraintError);
+        
+        await expect(announcementManager.createAnnouncement(announcementData))
+          .to.be.rejectedWith('Invalid priority value');
+      });
+
+      it('should handle read announcement with non-existent ID', async () => {
+        const announcementId = 999;
+        
+        mockDb.findById.resolves(null);
+        
+        const result = await announcementManager.getAnnouncement(announcementId);
+        
+        expect(result).to.be.null;
+      });
+
+      it('should handle read announcement with invalid ID format', async () => {
+        const invalidId = 'not-a-number';
+        const formatError = new Error('Invalid ID format');
+        
+        mockDb.findById.rejects(formatError);
+        
+        await expect(announcementManager.getAnnouncement(invalidId))
+          .to.be.rejectedWith('Invalid ID format');
+      });
+
+      it('should handle update announcement with validation errors', async () => {
+        const announcementId = 1;
+        const invalidData = { title: '', priority: 'invalid' };
+        const validationError = new Error('Title cannot be empty and priority is invalid');
+        
+        mockDb.update.rejects(validationError);
+        
+        await expect(announcementManager.updateAnnouncement(announcementId, invalidData))
+          .to.be.rejectedWith('Title cannot be empty and priority is invalid');
+      });
+
+      it('should handle update announcement with concurrent modification', async () => {
+        const announcementId = 1;
+        const updateData = { title: 'Updated Title', version: 1 };
+        const concurrencyError = new Error('Record was modified by another user');
+        concurrencyError.code = 'OPTIMISTIC_LOCK_ERROR';
+        
+        mockDb.update.rejects(concurrencyError);
+        
+        await expect(announcementManager.updateAnnouncement(announcementId, updateData))
+          .to.be.rejectedWith('Record was modified by another user');
+      });
+
+      it('should handle delete announcement with foreign key constraints', async () => {
+        const announcementId = 1;
+        const constraintError = new Error('Cannot delete announcement with existing references');
+        constraintError.code = 'ER_ROW_IS_REFERENCED_2';
+        
+        mockDb.delete.rejects(constraintError);
+        
+        await expect(announcementManager.deleteAnnouncement(announcementId))
+          .to.be.rejectedWith('Cannot delete announcement with existing references');
+      });
+
+      it('should handle database connection timeout during operations', async () => {
+        const timeoutError = new Error('Connection timeout');
+        timeoutError.code = 'PROTOCOL_CONNECTION_LOST';
+        
+        mockDb.findAll.rejects(timeoutError);
+        
+        await expect(announcementManager.getAllAnnouncements())
+          .to.be.rejectedWith('Connection timeout');
+      });
+
+      it('should handle bulk operations with partial failures', async () => {
+        const announcementDataList = [
+          { title: 'Valid', content: 'Content', priority: 'medium' },
+          { title: '', content: 'Invalid', priority: 'high' }
+        ];
+        const bulkError = new Error('Bulk operation failed: 1 out of 2 records failed validation');
+        bulkError.details = { failed: 1, succeeded: 1 };
+        
+        mockDb.bulkCreate.rejects(bulkError);
+        
+        await expect(announcementManager.bulkCreateAnnouncements(announcementDataList))
+          .to.be.rejectedWith('Bulk operation failed: 1 out of 2 records failed validation');
+      });
+
+      it('should handle database transaction rollback', async () => {
+        const announcementDataList = [{ title: 'Test', content: 'Content' }];
+        const transactionError = new Error('Transaction was rolled back due to error');
+        transactionError.code = 'TRANSACTION_ROLLED_BACK';
+        
+        mockDb.bulkCreate.rejects(transactionError);
+        
+        await expect(announcementManager.bulkCreateAnnouncements(announcementDataList))
+          .to.be.rejectedWith('Transaction was rolled back due to error');
+      });
+    });
+  });
+
+  // TC-003: Authorization and security
+  describe('TC-003: Authorization and security', () => {
+    let announcementManager;
+    let mockDb;
+    let mockAuthService;
+    let mockSecurityService;
+
+    beforeEach(() => {
+      mockDb = {
+        create: sinon.stub(),
+        findById: sinon.stub(),
+        update: sinon.stub(),
+        delete: sinon.stub(),
+        findAll: sinon.stub()
+      };
+      mockAuthService = {
+        verifyToken: sinon.stub(),
+        getUserRoles: sinon.stub(),
+        checkPermission: sinon.stub(),
+        validateSession: sinon.stub()
+      };
+      mockSecurityService = {
+        sanitizeInput: sinon.stub(),
+        validateCSRF: sinon.stub(),
+        checkRateLimit: sinon.stub(),
+        auditLog: sinon.stub()
+      };
+      announcementManager = new AnnouncementManager(mockDb, mockAuthService, mockSecurityService);
+    });
+
+    describe('Happy Path', () => {
+      it('should allow authorized user to create announcement', async () => {
+        const announcementData = { title: 'Test', content: 'Content', priority: 'medium' };
+        const userToken = 'valid-token';
+        const userData = { id: 1, roles: ['admin'] };
+        const expectedResult = { id: 1, ...announcementData };
+
+        mockAuthService.verifyToken.resolves(userData);
+        mockAuthService.checkPermission.resolves(true);
+        mockSecurityService.sanitizeInput.returns(announcementData);
+        mockSecurityService.validateCSRF.resolves(true);
+        mockSecurityService.checkRateLimit.resolves(true);
+        mockDb.create.resolves(expectedResult);
+
+        const result = await announcementManager.createAnnouncementSecure(announcementData, userToken);
+
+        expect(result).to.deep.equal(expectedResult);
+        expect(mockAuthService.verifyToken.calledOnceWith(userToken)).to.be.true;
+        expect(mockAuthService.checkPermission.calledOnceWith(userData, 'announcement:create')).to.be.true;
+        expect(mockSecurityService.auditLog.calledOnce).to.be.true;
+      });
+
+      it('should allow authorized user to read announcement', async () => {
+        const announcementId = 1;
+        const userToken = 'valid-token';
+        const userData = { id: 1, roles: ['user'] };
+        const expectedAnnouncement = { id: 1, title: 'Test', content: 'Content' };
+
+        mockAuthService.verifyToken.resolves(userData);
+        mockAuthService.checkPermission.resolves(true);
+        mockDb.findById.resolves(expectedAnnouncement);
+
+        const result = await announcementManager.getAnnouncementSecure(announcementId, userToken);
+
+        expect(result).to.deep.equal(expectedAnnouncement);
+        expect(mockAuthService.verifyToken.calledOnceWith(userToken)).to.be.true;
+        expect(mockAuthService.checkPermission.calledOnceWith(userData, 'announcement:read')).to.be.true;
+      });
+
+      it('should allow admin to update any announcement', async () => {
+        const announcementId = 1;
+        const updateData = { title: 'Updated' };
+        const userToken = 'admin-token';
+        const adminData = { id: 1, roles: ['admin'] };
+        const expectedResult = { id: 1, title: 'Updated', content: 'Content' };
+
+        mockAuthService.verifyToken.resolves(adminData);
+        mockAuthService.checkPermission.resolves(true);
+        mockSecurityService.sanitizeInput.returns(updateData);
+        mockDb.update.resolves(expectedResult);
+
+        const result = await announcementManager.updateAnnouncementSecure(announcementId, updateData, userToken);
+
+        expect(result).to.deep.equal(expectedResult);
+        expect(mockAuthService.checkPermission.calledOnceWith(adminData, 'announcement:update')).to.be.true;
+      });
+
+      it('should allow admin to delete announcement', async () => {
+        const announcementId = 1;
+        const userToken = 'admin-token';
+        const adminData = { id: 1, roles: ['admin'] };
+
+        mockAuthService.verifyToken.resolves(adminData);
+        mockAuthService.checkPermission.resolves(true);
+        mockDb.delete.resolves(true);
+
+        const result = await announcementManager.deleteAnnouncementSecure(announcementId, userToken);
+
+        expect(result).to.be.true;
+        expect(mockAuthService.checkPermission.calledOnceWith(adminData, 'announcement:delete')).to.be.true;
+        expect(mockSecurityService.auditLog.calledWith('DELETE', 'announcement', announcementId, adminData.id)).to.be.true;
+      });
+
+      it('should validate CSRF token for state-changing operations', async () => {
+        const announcementData = { title: 'Test', content: 'Content' };
+        const userToken = 'valid-token';
+        const csrfToken = 'valid-csrf-token';
+        const userData = { id: 1, roles: ['admin'] };
+
+        mockAuthService.verifyToken.resolves(userData);
+        mockAuthService.checkPermission.resolves(true);
+        mockSecurityService.validateCSRF.resolves(true);
+        mockSecurityService.sanitizeInput.returns(announcementData);
+        mockDb.create.resolves({ id: 1, ...announcementData });
+
+        const result = await announcementManager.createAnnouncementSecure(announcementData, userToken, csrfToken);
+
+        expect(mockSecurityService.validateCSRF.calledOnceWith(csrfToken, userData.id)).to.be.true;
+        expect(result.id).to.equal(1);
+      });
+
+      it('should enforce rate limiting for API calls', async () => {
+        const announcementId = 1;
+        const userToken = 'valid-token';
+        const userData = { id: 1, roles: ['user'] };
+
+        mockAuthService.verifyToken.resolves(userData);
+        mockSecurityService.checkRateLimit.resolves(true);
+        mockAuthService.checkPermission.resolves(true);
+        mockDb.findById.resolves({ id: 1, title: 'Test' });
+
+        await announcementManager.getAnnouncementSecure(announcementId, userToken);
+
+        expect(mockSecurityService.checkRateLimit.calledOnceWith(userData.id, 'announcement:read')).to.be.true;
+      });
+    });
+
+    describe('Error Path', () => {
+      it('should reject request with invalid token', async () => {
+        const announcementData = { title: 'Test', content: 'Content' };
+        const invalidToken = 'invalid-token';
+        const authError = new Error('Invalid token');
+
+        mockAuthService.verifyToken.rejects(authError);
+
+        await expect(announcementManager.createAnnouncementSecure(announcementData, invalidToken))
+          .to.be.rejectedWith('Invalid token');
+        
+        expect(mockDb.create.called).to.be.false;
+      });
+
+      it('should reject request with expired token', async () => {
+        const announcementId = 1;
+        const expiredToken = 'expired-token';
+        const authError = new Error('Token has expired');
+        authError.code = 'TOKEN_EXPIRED';
+
+        mockAuthService.verifyToken.rejects(authError);
+
+        await expect(announcementManager.getAnnouncementSecure(announcementId, expiredToken))
+          .to.be.rejectedWith('Token has expired');
+      });
+
+      it('should reject user without required permissions', async () => {
+        const announcementData = { title: 'Test', content: 'Content' };
+        const userToken = 'valid-token';
+        const userData = { id: 1, roles: ['user'] };
+
+        mockAuthService.verifyToken.resolves(userData);
+        mockAuthService.checkPermission.resolves(false);
+
+        await expect(announcementManager.createAnnouncementSecure(announcementData, userToken))
+          .to.be.rejectedWith('Insufficient permissions');
+        
+        expect(mockDb.create.called).to.be.false;
+      });
+
+      it('should reject user attempting to update without admin role', async () => {
+        const announcementId = 1;
+        const updateData = { title: 'Updated' };
+        const userToken = 'user-token';
+        const userData = { id: 2, roles: ['user'] };
+
+        mockAuthService.verifyToken.resolves(userData);
+        mockAuthService.checkPermission.resolves(false);
+
+        await expect(announcementManager.updateAnnouncementSecure(announcementId, updateData, userToken))
+          .to.be.rejectedWith('Insufficient permissions');
+      });
+
+      it('should reject user attempting to delete without admin role', async () => {
+        const announcementId = 1;
+        const userToken = 'user-token';
+        const userData = { id: 2, roles: ['user'] };
+
+        mockAuthService.verifyToken.resolves(userData);
+        mockAuthService.checkPermission.resolves(false);
+
+        await expect(announcementManager.deleteAnnouncementSecure(announcementId, userToken))
+          .to.be.rejectedWith('Insufficient permissions');
+      });
+
+      it('should reject request with invalid CSRF token', async () => {
+        const announcementData = { title: 'Test', content: 'Content' };
+        const userToken = 'valid-token';
+        const invalidCSRF = 'invalid-csrf';
+        const userData = { id: 1, roles: ['admin'] };
+        const csrfError = new Error('Invalid CSRF token');
+
+        mockAuthService.verifyToken.resolves(userData);
+        mockAuthService.checkPermission.resolves(true);
+        mockSecurityService.validateCSRF.rejects(csrfError);
+
+        await expect(announcementManager.createAnnouncementSecure(announcementData, userToken, invalidCSRF))
+          .to.be.rejectedWith('Invalid CSRF token');
+      });
+
+      it('should reject request when rate limit exceeded', async () => {
+        const announcementId = 1;
+        const userToken = 'valid-token';
+        const userData = { id: 1, roles: ['user'] };
+        const rateLimitError = new Error('Rate limit exceeded');
+        rateLimitError.code = 'RATE_LIMIT_EXCEEDED';
+
+        mockAuthService.verifyToken.resolves(userData);
+        mockSecurityService.checkRateLimit.rejects(rateLimitError);
+
+        await expect(announcementManager.getAnnouncementSecure(announcementId, userToken))
+          .to.be.rejectedWith('Rate limit exceeded');
+      });
+
+      it('should handle session validation failure', async () => {
+        const announcementData = { title: 'Test', content: 'Content' };
+        const userToken = 'valid-token';
+        const userData = { id: 1, roles: ['admin'] };
+        const sessionError = new Error('Session is invalid or expired');
+
+        mockAuthService.verifyToken.resolves(userData);
+        mockAuthService.validateSession.rejects(sessionError);
+
+        await expect(announcementManager.createAnnouncementSecure(announcementData, userToken))
+          .to.be.rejectedWith('Session is invalid or expired');
+      });
+
+      it('should sanitize malicious input and reject if dangerous', async () => {
+        const maliciousData = { 
+          title: '<script>alert("xss")</script>Test',
+          content: 'Content with <script>malicious()</script> code'
+        };
+        const userToken = 'valid-token';
+        const userData = { id: 1, roles: ['admin'] };
+        const securityError = new Error('Malicious content detected');
+
+        mockAuthService.verifyToken.resolves(userData);
+        mockAuthService.checkPermission.resolves(true);
+        mockSecurityService.sanitizeInput.throws(securityError);
+
+        await expect(announcementManager.createAnnouncementSecure(maliciousData, userToken))
+          .to.be.rejectedWith('Malicious content detected');
+      });
+
+      it('should handle authorization service unavailable', async () => {
+        const announcementId = 1;
+        const userToken = 'valid-token';
+        const serviceError = new Error('Authorization service unavailable');
+        serviceError.code = 'SERVICE_UNAVAILABLE';
+
+        mockAuthService.verifyToken.rejects(serviceError);
+
+        await expect(announcementManager.getAnnouncementSecure(announcementId, userToken))
+          .to.be.rejectedWith('Authorization service unavailable');
+      });
+
+      it('should handle concurrent permission changes', async () => {
+        const announcementData = { title: 'Test', content: 'Content' };
+        const userToken = 'valid-token';
+        const userData = { id: 1, roles: ['admin'] };
+        const permissionError = new Error('User permissions have changed');
+
+        mockAuthService.verifyToken.resolves(userData);
+        mockAuthService.checkPermission.onFirstCall().resolves(true);
+        mockSecurityService.sanitizeInput.returns(announcementData);
+        mockDb.create.rejects(permissionError);
+
+        await expect(announcementManager.createAnnouncementSecure(announcementData, userToken))
+          .to.be.rejectedWith('User permissions have changed');
+      });
+    });
+  });
+
+  // TC-004: Performance and load testing
+  describe('TC-004: Performance and load testing', () => {
+    let announcementManager;
+    let mockDb;
+    let mockPerformanceMonitor;
+    let mockLoadBalancer;
+
+    beforeEach(() => {
+      mockDb = {
+        create: sinon.stub(),
+        findById: sinon.stub(),
+        update: sinon.stub(),
+        delete: sinon.stub(),
+        findAll: sinon.stub(),
+        bulkCreate: sinon.stub(),
+        getConnectionPool: sinon.stub(),
+        query: sinon.stub()
+      };
+      mockPerformanceMonitor = {
+        startTimer: sinon.stub().returns({ stop: sinon.stub().returns(100) }),
+        recordMetric: sinon.stub(),
+        getMemoryUsage: sinon.stub(),
+        getCPUUsage: sinon.stub()
+      };
+      mockLoadBalancer = {
+        distributeLoad: sinon.stub(),
+        checkCapacity: sinon.stub(),
+        getActiveConnections: sinon.stub()
+      };
+      announcementManager = new AnnouncementManager(mockDb, null, null, mockPerformanceMonitor, mockLoadBalancer);
+    });
+
+    describe('Happy Path', () => {
+      it('should handle concurrent read operations efficiently', async () => {
+        const announcementId = 1;
+        const expectedAnnouncement = { id: 1, title: 'Test', content: 'Content' };
+        const concurrentRequests = 100;
+
+        mockDb.findById.resolves(expectedAnnouncement);
+        mockPerformanceMonitor.getMemoryUsage.returns({ used: 50, total: 100 });
+        mockPerformanceMonitor.getCPUUsage.returns(30);
+
+        const promises = Array(concurrentRequests).fill().map(() => 
+          announcementManager.getAnnouncement(announcementId)
+        );
+
+        const results = await Promise.all(promises);
+
+        expect(results).to.have.length(concurrentRequests);
+        results.forEach(result => {
+          expect(result).to.deep.equal(expectedAnnouncement);
+        });
+        expect(mockPerformanceMonitor.recordMetric.called).to.be.true;
+      });
+
+      it('should handle bulk operations with optimal performance', async () => {
+        const bulkData = Array(1000).fill().map((_, i) => ({
+          title: `Announcement ${i}`,
+          content: `Content ${i}`,
+          priority: 'medium'
+        }));
+        const expectedResults = bulkData.map((data, i) => ({ id: i + 1, ...data }));
+
+        mockDb.bulkCreate.resolves(expectedResults);
+        mockPerformanceMonitor.startTimer.returns({ 
+          stop: sinon.stub().returns(500) // 500ms for 1000 records
+        });
+
+        const result = await announcementManager.bulkCreateAnnouncements(bulkData);
+
+        expect(result).to.have.length(1000);
+        expect(mockPerformanceMonitor.recordMetric.calledWith('bulk_create_time', 500)).to.be.true;
+        expect(mockPerformanceMonitor.recordMetric.calledWith('bulk_create_count', 1000)).to.be.true;
+      });
+
+      it('should maintain response time under load', async () => {
+        const announcementData = { title: 'Load Test', content: 'Content', priority: 'high' };
+        const expectedResult = { id: 1, ...announcementData };
+        const loadTestRequests = 50;
+
+        mockDb.create.resolves(expectedResult);
+        mockLoadBalancer.distributeLoad.resolves(true);
+        mockLoadBalancer.checkCapacity.returns(true);
+
+        const timer = mockPerformanceMonitor.startTimer();
+        timer.stop.returns(200); // 200ms response time
+
+        const promises = Array(loadTestRequests).fill().map(() => 
+          announcementManager.createAnnouncement(announcementData)
+        );
+
+        const results = await Promise.all(promises);
+
+        expect(results).to.have.length(loadTestRequests);
+        expect(mockLoadBalancer.distributeLoad.callCount).to.equal(loadTestRequests);
+        expect(mockPerformanceMonitor.recordMetric.calledWith('response_time')).to.be.true;
+      });
+
+      it('should efficiently handle database connection pooling', async () => {
+        const connectionPoolSize = 10;
+        const mockPool = {
+          getConnection: sinon.stub(),
+          releaseConnection: sinon.stub(),
+          activeConnections: 5,
+          maxConnections: connectionPoolSize
+        };
+
+        mockDb.getConnectionPool.returns(mockPool);
+        mockDb.findAll.resolves([]);
+
+        await announcementManager.getAllAnnouncements();
+
+        expect(mockDb.getConnectionPool.called).to.be.true;
+        expect(mockPerformanceMonitor.recordMetric.calledWith('pool_utilization', 50)).to.be.true; // 5/10 = 50%
+      });
+
+      it('should optimize query performance with indexing', async () => {
+        const searchParams = { priority: 'high', category: 'urgent' };
+        const expectedResults = [
+          { id: 1, title: 'Urgent', priority: 'high', category: 'urgent' }
+        ];
+
+        mockDb.query.withArgs(sinon.match.string, sinon.match.array).resolves(expectedResults);
+        mockPerformanceMonitor.startTimer.returns({ stop: sinon.stub().returns(50) }); // Fast query
+
+        const result = await announcementManager.searchAnnouncements(searchParams);
+
+        expect(result).to.deep.equal(expectedResults);
+        expect(mockPerformanceMonitor.recordMetric.calledWith('query_time', 50)).to.be.true;
+        expect(mockDb.query.calledWith(sinon.match(/INDEX/), sinon.match.array)).to.be.true;
+      });
+
+      it('should handle memory-efficient pagination', async () => {
+        const pageSize = 100;
+        const totalRecords = 10000;
+        const pageData = Array(pageSize).fill().map((_, i) => ({
+          id: i + 1,
+          title: `Announcement ${i + 1}`,
+          content: 'Content'
+        }));
+
+        mockDb.findAll.resolves(pageData);
+        mockPerformanceMonitor.getMemoryUsage.returns({ used: 200, total: 1000 }); // 20% usage
+
+        const result = await announcementManager.getAllAnnouncements({ page: 1, limit: pageSize });
+
+        expect(result).to.have.length(pageSize);
+        expect(mockPerformanceMonitor.recordMetric.calledWith('memory_usage_percent', 20)).to.be.true;
+      });
+
+      it('should maintain performance during cache operations', async () => {
+        const announcementId = 1;
+        const cachedData = { id: 1, title: 'Cached', content: 'Content' };
+
+        const mockCache = {
+          get: sinon.stub().resolves(cachedData),
+          set: sinon.stub().resolves(true),
+          hit: true
+        };
+
+        announcementManager.cache = mockCache;
+        mockPerformanceMonitor.startTimer.returns({ stop: sinon.stub().returns(5) }); // Fast cache hit
+
+        const result = await announcementManager.getAnnouncement(announcementId);
+
+        expect(result).to.deep.equal(cachedData);
+        expect(mockCache.get.calledWith(`announcement:${announcementId}`)).to.be.true;
+        expect(mockPerformanceMonitor.recordMetric.calledWith('cache_hit_time', 5)).to.be.true;
+        expect(mockDb.findById.called).to.be.false; // Should not hit database
+      });
+    });
+
+    describe('Error Path', () => {
+      it('should handle performance degradation under extreme load', async () => {
+        const extremeLoad = 1000;
+        const announcementData = { title: 'Stress Test', content: 'Content' };
+        const slowResponseTime = 5000; // 5 seconds
+
+        mockDb.create.callsFake(() => new Promise(resolve => 
+          setTimeout(() => resolve({ id: 1, ...announcementData }), 100)
+        ));
+        mockPerformanceMonitor.startTimer.returns({ stop: sinon.stub().returns(slowResponseTime) });
+        mockLoadBalancer.checkCapacity.returns(false); // Over capacity
+
+        const promises = Array(extremeLoad).fill().map(() => 
+          announcementManager.createAnnouncement(announcementData)
+        );
+
+        await expect(Promise.all(promises))
+          .to.be.rejectedWith('System over capacity');
+        
+        expect(mockPerformanceMonitor.recordMetric.calledWith('performance_degradation', true)).to.be.true;
+      });
+
+      it('should handle database connection pool exhaustion', async () => {
+        const mockPool = {
+          getConnection: sinon.stub().rejects(new Error('Connection pool exhausted')),
+          activeConnections: 10,
+          maxConnections: 10
+        };
+
+        mockDb.getConnectionPool.returns(mockPool);
+
+        await expect(announcementManager.getAllAnnouncements())
+          .to.be.rejectedWith('Connection pool exhausted');
+
+        expect(mockPerformanceMonitor.recordMetric.calledWith('pool_exhausted', true)).to.be.true;
+      });
+
+      it('should handle memory pressure during bulk operations', async () => {
+        const largeBulkData = Array(50000).fill().map((_, i) => ({
+          title: `Large Bulk ${i}`,
+          content: `Content ${i}`.repeat(1000) // Large content
+        }));
+
+        mockPerformanceMonitor.getMemoryUsage.returns({ used: 950, total: 1000 }); // 95% usage
+        mockDb.bulkCreate.rejects(new Error('Out of memory'));
+
+        await expect(announcementManager.bulkCreateAnnouncements(largeBulkData))
+          .to.be.rejectedWith('Out of memory');
+
+        expect(mockPerformanceMonitor.recordMetric.calledWith('memory_pressure', 95)).to.be.true;
+      });
+
+      it('should handle slow query performance', async () => {
+        const complexQuery = { 
+          title: '%complex%', 
+          content: '%search%',
+          dateRange: { start: '2023-01-01', end: '2023-12-31' }
+        };
+        const slowQueryTime = 10000; // 10 seconds
+
+        mockDb.query.callsFake(() => new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Query timeout')), slowQueryTime)
+        ));
+        mockPerformanceMonitor.startTimer.returns({ stop: sinon.stub().returns(slowQueryTime) });
+
+        await expect(announcementManager.searchAnnouncements(complexQuery))
+          .to.be.rejectedWith('Query timeout');
+
+        expect(mockPerformanceMonitor.recordMetric.calledWith('slow_query', slowQueryTime)).to.be.true;
+      });
+
+      it('should handle CPU usage spikes during processing', async () => {
+        const processingIntensiveData = Array(1000).fill().map((_, i) => ({
+          title: `Processing ${i}`,
+          content: 'Complex content requiring heavy processing'
+        }));
+
+        mockPerformanceMonitor.getCPUUsage.returns(95); // 95% CPU usage
+        mockDb.bulkCreate.rejects(new Error('CPU overload'));
+
+        await expect(announcementManager.bulkCreateAnnouncements(processingIntensiveData))
+          .to.be.rejectedWith('CPU overload');
+
+        expect(mockPerformanceMonitor.recordMetric.calledWith('cpu_overload', 95)).to.be.true;
+      });
+
+      it('should handle cache miss performance impact', async () => {
+        const announcementId = 1;
+        const dbData = { id: 1, title: 'From DB', content: 'Content' };
+
+        const mockCache = {
+          get: sinon.stub().resolves(null), // Cache miss
+          set: sinon.stub().resolves(true)
+        };
+
+        announcementManager.cache = mockCache;
+        mockDb.findById.resolves(dbData);
+        mockPerformanceMonitor.startTimer.returns({ stop: sinon.stub().returns(200) }); // Slower DB hit
+
+        const result = await announcementManager.getAnnouncement(announcementId);
+
+        expect(result).to.deep.equal(dbData);
+        expect(mockCache.get.calledWith(`announcement:${announcementId}`)).to.be.true;
+        expect(mockDb.findById.calledOnceWith(announcementId)).to.be.true;
+        expect(mockPerformanceMonitor.recordMetric.calledWith('cache_miss', true)).to.be.true;
+      });
+
+      it('should handle load balancer failure', async () => {
+        const announcementData = { title: 'Load Balancer Test', content: 'Content' };
+        const loadBalancerError = new Error('Load balancer unavailable');
+
+        mockLoadBalancer.distributeLoad.rejects(loadBalancerError);
+
+        await expect(announcementManager.createAnnouncement(announcementData))
+          .to.be.rejectedWith('Load balancer unavailable');
+
+        expect(mockPerformanceMonitor.recordMetric.calledWith('load_balancer_failure', true)).to.be.true;
+      });
+
+      it('should handle concurrent write conflicts', async () => {
+        const announcementId = 1;
+        const updateData = { title: 'Concurrent Update' };
+        const conflictError = new Error('Deadlock detected');
+        conflictError.code = 'ER_LOCK_DEADLOCK';
+
+        mockDb.update.rejects(conflictError);
+        mockPerformanceMonitor.startTimer.returns({ stop: sinon.stub().returns(1000) });
+
+        await expect(announcementManager.updateAnnouncement(announcementId, updateData))
+          .to.be.rejectedWith('Deadlock detected');
+
+        expect(mockPerformanceMonitor.recordMetric.calledWith('deadlock_detected', true)).to.be.true;
+      });
+
+      it('should handle network latency issues', async () => {
+        const announcementId = 1;
+        const networkError = new Error('Network timeout');
+        networkError.code = 'ETIMEDOUT';
+
+        mockDb.findById.rejects(networkError);
+        mockPerformanceMonitor.startTimer.returns({ stop: sinon.stub().returns(30000) }); // 30 second timeout
+
+        await expect(announcementManager.getAnnouncement(announcementId))
+          .to.be.rejectedWith('Network timeout');
+
+        expect(mockPerformanceMonitor.recordMetric.calledWith('network_timeout', 30000)).to.be.true;
+      });
+
+      it('should handle resource cleanup on performance failures', async () => {
+        const resourceError = new Error('Resource leak detected');
+        const mockResourceManager = {
+          cleanup: sinon.stub(),
+          getActiveResources: sinon.stub().returns(1000) // Too many resources
+        };
+
+        announcementManager.resourceManager = mockResourceManager;
+        mockDb.findAll.rejects(resourceError);
+
+        await expect(announcementManager.getAllAnnouncements())
+          .to.be.rejectedWith('Resource leak detected');
+
+        expect(mockResourceManager.cleanup.called).to.be.true;
+        expect(mockPerformanceMonitor.recordMetric.calledWith('resource_leak', 1000)).to.be.true;
+      });
+    });
+  });
+
+  // TC-005: AnnouncementForm validation
+  describe('TC-005: AnnouncementForm validation', () => {
+    let announcementForm;
+
+    beforeEach(() => {
+      announcementForm = new AnnouncementForm();
+    });
+
+    describe('Happy Path', () => {
+      it('should validate valid announcement form data', () => {
+        const validData = {
+          title: 'Valid Title',
+          content: 'This is valid content with sufficient length',
+          priority: 'medium',
+          category: 'general',
+          publishDate: new Date().toISOString()
+        };
+
+        const result = announcementForm.validate(validData);
+
+        expect(result.isValid).to.be.true;
+        expect(result.errors).to.be.empty;
+      });
+
+      it('should validate minimum required fields', () => {
+        const minimalData = {
+          title: 'Minimum Title',
+          content: 'Minimum content',
+          priority: 'low'
+        };
+
+        const result = announcementForm.validate(minimalData);
+
+        expect(result.isValid).to.be.true;
+        expect(result.errors).to.be.empty;
+      });
+    });
+
+    describe('Error Path', () => {
+      it('should reject empty title', () => {
+        const invalidData = {
+          title: '',
+          content: 'Valid content',
+          priority: 'medium'
+        };
+
+        const result = announcementForm.validate(invalidData);
+
+        expect(result.isValid).to.be.false;
+        expect(result.errors).to.include('Title is required');
+      });
+
+      it('should reject title exceeding maximum length', () => {
+        const invalidData = {
+          title: 'x'.repeat(256),
+          content: 'Valid content',
+          priority: 'medium'
+        };
+
+        const result = announcementForm.validate(invalidData);
+
+        expect(result.isValid).to.be.false;
+        expect(result.errors).to.include('Title must be less than 255 characters');
+      });
+
+      it('should reject empty content', () => {
+        const invalidData = {
+          title: 'Valid Title',
+          content: '',
+          priority: 'medium'
+        };
+
+        const result = announcementForm.validate(invalidData);
+
+        expect(result.isValid).to.be.false;
+        expect(result.errors).to.include('Content is required');
+      });
+
+      it('should reject invalid priority value', () => {
+        const invalidData = {
+          title: 'Valid Title',
+          content: 'Valid content',
+          priority: 'invalid'
+        };
+
+        const result = announcementForm.validate(invalidData);
+
+        expect(result.isValid).to.be.false;
+        expect(result.errors).to.include('Priority must be one of: low, medium, high, critical');
+      });
+
+      it('should reject invalid date format', () => {
+        const invalidData = {
+          title: 'Valid Title',
+          content: 'Valid content',
+          priority: 'medium',
+          publishDate: 'invalid-date'
+        };
+
+        const result = announcementForm.validate(invalidData);
+
+        expect(result.isValid).to.be.false;
+        expect(result.errors).to.include('Publish date must be a valid ISO date string');
+      });
+    });
+  });
+
+  // TC-006: Database migration
+  describe('TC-006: Database migration', () => {
+    let databaseMigration;
+    let mockConnection;
+
+    beforeEach(() => {
+      mockConnection = {
+        query: sinon.stub(),
+        beginTransaction: sinon.stub(),
+        commit: sinon.stub(),
+        rollback: sinon.stub(),
+        end: sinon.stub()
+      };
+      databaseMigration = new DatabaseMigration(mockConnection);
+    });
+
+    describe('Happy Path', () => {
+      it('should execute migration successfully', async () => {
+        mockConnection.beginTransaction.resolves();
+        mockConnection.query.onFirstCall().resolves();
+        mockConnection.query.onSecondCall().resolves();
+        mockConnection.commit.resolves();
+
+        const result = await databaseMigration.migrate();
+
+        expect(result.success).to.be.true;
+        expect(mockConnection.beginTransaction.calledOnce).to.be.true;
+        expect(mockConnection.commit.calledOnce).to.be.true;
+      });
+
+      it('should create announcements table correctly', async () => {
+        mockConnection.query.resolves();
+        
+        await databaseMigration.createAnnouncementsTable();
+        
+        const expectedSQL = `
+          CREATE TABLE IF NOT EXISTS announcements (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            title VARCHAR(255) NOT NULL,
+            content TEXT NOT NULL,
+            priority ENUM('low', 'medium', 'high', 'critical') DEFAULT 'medium',
+            category VARCHAR(100),
+            publish_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+          )
+        `;
+        
+        expect(mockConnection.query.calledWith(expectedSQL.trim())).to.be.true;
+      });
+
+      it('should create indexes successfully', async () => {
+        mockConnection.query.resolves();
+        
+        await databaseMigration.createIndexes();
+        
+        expect(mockConnection.query.callCount).to.equal(3);
+        expect(mockConnection.query.calledWith('CREATE INDEX idx_announcements_priority ON announcements(priority)')).to.be.true;
+        expect(mockConnection.query.calledWith('CREATE INDEX idx_announcements_category ON announcements(category)')).to.be.true;
+        expect(mockConnection.query.calledWith('CREATE INDEX idx_announcements_publish_date ON announcements(publish_date)')).to.be.true;
+      });
+
+      it('should execute full migration with all steps', async () => {
+        mockConnection.beginTransaction.resolves();
+        mockConnection.query.resolves();
+        mockConnection.commit.resolves();
+
+        const result = await databaseMigration.runFullMigration();
+
+        expect(result.success).to.be.true;
+        expect(result.steps).to.include('Table created');
+        expect(result.steps).to.include('Indexes created');
+        expect(result.steps).to.include('Initial data inserted');
+      });
+
+      it('should validate migration status correctly', async () => {
+        mockConnection.query.withArgs('SHOW TABLES LIKE "announcements"').resolves([{ Tables_in_db: 'announcements' }]);
+        mockConnection.query.withArgs('SHOW INDEX FROM announcements').resolves([
+          { Key_name: 'idx_announcements_priority' },
+          { Key_name: 'idx_announcements_category' }
+        ]);
+
+        const result = await databaseMigration.validateMigration();
+
+        expect(result.tableExists).to.be.true;
+        expect(result.indexesCreated).to.be.true;
+        expect(result.isValid).to.be.true;
+      });
+    });
+
+    describe('Error Path', () => {
+      it('should rollback transaction on migration failure', async () => {
+        const migrationError = new Error('Table creation failed');
+        
+        mockConnection.beginTransaction.resolves();
+        mockConnection.query.rejects(migrationError);
+        mockConnection.rollback.resolves();
+
+        const result = await databaseMigration.migrate();
+
+        expect(result.success).to.be.false;
+        expect(result.error).to.equal('Table creation failed');
+        expect(mockConnection.rollback.calledOnce).to.be.true;
+        expect(mockConnection.commit.called).to.be.false;
+      });
+
+      it('should handle connection error during transaction start', async () => {
+        const connectionError = new Error('Connection timeout');
+        
+        mockConnection.beginTransaction.rejects(connectionError);
+
+        const result = await databaseMigration.migrate();
+
+        expect(result.success).to.be.false;
+        expect(result.error).to.equal('Connection timeout');
+        expect(mockConnection.rollback.called).to.be.false;
+        expect(mockConnection.commit.called).to.be.false;
+      });
+
+      it('should handle constraint violation during table creation', async () => {
+        const constraintError = new Error('Duplicate column name');
+        
+        mockConnection.beginTransaction.resolves();
+        mockConnection.query.rejects(constraintError);
+        mockConnection.rollback.resolves();
+
+        await expect(databaseMigration.createAnnouncementsTable())
+          .to.be.rejectedWith('Duplicate column name');
+      });
+
+      it('should handle index creation failure gracefully', async () => {
+        const indexError = new Error('Index already exists');
+        
+        mockConnection.query.onFirstCall().resolves();
+        mockConnection.query.onSecondCall().rejects(indexError);
+
+        const result = await databaseMigration.createIndexes();
+
+        expect(result.partialSuccess).to.be.true;
+        expect(result.errors).to.include('Index already exists');
+      });
+
+      it('should handle rollback failure gracefully', async () => {
+        const migrationError = new Error('Table creation failed');
+        const rollbackError = new Error('Rollback failed');
+        
+        mockConnection.beginTransaction.resolves();
+        mockConnection.query.rejects(migrationError);
+        mockConnection.rollback.rejects(rollbackError);
+
+        const result = await databaseMigration.migrate();
+
+        expect(result.success).to.be.false;
+        expect(result.error).to.equal('Table creation failed');
+        expect(result.rollbackError).to.equal('Rollback failed');
+      });
+
+      it('should handle validation failure when table does not exist', async () => {
+        mockConnection.query.withArgs('SHOW TABLES LIKE "announcements"').resolves([]);
+
+        const result = await databaseMigration.validateMigration();
+
+        expect(result.tableExists).to.be.false;
+        expect(result.isValid).to.be.false;
+        expect(result.errors).to.include('Announcements table does not exist');
+      });
+
+      it('should handle database permission errors', async () => {
+        const permissionError = new Error('Access denied for user');
+        
+        mockConnection.beginTransaction.resolves();
+        mockConnection.query.rejects(permissionError);
+        mockConnection.rollback.resolves();
+
+        const result = await databaseMigration.migrate();
+
+        expect(result.success).to.be.false;
+        expect(result.error).to.equal('Access denied for user');
+        expect(result.errorType).to.equal('PERMISSION_ERROR');
+      });
+
+      it('should handle disk space errors during migration', async () => {
+        const diskSpaceError = new Error('No space left on device');
+        
+        mockConnection.beginTransaction.resolves();
+        mockConnection.query.rejects(diskSpaceError);
+        mockConnection.rollback.resolves();
+
+        const result = await databaseMigration.migrate();
+
+        expect(result.success).to.be.false;
+        expect(result.error).to.equal('No space left on device');
+        expect(result.errorType).to.equal('STORAGE_ERROR');
+      });
+    });
+  });
+});

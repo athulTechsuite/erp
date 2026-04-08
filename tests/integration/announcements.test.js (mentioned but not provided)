@@ -1,0 +1,291 @@
+const request = require('supertest');
+const app = require('../../src/app');
+const { Announcement } = require('../../src/models');
+const { setupTestDB, cleanupTestDB } = require('../helpers/database');
+
+// API-001: Announcement API endpoint tests - Comprehensive test coverage for CRUD operations
+describe('API-001: Announcement API Endpoint Tests - TC-001: Announcement CRUD Operations', () => {
+  beforeAll(async () => {
+    await setupTestDB();
+  });
+
+  afterAll(async () => {
+    await cleanupTestDB();
+  });
+
+  beforeEach(async () => {
+    await Announcement.deleteMany({});
+  });
+
+  describe('Happy Path - CRUD Operations', () => {
+    const validAnnouncementData = {
+      title: 'Test Announcement',
+      content: 'This is a test announcement content',
+      priority: 'high',
+      targetAudience: 'all',
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
+    };
+
+    test('API-001 TC-001.1: Should create a new announcement successfully', async () => {
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(validAnnouncementData)
+        .expect(201);
+
+      expect(response.body).toMatchObject({
+        success: true,
+        data: expect.objectContaining({
+          title: validAnnouncementData.title,
+          content: validAnnouncementData.content,
+          priority: validAnnouncementData.priority,
+          targetAudience: validAnnouncementData.targetAudience,
+          id: expect.any(String)
+        })
+      });
+
+      // Verify in database
+      const createdAnnouncement = await Announcement.findById(response.body.data.id);
+      expect(createdAnnouncement).toBeTruthy();
+      expect(createdAnnouncement.title).toBe(validAnnouncementData.title);
+    });
+
+    test('API-001 TC-001.2: Should retrieve all announcements successfully', async () => {
+      // Create test announcements
+      const announcement1 = await Announcement.create(validAnnouncementData);
+      const announcement2 = await Announcement.create({
+        ...validAnnouncementData,
+        title: 'Second Announcement'
+      });
+
+      const response = await request(app)
+        .get('/api/announcements')
+        .expect(200);
+
+      expect(response.body).toMatchObject({
+        success: true,
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            id: announcement1.id,
+            title: announcement1.title
+          }),
+          expect.objectContaining({
+            id: announcement2.id,
+            title: 'Second Announcement'
+          })
+        ])
+      });
+
+      expect(response.body.data).toHaveLength(2);
+    });
+
+    test('API-001 TC-001.3: Should retrieve a specific announcement by ID successfully', async () => {
+      const createdAnnouncement = await Announcement.create(validAnnouncementData);
+
+      const response = await request(app)
+        .get(`/api/announcements/${createdAnnouncement.id}`)
+        .expect(200);
+
+      expect(response.body).toMatchObject({
+        success: true,
+        data: expect.objectContaining({
+          id: createdAnnouncement.id,
+          title: validAnnouncementData.title,
+          content: validAnnouncementData.content,
+          priority: validAnnouncementData.priority,
+          targetAudience: validAnnouncementData.targetAudience
+        })
+      });
+    });
+
+    test('API-001 TC-001.4: Should update an announcement successfully', async () => {
+      const createdAnnouncement = await Announcement.create(validAnnouncementData);
+      const updateData = {
+        title: 'Updated Announcement Title',
+        priority: 'medium'
+      };
+
+      const response = await request(app)
+        .put(`/api/announcements/${createdAnnouncement.id}`)
+        .send(updateData)
+        .expect(200);
+
+      expect(response.body).toMatchObject({
+        success: true,
+        data: expect.objectContaining({
+          id: createdAnnouncement.id,
+          title: updateData.title,
+          priority: updateData.priority,
+          content: validAnnouncementData.content // Should retain original content
+        })
+      });
+
+      // Verify in database
+      const updatedAnnouncement = await Announcement.findById(createdAnnouncement.id);
+      expect(updatedAnnouncement.title).toBe(updateData.title);
+      expect(updatedAnnouncement.priority).toBe(updateData.priority);
+    });
+
+    test('API-001 TC-001.5: Should delete an announcement successfully', async () => {
+      const createdAnnouncement = await Announcement.create(validAnnouncementData);
+
+      const response = await request(app)
+        .delete(`/api/announcements/${createdAnnouncement.id}`)
+        .expect(200);
+
+      expect(response.body).toMatchObject({
+        success: true,
+        message: 'Announcement deleted successfully'
+      });
+
+      // Verify deletion in database
+      const deletedAnnouncement = await Announcement.findById(createdAnnouncement.id);
+      expect(deletedAnnouncement).toBeNull();
+    });
+  });
+
+  describe('Error Path - CRUD Operations', () => {
+    test('API-001 TC-001.6: Should fail to create announcement with invalid data', async () => {
+      const invalidData = {
+        title: '', // Empty title
+        content: 'Test content',
+        priority: 'invalid_priority', // Invalid priority
+        targetAudience: 'all'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(invalidData)
+        .expect(400);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: expect.stringContaining('validation')
+      });
+    });
+
+    test('API-001 TC-001.7: Should fail to create announcement with missing required fields', async () => {
+      const incompleteData = {
+        title: 'Test Title'
+        // Missing content, priority, targetAudience
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(incompleteData)
+        .expect(400);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: expect.any(String)
+      });
+    });
+
+    test('API-001 TC-001.8: Should return 404 when retrieving non-existent announcement', async () => {
+      const nonExistentId = '507f1f77bcf86cd799439011'; // Valid ObjectId format
+
+      const response = await request(app)
+        .get(`/api/announcements/${nonExistentId}`)
+        .expect(404);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: 'Announcement not found'
+      });
+    });
+
+    test('API-001 TC-001.9: Should return 400 for invalid announcement ID format', async () => {
+      const invalidId = 'invalid-id-format';
+
+      const response = await request(app)
+        .get(`/api/announcements/${invalidId}`)
+        .expect(400);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: expect.stringContaining('Invalid ID format')
+      });
+    });
+
+    test('API-001 TC-001.10: Should fail to update non-existent announcement', async () => {
+      const nonExistentId = '507f1f77bcf86cd799439011';
+      const updateData = {
+        title: 'Updated Title'
+      };
+
+      const response = await request(app)
+        .put(`/api/announcements/${nonExistentId}`)
+        .send(updateData)
+        .expect(404);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: 'Announcement not found'
+      });
+    });
+
+    test('API-001 TC-001.11: Should fail to update announcement with invalid data', async () => {
+      const validAnnouncementData = {
+        title: 'Test Announcement',
+        content: 'This is a test announcement content',
+        priority: 'high',
+        targetAudience: 'all'
+      };
+      const createdAnnouncement = await Announcement.create(validAnnouncementData);
+
+      const invalidUpdateData = {
+        priority: 'invalid_priority',
+        expiresAt: 'invalid_date'
+      };
+
+      const response = await request(app)
+        .put(`/api/announcements/${createdAnnouncement.id}`)
+        .send(invalidUpdateData)
+        .expect(400);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: expect.any(String)
+      });
+    });
+
+    test('API-001 TC-001.12: Should fail to delete non-existent announcement', async () => {
+      const nonExistentId = '507f1f77bcf86cd799439011';
+
+      const response = await request(app)
+        .delete(`/api/announcements/${nonExistentId}`)
+        .expect(404);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: 'Announcement not found'
+      });
+    });
+
+    test('API-001 TC-001.13: Should handle server errors gracefully during creation', async () => {
+      // Mock database connection failure
+      jest.spyOn(Announcement, 'create').mockImplementation(() => {
+        throw new Error('Database connection failed');
+      });
+
+      const validData = {
+        title: 'Test Announcement',
+        content: 'Test content',
+        priority: 'high',
+        targetAudience: 'all'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(validData)
+        .expect(500);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: expect.stringContaining('Internal server error')
+      });
+
+      // Restore original implementation
+      Announcement.create.mockRestore();
+    });
+  });
+});

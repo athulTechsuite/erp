@@ -1,0 +1,336 @@
+import React from 'react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { jest } from '@jest/globals';
+import AnnouncementManager from '../components/Announcements/AnnouncementManager';
+
+// Mock the API service
+jest.mock('../services/api', () => ({
+  getAnnouncements: jest.fn(),
+}));
+
+import { getAnnouncements } from '../services/api';
+
+describe('AnnouncementManager Component', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // TC-002: Announcement component integration - Happy path
+  describe('TC-002: Announcement component integration - Happy path', () => {
+    test('should render announcements successfully when API returns data', async () => {
+      // Arrange
+      const mockAnnouncements = [
+        {
+          id: 1,
+          title: 'Test Announcement 1',
+          content: 'This is a test announcement',
+          priority: 'high',
+          createdAt: '2023-01-01T00:00:00Z'
+        },
+        {
+          id: 2,
+          title: 'Test Announcement 2',
+          content: 'This is another test announcement',
+          priority: 'medium',
+          createdAt: '2023-01-02T00:00:00Z'
+        }
+      ];
+
+      getAnnouncements.mockResolvedValue({
+        data: mockAnnouncements,
+        status: 200
+      });
+
+      // Act
+      render(<AnnouncementManager />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText('Test Announcement 1')).toBeInTheDocument();
+        expect(screen.getByText('Test Announcement 2')).toBeInTheDocument();
+        expect(screen.getByText('This is a test announcement')).toBeInTheDocument();
+        expect(screen.getByText('This is another test announcement')).toBeInTheDocument();
+      });
+
+      expect(getAnnouncements).toHaveBeenCalledTimes(1);
+    });
+
+    test('should display loading state initially', () => {
+      // Arrange
+      getAnnouncements.mockImplementation(() => new Promise(() => {})); // Never resolves
+
+      // Act
+      render(<AnnouncementManager />);
+
+      // Assert
+      expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    });
+
+    test('should handle empty announcements list', async () => {
+      // Arrange
+      getAnnouncements.mockResolvedValue({
+        data: [],
+        status: 200
+      });
+
+      // Act
+      render(<AnnouncementManager />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText(/no announcements/i)).toBeInTheDocument();
+      });
+    });
+
+    test('should properly render announcement priorities and dates', async () => {
+      // Arrange
+      const mockAnnouncements = [
+        {
+          id: 1,
+          title: 'High Priority Announcement',
+          content: 'Urgent information',
+          priority: 'high',
+          createdAt: '2023-01-01T12:00:00Z'
+        },
+        {
+          id: 2,
+          title: 'Low Priority Announcement',
+          content: 'General information',
+          priority: 'low',
+          createdAt: '2023-01-02T15:30:00Z'
+        }
+      ];
+
+      getAnnouncements.mockResolvedValue({
+        data: mockAnnouncements,
+        status: 200
+      });
+
+      // Act
+      render(<AnnouncementManager />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText('High Priority Announcement')).toBeInTheDocument();
+        expect(screen.getByText('Low Priority Announcement')).toBeInTheDocument();
+        // Verify priority badges are rendered
+        expect(screen.getByText(/high/i)).toBeInTheDocument();
+        expect(screen.getByText(/low/i)).toBeInTheDocument();
+      });
+    });
+
+    test('should handle component refresh and data updates', async () => {
+      // Arrange
+      const initialData = [{
+        id: 1,
+        title: 'Initial Announcement',
+        content: 'Initial content',
+        priority: 'medium',
+        createdAt: '2023-01-01T00:00:00Z'
+      }];
+
+      const updatedData = [{
+        id: 1,
+        title: 'Updated Announcement',
+        content: 'Updated content',
+        priority: 'high',
+        createdAt: '2023-01-01T00:00:00Z'
+      }];
+
+      getAnnouncements
+        .mockResolvedValueOnce({ data: initialData, status: 200 })
+        .mockResolvedValueOnce({ data: updatedData, status: 200 });
+
+      // Act
+      render(<AnnouncementManager />);
+
+      // Wait for initial load
+      await waitFor(() => {
+        expect(screen.getByText('Initial Announcement')).toBeInTheDocument();
+      });
+
+      // Simulate refresh
+      const refreshButton = screen.getByRole('button', { name: /refresh/i });
+      fireEvent.click(refreshButton);
+
+      // Assert updated data
+      await waitFor(() => {
+        expect(screen.getByText('Updated Announcement')).toBeInTheDocument();
+        expect(screen.getByText('Updated content')).toBeInTheDocument();
+      });
+
+      expect(getAnnouncements).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // TC-002: Announcement component integration - Error path
+  describe('TC-002: Announcement component integration - Error path', () => {
+    test('should display error message when API call fails', async () => {
+      // Arrange
+      const mockError = new Error('Failed to fetch announcements');
+      getAnnouncements.mockRejectedValue(mockError);
+
+      // Act
+      render(<AnnouncementManager />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText(/error loading announcements/i)).toBeInTheDocument();
+      });
+
+      expect(getAnnouncements).toHaveBeenCalledTimes(1);
+    });
+
+    test('should display error message when API returns error status', async () => {
+      // Arrange
+      getAnnouncements.mockResolvedValue({
+        data: null,
+        status: 500,
+        error: 'Internal server error'
+      });
+
+      // Act
+      render(<AnnouncementManager />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText(/error loading announcements/i)).toBeInTheDocument();
+      });
+    });
+
+    test('should handle network timeout errors', async () => {
+      // Arrange
+      const timeoutError = new Error('Network timeout');
+      timeoutError.code = 'NETWORK_TIMEOUT';
+      getAnnouncements.mockRejectedValue(timeoutError);
+
+      // Act
+      render(<AnnouncementManager />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText(/network timeout/i)).toBeInTheDocument();
+      });
+    });
+
+    test('should provide retry functionality on error', async () => {
+      // Arrange
+      const mockError = new Error('Failed to fetch');
+      getAnnouncements
+        .mockRejectedValueOnce(mockError)
+        .mockResolvedValueOnce({
+          data: [{
+            id: 1,
+            title: 'Retry Success',
+            content: 'This loaded after retry',
+            priority: 'medium',
+            createdAt: '2023-01-01T00:00:00Z'
+          }],
+          status: 200
+        });
+
+      // Act
+      render(<AnnouncementManager />);
+
+      // Wait for error to appear
+      await waitFor(() => {
+        expect(screen.getByText(/error loading announcements/i)).toBeInTheDocument();
+      });
+
+      // Click retry button
+      const retryButton = screen.getByRole('button', { name: /retry/i });
+      fireEvent.click(retryButton);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText('Retry Success')).toBeInTheDocument();
+        expect(screen.getByText('This loaded after retry')).toBeInTheDocument();
+      });
+
+      expect(getAnnouncements).toHaveBeenCalledTimes(2);
+    });
+
+    test('should handle malformed API response data', async () => {
+      // Arrange
+      getAnnouncements.mockResolvedValue({
+        data: [
+          {
+            id: 1,
+            // Missing required fields to test error handling
+            title: null,
+            content: undefined,
+            priority: 'invalid-priority',
+            createdAt: 'invalid-date'
+          }
+        ],
+        status: 200
+      });
+
+      // Act
+      render(<AnnouncementManager />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText(/error processing announcements/i)).toBeInTheDocument();
+      });
+    });
+
+    test('should handle authentication errors', async () => {
+      // Arrange
+      const authError = new Error('Unauthorized access');
+      authError.status = 401;
+      getAnnouncements.mockRejectedValue(authError);
+
+      // Act
+      render(<AnnouncementManager />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText(/authentication required/i)).toBeInTheDocument();
+      });
+    });
+
+    test('should handle permission errors', async () => {
+      // Arrange
+      getAnnouncements.mockResolvedValue({
+        data: null,
+        status: 403,
+        error: 'Insufficient permissions'
+      });
+
+      // Act
+      render(<AnnouncementManager />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText(/insufficient permissions/i)).toBeInTheDocument();
+      });
+    });
+
+    test('should gracefully handle component unmount during API call', async () => {
+      // Arrange
+      let resolvePromise;
+      const pendingPromise = new Promise((resolve) => {
+        resolvePromise = resolve;
+      });
+      
+      getAnnouncements.mockReturnValue(pendingPromise);
+
+      // Act
+      const { unmount } = render(<AnnouncementManager />);
+      
+      // Unmount component while API call is pending
+      unmount();
+      
+      // Resolve the promise after unmount
+      resolvePromise({
+        data: [{ id: 1, title: 'Test', content: 'Test', priority: 'medium', createdAt: '2023-01-01' }],
+        status: 200
+      });
+
+      // Assert - no state update errors should occur
+      // This test ensures cleanup is properly handled
+      expect(getAnnouncements).toHaveBeenCalledTimes(1);
+    });
+  });
+});

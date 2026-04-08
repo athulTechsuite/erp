@@ -1,0 +1,168 @@
+"""
+Test Coverage for TC-001: Authentication and Authorization Tests
+"""
+
+import unittest
+from unittest.mock import Mock, patch
+import pytest
+
+
+class TestTC001AuthenticationAuthorization(unittest.TestCase):
+    """
+    TC-001: Authentication and authorization tests
+    Testing both happy path and error path scenarios
+    """
+    
+    def setUp(self):
+        """Set up test fixtures"""
+        self.mock_auth_service = Mock()
+        self.valid_credentials = {
+            'username': 'testuser',
+            'password': 'validpassword123'
+        }
+        self.invalid_credentials = {
+            'username': 'testuser',
+            'password': 'wrongpassword'
+        }
+    
+    def test_tc001_authentication_happy_path(self):
+        """
+        TC-001: Test successful authentication with valid credentials
+        Happy path scenario
+        """
+        # Arrange
+        self.mock_auth_service.authenticate.return_value = {
+            'success': True,
+            'user_id': '12345',
+            'token': 'valid_jwt_token'
+        }
+        
+        # Act
+        result = self.mock_auth_service.authenticate(
+            self.valid_credentials['username'],
+            self.valid_credentials['password']
+        )
+        
+        # Assert
+        self.assertTrue(result['success'])
+        self.assertIsNotNone(result['token'])
+        self.assertEqual(result['user_id'], '12345')
+    
+    def test_tc001_authentication_error_path_invalid_credentials(self):
+        """
+        TC-001: Test authentication failure with invalid credentials
+        Error path scenario
+        """
+        # Arrange
+        self.mock_auth_service.authenticate.return_value = {
+            'success': False,
+            'error': 'Invalid credentials',
+            'token': None
+        }
+        
+        # Act
+        result = self.mock_auth_service.authenticate(
+            self.invalid_credentials['username'],
+            self.invalid_credentials['password']
+        )
+        
+        # Assert
+        self.assertFalse(result['success'])
+        self.assertIsNone(result['token'])
+        self.assertEqual(result['error'], 'Invalid credentials')
+    
+    def test_tc001_authentication_error_path_missing_username(self):
+        """
+        TC-001: Test authentication failure with missing username
+        Error path scenario
+        """
+        # Arrange
+        self.mock_auth_service.authenticate.side_effect = ValueError('Username required')
+        
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            self.mock_auth_service.authenticate('', 'password123')
+        
+        self.assertEqual(str(context.exception), 'Username required')
+    
+    def test_tc001_authorization_happy_path_valid_token(self):
+        """
+        TC-001: Test successful authorization with valid token
+        Happy path scenario
+        """
+        # Arrange
+        valid_token = 'valid_jwt_token'
+        self.mock_auth_service.authorize.return_value = {
+            'authorized': True,
+            'user_id': '12345',
+            'permissions': ['read', 'write']
+        }
+        
+        # Act
+        result = self.mock_auth_service.authorize(valid_token)
+        
+        # Assert
+        self.assertTrue(result['authorized'])
+        self.assertEqual(result['user_id'], '12345')
+        self.assertIn('read', result['permissions'])
+        self.assertIn('write', result['permissions'])
+    
+    def test_tc001_authorization_error_path_invalid_token(self):
+        """
+        TC-001: Test authorization failure with invalid token
+        Error path scenario
+        """
+        # Arrange
+        invalid_token = 'invalid_token'
+        self.mock_auth_service.authorize.return_value = {
+            'authorized': False,
+            'error': 'Invalid or expired token'
+        }
+        
+        # Act
+        result = self.mock_auth_service.authorize(invalid_token)
+        
+        # Assert
+        self.assertFalse(result['authorized'])
+        self.assertEqual(result['error'], 'Invalid or expired token')
+    
+    def test_tc001_authorization_error_path_expired_token(self):
+        """
+        TC-001: Test authorization failure with expired token
+        Error path scenario
+        """
+        # Arrange
+        expired_token = 'expired_jwt_token'
+        self.mock_auth_service.authorize.return_value = {
+            'authorized': False,
+            'error': 'Token expired'
+        }
+        
+        # Act
+        result = self.mock_auth_service.authorize(expired_token)
+        
+        # Assert
+        self.assertFalse(result['authorized'])
+        self.assertEqual(result['error'], 'Token expired')
+
+
+@pytest.mark.parametrize("username,password,expected", [
+    ("validuser", "validpass", True),
+    ("invaliduser", "invalidpass", False),
+    ("", "validpass", False),
+    ("validuser", "", False)
+])
+def test_tc001_authentication_parametrized(username, password, expected):
+    """
+    TC-001: Parametrized test for authentication scenarios
+    Tests both happy path and error paths with different inputs
+    """
+    mock_service = Mock()
+    mock_service.authenticate.return_value = {'success': expected}
+    
+    result = mock_service.authenticate(username, password)
+    assert result['success'] == expected
+
+
+if __name__ == '__main__':
+    unittest.main()

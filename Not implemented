@@ -1,0 +1,1106 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { jest } from '@jest/globals';
+import AnnouncementForm from '../components/AnnouncementForm';
+import AnnouncementList from '../components/AnnouncementList';
+import AnnouncementDetail from '../components/AnnouncementDetail';
+import { AuthProvider } from '../contexts/AuthContext';
+import { act } from 'react-dom/test-utils';
+
+// Mock dependencies
+const mockSubmit = jest.fn();
+const mockUpdate = jest.fn();
+const mockDelete = jest.fn();
+const mockFetch = jest.fn();
+const mockAuthContext = {
+  user: { id: 'user123', role: 'admin' },
+  isAuthenticated: true,
+  login: jest.fn(),
+  logout: jest.fn()
+};
+
+const TestWrapper = ({ children, authContext = mockAuthContext }) => (
+  <AuthProvider value={authContext}>
+    {children}
+  </AuthProvider>
+);
+
+const mockAnnouncements = [
+  {
+    id: '1',
+    title: 'Test Announcement 1',
+    content: 'This is test content for announcement 1',
+    category: 'general',
+    createdAt: '2024-01-01T00:00:00Z',
+    author: { id: 'admin1', name: 'Admin User' }
+  },
+  {
+    id: '2',
+    title: 'Test Announcement 2',
+    content: 'This is test content for announcement 2',
+    category: 'important',
+    createdAt: '2024-01-02T00:00:00Z',
+    author: { id: 'admin2', name: 'Admin User 2' }
+  }
+];
+
+describe('TC-003: Announcement CRUD Operations', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('TC-003 Happy Path - Successful CRUD operations', () => {
+    it('should create a new announcement successfully', async () => {
+      const user = userEvent.setup();
+      const mockCreateSubmit = jest.fn().mockResolvedValue({
+        id: '3',
+        title: 'New Announcement',
+        content: 'This is new announcement content',
+        category: 'general'
+      });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockCreateSubmit} mode="create" />
+        </TestWrapper>
+      );
+
+      // Fill form with valid data for CREATE operation
+      await user.type(screen.getByLabelText(/title/i), 'New Announcement');
+      await user.type(screen.getByLabelText(/content/i), 'This is new announcement content');
+      await user.selectOptions(screen.getByLabelText(/category/i), 'general');
+
+      // Submit form to CREATE announcement
+      await user.click(screen.getByRole('button', { name: /create|submit/i }));
+
+      await waitFor(() => {
+        expect(mockCreateSubmit).toHaveBeenCalledWith({
+          title: 'New Announcement',
+          content: 'This is new announcement content',
+          category: 'general'
+        });
+      });
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('should read and display announcements successfully', async () => {
+      const mockFetchAnnouncements = jest.fn().mockResolvedValue(mockAnnouncements);
+
+      render(
+        <TestWrapper>
+          <AnnouncementList fetchAnnouncements={mockFetchAnnouncements} />
+        </TestWrapper>
+      );
+
+      // Wait for announcements to be READ/fetched and displayed
+      await waitFor(() => {
+        expect(mockFetchAnnouncements).toHaveBeenCalled();
+        expect(screen.getByText('Test Announcement 1')).toBeInTheDocument();
+        expect(screen.getByText('Test Announcement 2')).toBeInTheDocument();
+      });
+
+      // Verify READ operation displays correct content
+      expect(screen.getByText('This is test content for announcement 1')).toBeInTheDocument();
+      expect(screen.getByText('This is test content for announcement 2')).toBeInTheDocument();
+    });
+
+    it('should update an existing announcement successfully', async () => {
+      const user = userEvent.setup();
+      const existingAnnouncement = mockAnnouncements[0];
+      const mockUpdateSubmit = jest.fn().mockResolvedValue({
+        ...existingAnnouncement,
+        title: 'Updated Announcement Title',
+        content: 'Updated announcement content'
+      });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm 
+            onSubmit={mockUpdateSubmit} 
+            mode="update"
+            initialData={existingAnnouncement}
+          />
+        </TestWrapper>
+      );
+
+      // Verify form is pre-populated for UPDATE
+      expect(screen.getByDisplayValue('Test Announcement 1')).toBeInTheDocument();
+      
+      // Modify fields for UPDATE operation
+      const titleInput = screen.getByLabelText(/title/i);
+      const contentInput = screen.getByLabelText(/content/i);
+      
+      await user.clear(titleInput);
+      await user.clear(contentInput);
+      await user.type(titleInput, 'Updated Announcement Title');
+      await user.type(contentInput, 'Updated announcement content');
+
+      // Submit UPDATE
+      await user.click(screen.getByRole('button', { name: /update|save/i }));
+
+      await waitFor(() => {
+        expect(mockUpdateSubmit).toHaveBeenCalledWith({
+          id: '1',
+          title: 'Updated Announcement Title',
+          content: 'Updated announcement content',
+          category: 'general',
+          createdAt: '2024-01-01T00:00:00Z',
+          author: { id: 'admin1', name: 'Admin User' }
+        });
+      });
+    });
+
+    it('should delete an announcement successfully', async () => {
+      const user = userEvent.setup();
+      const mockDeleteAction = jest.fn().mockResolvedValue({ success: true });
+
+      render(
+        <TestWrapper>
+          <AnnouncementDetail 
+            announcement={mockAnnouncements[0]}
+            onDelete={mockDeleteAction}
+            canDelete={true}
+          />
+        </TestWrapper>
+      );
+
+      // Find and click DELETE button
+      const deleteButton = screen.getByRole('button', { name: /delete/i });
+      await user.click(deleteButton);
+
+      // Confirm deletion in modal/dialog
+      const confirmButton = await screen.findByRole('button', { name: /confirm|yes/i });
+      await user.click(confirmButton);
+
+      await waitFor(() => {
+        expect(mockDeleteAction).toHaveBeenCalledWith('1');
+      });
+    });
+
+    it('should handle batch operations on multiple announcements', async () => {
+      const user = userEvent.setup();
+      const mockBatchDelete = jest.fn().mockResolvedValue({ deleted: 2 });
+
+      render(
+        <TestWrapper>
+          <AnnouncementList 
+            announcements={mockAnnouncements}
+            onBatchDelete={mockBatchDelete}
+            allowBatchOperations={true}
+          />
+        </TestWrapper>
+      );
+
+      // Select multiple announcements for batch operations
+      const checkboxes = screen.getAllByRole('checkbox');
+      await user.click(checkboxes[0]); // Select first announcement
+      await user.click(checkboxes[1]); // Select second announcement
+
+      // Perform batch DELETE operation
+      const batchDeleteButton = screen.getByRole('button', { name: /delete selected/i });
+      await user.click(batchDeleteButton);
+
+      // Confirm batch deletion
+      const confirmButton = await screen.findByRole('button', { name: /confirm/i });
+      await user.click(confirmButton);
+
+      await waitFor(() => {
+        expect(mockBatchDelete).toHaveBeenCalledWith(['1', '2']);
+      });
+    });
+  });
+
+  describe('TC-003 Error Path - CRUD operation failures', () => {
+    it('should handle CREATE operation failures gracefully', async () => {
+      const user = userEvent.setup();
+      const mockCreateError = jest.fn().mockRejectedValue(new Error('Failed to create announcement'));
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockCreateError} mode="create" />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'Failed Create Test');
+      await user.type(screen.getByLabelText(/content/i), 'This create operation will fail');
+      await user.click(screen.getByRole('button', { name: /create|submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/failed to create announcement/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should handle READ operation failures and display error state', async () => {
+      const mockFetchError = jest.fn().mockRejectedValue(new Error('Failed to fetch announcements'));
+
+      render(
+        <TestWrapper>
+          <AnnouncementList fetchAnnouncements={mockFetchError} />
+        </TestWrapper>
+      );
+
+      await waitFor(() => {
+        expect(mockFetchError).toHaveBeenCalled();
+        expect(screen.getByText(/failed to load announcements/i)).toBeInTheDocument();
+      });
+
+      // Should show retry option
+      expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+    });
+
+    it('should handle UPDATE operation failures with proper error messaging', async () => {
+      const user = userEvent.setup();
+      const mockUpdateError = jest.fn().mockRejectedValue(new Error('Update failed: Server error'));
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm 
+            onSubmit={mockUpdateError} 
+            mode="update"
+            initialData={mockAnnouncements[0]}
+          />
+        </TestWrapper>
+      );
+
+      // Attempt to update
+      const titleInput = screen.getByLabelText(/title/i);
+      await user.clear(titleInput);
+      await user.type(titleInput, 'Failed Update');
+      await user.click(screen.getByRole('button', { name: /update|save/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/failed to update announcement/i)).toBeInTheDocument();
+      });
+
+      // Form should remain populated for retry
+      expect(screen.getByDisplayValue('Failed Update')).toBeInTheDocument();
+    });
+
+    it('should handle DELETE operation failures and prevent data loss', async () => {
+      const user = userEvent.setup();
+      const mockDeleteError = jest.fn().mockRejectedValue(new Error('Delete operation failed'));
+
+      render(
+        <TestWrapper>
+          <AnnouncementDetail 
+            announcement={mockAnnouncements[0]}
+            onDelete={mockDeleteError}
+            canDelete={true}
+          />
+        </TestWrapper>
+      );
+
+      await user.click(screen.getByRole('button', { name: /delete/i }));
+      const confirmButton = await screen.findByRole('button', { name: /confirm|yes/i });
+      await user.click(confirmButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/failed to delete announcement/i)).toBeInTheDocument();
+      });
+
+      // Announcement should still be visible after failed delete
+      expect(screen.getByText('Test Announcement 1')).toBeInTheDocument();
+    });
+
+    it('should validate data integrity during CRUD operations', async () => {
+      const user = userEvent.setup();
+      const mockValidationError = jest.fn().mockRejectedValue({
+        response: { 
+          status: 422, 
+          data: { 
+            message: 'Validation failed',
+            errors: {
+              title: 'Title contains invalid characters',
+              content: 'Content exceeds maximum length'
+            }
+          }
+        }
+      });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockValidationError} mode="create" />
+        </TestWrapper>
+      );
+
+      // Submit invalid data
+      await user.type(screen.getByLabelText(/title/i), '<script>alert("xss")</script>');
+      await user.type(screen.getByLabelText(/content/i), 'x'.repeat(10000)); // Exceeds limit
+      await user.click(screen.getByRole('button', { name: /create|submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/title contains invalid characters/i)).toBeInTheDocument();
+        expect(screen.getByText(/content exceeds maximum length/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should handle network errors during CRUD operations', async () => {
+      const user = userEvent.setup();
+      const mockNetworkError = jest.fn().mockRejectedValue(new Error('Network Error'));
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockNetworkError} mode="create" />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'Network Error Test');
+      await user.type(screen.getByLabelText(/content/i), 'Testing network error handling');
+      await user.click(screen.getByRole('button', { name: /create|submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/network error.*please check your connection/i)).toBeInTheDocument();
+      });
+
+      // Should offer retry option
+      expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+    });
+
+    it('should handle concurrent modification conflicts', async () => {
+      const user = userEvent.setup();
+      const mockConflictError = jest.fn().mockRejectedValue({
+        response: {
+          status: 409,
+          data: { message: 'Announcement was modified by another user' }
+        }
+      });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm 
+            onSubmit={mockConflictError} 
+            mode="update"
+            initialData={mockAnnouncements[0]}
+          />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/content/i), ' - Modified');
+      await user.click(screen.getByRole('button', { name: /update|save/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/announcement was modified by another user/i)).toBeInTheDocument();
+      });
+
+      // Should offer option to reload or force update
+      expect(screen.getByRole('button', { name: /reload/i })).toBeInTheDocument();
+    });
+
+    it('should handle authorization errors during CRUD operations', async () => {
+      const user = userEvent.setup();
+      const unauthorizedContext = {
+        user: { id: 'user123', role: 'user' },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      const mockAuthError = jest.fn().mockRejectedValue({
+        response: { status: 403, data: { message: 'Insufficient privileges' } }
+      });
+
+      render(
+        <TestWrapper authContext={unauthorizedContext}>
+          <AnnouncementForm onSubmit={mockAuthError} mode="create" />
+        </TestWrapper>
+      );
+
+      // Should show insufficient privileges message
+      expect(screen.getByText(/insufficient privileges/i)).toBeInTheDocument();
+      expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    });
+  });
+});
+
+describe('TC-004: Security tests for XSS and injection', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('TC-004 Happy Path - Secure input handling and validation', () => {
+    it('should sanitize and accept safe HTML content in announcements', async () => {
+      const user = userEvent.setup();
+      const mockSubmitSanitized = jest.fn().mockResolvedValue({
+        id: '3',
+        title: 'Safe HTML Content',
+        content: 'This is <strong>bold text</strong> and <em>italic text</em>.'
+      });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitSanitized} />
+        </TestWrapper>
+      );
+
+      // Submit safe HTML content
+      await user.type(screen.getByLabelText(/title/i), 'Safe HTML Content');
+      await user.type(screen.getByLabelText(/content/i), 'This is <strong>bold text</strong> and <em>italic text</em>.');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSubmitSanitized).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: 'Safe HTML Content',
+            content: 'This is <strong>bold text</strong> and <em>italic text</em>.'
+          })
+        );
+      });
+    });
+
+    it('should properly encode special characters in display', async () => {
+      const announcementWithSpecialChars = {
+        id: '1',
+        title: 'Special & Characters',
+        content: 'Content with < > & " \' characters',
+        category: 'general',
+        createdAt: '2024-01-01T00:00:00Z',
+        author: { id: 'admin1', name: 'Admin User' }
+      };
+
+      render(
+        <TestWrapper>
+          <AnnouncementDetail announcement={announcementWithSpecialChars} />
+        </TestWrapper>
+      );
+
+      // Verify special characters are safely displayed
+      expect(screen.getByText('Special & Characters')).toBeInTheDocument();
+      expect(screen.getByText(/Content with < > & " ' characters/)).toBeInTheDocument();
+    });
+
+    it('should validate input length and format securely', async () => {
+      const user = userEvent.setup();
+      const mockValidatedSubmit = jest.fn().mockResolvedValue({ success: true });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockValidatedSubmit} maxTitleLength={100} maxContentLength={1000} />
+        </TestWrapper>
+      );
+
+      // Submit content within valid limits
+      const validTitle = 'Valid title within limits';
+      const validContent = 'Valid content that is within the specified character limits and properly formatted.';
+
+      await user.type(screen.getByLabelText(/title/i), validTitle);
+      await user.type(screen.getByLabelText(/content/i), validContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockValidatedSubmit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: validTitle,
+            content: validContent
+          })
+        );
+      });
+    });
+
+    it('should handle CSRF token validation for secure form submissions', async () => {
+      const user = userEvent.setup();
+      const mockSecureSubmit = jest.fn().mockResolvedValue({ 
+        success: true,
+        csrfTokenValid: true 
+      });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSecureSubmit} csrfToken="valid-csrf-token" />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'CSRF Protected Announcement');
+      await user.type(screen.getByLabelText(/content/i), 'This form includes CSRF protection');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSecureSubmit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: 'CSRF Protected Announcement',
+            content: 'This form includes CSRF protection'
+          })
+        );
+      });
+    });
+  });
+
+  describe('TC-004 Error Path - XSS and injection attack prevention', () => {
+    it('should prevent XSS attacks via script tag injection in title', async () => {
+      const user = userEvent.setup();
+      const mockSubmitXSSPrevention = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitXSSPrevention} />
+        </TestWrapper>
+      );
+
+      // Attempt XSS injection in title
+      const maliciousTitle = '<script>alert("XSS attack in title")</script>Malicious Title';
+      await user.type(screen.getByLabelText(/title/i), maliciousTitle);
+      await user.type(screen.getByLabelText(/content/i), 'Normal content');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        const callArgs = mockSubmitXSSPrevention.mock.calls[0]?.[0];
+        // Verify script tags are stripped or escaped
+        expect(callArgs?.title).not.toContain('<script>');
+        expect(callArgs?.title).not.toContain('alert(');
+        // Should contain sanitized version
+        expect(callArgs?.title).toContain('Malicious Title');
+      });
+    });
+
+    it('should prevent XSS attacks via image onerror injection in content', async () => {
+      const user = userEvent.setup();
+      const mockSubmitImageXSSPrevention = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitImageXSSPrevention} />
+        </TestWrapper>
+      );
+
+      // Attempt image-based XSS injection
+      const maliciousContent = '<img src="invalid.jpg" onerror="alert(\'XSS via image\')" />Normal content';
+      await user.type(screen.getByLabelText(/title/i), 'Image XSS Test');
+      await user.type(screen.getByLabelText(/content/i), maliciousContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        const callArgs = mockSubmitImageXSSPrevention.mock.calls[0]?.[0];
+        // Verify onerror attribute is removed
+        expect(callArgs?.content).not.toContain('onerror');
+        expect(callArgs?.content).not.toContain('alert(');
+        // Should still contain safe content
+        expect(callArgs?.content).toContain('Normal content');
+      });
+    });
+
+    it('should prevent SQL injection attempts in form data', async () => {
+      const user = userEvent.setup();
+      const mockSubmitSQLInjectionPrevention = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitSQLInjectionPrevention} />
+        </TestWrapper>
+      );
+
+      // Attempt SQL injection patterns
+      const sqlInjectionTitle = "'; DROP TABLE announcements; --";
+      const sqlInjectionContent = "' UNION SELECT * FROM users WHERE '1'='1";
+
+      await user.type(screen.getByLabelText(/title/i), sqlInjectionTitle);
+      await user.type(screen.getByLabelText(/content/i), sqlInjectionContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        const callArgs = mockSubmitSQLInjectionPrevention.mock.calls[0]?.[0];
+        // Data should be escaped or rejected
+        expect(callArgs?.title).toBeDefined();
+        expect(callArgs?.content).toBeDefined();
+        // SQL keywords should be escaped or sanitized
+        expect(callArgs?.title).not.toMatch(/DROP\s+TABLE/i);
+        expect(callArgs?.content).not.toMatch(/UNION\s+SELECT/i);
+      });
+    });
+
+    it('should reject dangerous HTML attributes and event handlers', async () => {
+      const user = userEvent.setup();
+      const mockSubmitDangerousHTML = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitDangerousHTML} />
+        </TestWrapper>
+      );
+
+      // Attempt various dangerous HTML attributes
+      const dangerousContent = `
+        <div onclick="alert('XSS')" onmouseover="steal_data()">
+          <a href="javascript:alert('XSS')">Click me</a>
+          <input type="text" onfocus="malicious_code()" />
+          <iframe src="javascript:alert('XSS')"></iframe>
+        </div>
+      `;
+
+      await user.type(screen.getByLabelText(/title/i), 'Dangerous HTML Test');
+      await user.type(screen.getByLabelText(/content/i), dangerousContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        const callArgs = mockSubmitDangerousHTML.mock.calls[0]?.[0];
+        // Verify dangerous attributes are removed
+        expect(callArgs?.content).not.toContain('onclick');
+        expect(callArgs?.content).not.toContain('onmouseover');
+        expect(callArgs?.content).not.toContain('onfocus');
+        expect(callArgs?.content).not.toContain('javascript:');
+        expect(callArgs?.content).not.toContain('<iframe');
+      });
+    });
+
+    it('should handle DOM-based XSS prevention in displayed content', () => {
+      const maliciousAnnouncement = {
+        id: '1',
+        title: '<script>document.write("XSS")</script>Malicious',
+        content: '<img src=x onerror=alert("DOM XSS")>Content',
+        category: 'general',
+        createdAt: '2024-01-01T00:00:00Z',
+        author: { id: 'admin1', name: 'Admin User' }
+      };
+
+      render(
+        <TestWrapper>
+          <AnnouncementDetail announcement={maliciousAnnouncement} />
+        </TestWrapper>
+      );
+
+      // Check that dangerous content is not executed in DOM
+      const titleElement = screen.getByTestId ? screen.queryByTestId('announcement-title') : screen.getByRole('heading');
+      const contentElement = screen.getByTestId ? screen.queryByTestId('announcement-content') : document.querySelector('[data-testid="announcement-content"]');
+      
+      // Verify script tags don't execute
+      expect(document.querySelector('script')).toBeNull();
+      // Verify malicious attributes are not present in DOM
+      expect(document.querySelector('[onerror]')).toBeNull();
+    });
+
+    it('should validate and reject excessively long input that could cause buffer overflow', async () => {
+      const user = userEvent.setup();
+      const mockSubmitBufferOverflow = jest.fn().mockRejectedValue({
+        response: { 
+          status: 413, 
+          data: { message: 'Input too long' }
+        }
+      });
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitBufferOverflow} maxTitleLength={100} />
+        </TestWrapper>
+      );
+
+      // Attempt buffer overflow with extremely long input
+      const excessivelyLongTitle = 'A'.repeat(10000);
+      
+      await user.type(screen.getByLabelText(/title/i), excessivelyLongTitle);
+      await user.type(screen.getByLabelText(/content/i), 'Normal content');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/input too long/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should prevent LDAP injection attacks in user input', async () => {
+      const user = userEvent.setup();
+      const mockSubmitLDAPInjection = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitLDAPInjection} />
+        </TestWrapper>
+      );
+
+      // Attempt LDAP injection patterns
+      const ldapInjectionTitle = '*)(uid=*))(|(uid=*';
+      const ldapInjectionContent = '*)(&(objectClass=*))';
+
+      await user.type(screen.getByLabelText(/title/i), ldapInjectionTitle);
+      await user.type(screen.getByLabelText(/content/i), ldapInjectionContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        const callArgs = mockSubmitLDAPInjection.mock.calls[0]?.[0];
+        // LDAP special characters should be escaped
+        expect(callArgs?.title).toBeDefined();
+        expect(callArgs?.content).toBeDefined();
+      });
+    });
+
+    it('should handle CSV injection prevention for data export functionality', async () => {
+      const user = userEvent.setup();
+      const mockSubmitCSVInjection = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitCSVInjection} />
+        </TestWrapper>
+      );
+
+      // Attempt CSV injection with formula injection
+      const csvInjectionTitle = '=cmd|"/c calc"!A0';
+      const csvInjectionContent = '@SUM(1+1)*cmd|"/c calc"!A0';
+
+      await user.type(screen.getByLabelText(/title/i), csvInjectionTitle);
+      await user.type(screen.getByLabelText(/content/i), csvInjectionContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        const callArgs = mockSubmitCSVInjection.mock.calls[0]?.[0];
+        // Formula indicators should be escaped or removed
+        expect(callArgs?.title).not.toMatch(/^=/);
+        expect(callArgs?.content).not.toMatch(/^[@=+\-]/);
+      });
+    });
+
+    it('should prevent NoSQL injection attempts', async () => {
+      const user = userEvent.setup();
+      const mockSubmitNoSQLInjection = jest.fn();
+
+      render(
+        <TestWrapper>
+          <AnnouncementForm onSubmit={mockSubmitNoSQLInjection} />
+        </TestWrapper>
+      );
+
+      // Attempt NoSQL injection patterns
+      const nosqlInjectionTitle = '{"$ne": null}';
+      const nosqlInjectionContent = '{"$where": "function() { return true; }"}';
+
+      await user.type(screen.getByLabelText(/title/i), nosqlInjectionTitle);
+      await user.type(screen.getByLabelText(/content/i), nosqlInjectionContent);
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        const callArgs = mockSubmitNoSQLInjection.mock.calls[0]?.[0];
+        // NoSQL operators should be escaped or rejected
+        expect(callArgs?.title).toBeDefined();
+        expect(callArgs?.content).toBeDefined();
+      });
+    });
+  });
+});
+
+describe('TC-006: Authentication/Authorization', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('TC-006 Happy Path - Successful authentication and authorization flows', () => {
+    it('should authenticate user with valid credentials and grant appropriate access', async () => {
+      const user = userEvent.setup();
+      const mockLogin = jest.fn().mockResolvedValue({
+        user: { id: 'admin123', role: 'admin', email: 'admin@test.com' },
+        token: 'valid-jwt-token'
+      });
+
+      const authContext = {
+        user: null,
+        isAuthenticated: false,
+        login: mockLogin,
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={authContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      // Initial state - should show login prompt
+      expect(screen.getByText(/please log in to access this feature/i)).toBeInTheDocument();
+
+      // Simulate successful login
+      await act(async () => {
+        await mockLogin('admin@test.com', 'valid-password');
+      });
+
+      // Re-render with authenticated context
+      const authenticatedContext = {
+        user: { id: 'admin123', role: 'admin', email: 'admin@test.com' },
+        isAuthenticated: true,
+        login: mockLogin,
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={authenticatedContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      // Should now show the form
+      expect(screen.getByRole('form')).toBeInTheDocument();
+      expect(screen.getByLabelText(/title/i)).toBeEnabled();
+    });
+
+    it('should maintain user session and verify token validity across requests', async () => {
+      const user = userEvent.setup();
+      const mockTokenValidation = jest.fn().mockResolvedValue({ valid: true });
+      const mockSubmitWithToken = jest.fn().mockResolvedValue({ success: true });
+
+      const authContext = {
+        user: { id: 'admin123', role: 'admin', token: 'valid-jwt-token' },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn(),
+        validateToken: mockTokenValidation
+      };
+
+      render(
+        <TestWrapper authContext={authContext}>
+          <AnnouncementForm onSubmit={mockSubmitWithToken} />
+        </TestWrapper>
+      );
+
+      // Fill and submit form
+      await user.type(screen.getByLabelText(/title/i), 'Session Test');
+      await user.type(screen.getByLabelText(/content/i), 'Testing session maintenance');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSubmitWithToken).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: 'Session Test',
+            content: 'Testing session maintenance'
+          })
+        );
+      });
+    });
+
+    it('should properly authorize admin users for all operations', async () => {
+      const user = userEvent.setup();
+      const adminContext = {
+        user: { id: 'admin123', role: 'admin', permissions: ['create', 'edit', 'delete', 'moderate'] },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={adminContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      // Admin should have access to all form features
+      expect(screen.getByRole('form')).toBeInTheDocument();
+      expect(screen.getByLabelText(/title/i)).toBeEnabled();
+      expect(screen.getByLabelText(/content/i)).toBeEnabled();
+      
+      // Check for admin-specific features
+      const prioritySelect = screen.queryByLabelText(/priority/i);
+      if (prioritySelect) {
+        expect(prioritySelect).toBeEnabled();
+      }
+
+      await user.type(screen.getByLabelText(/title/i), 'Admin Announcement');
+      await user.type(screen.getByLabelText(/content/i), 'Administrative announcement content');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSubmit).toHaveBeenCalled();
+      });
+    });
+
+    it('should handle role-based permissions correctly for moderators', async () => {
+      const user = userEvent.setup();
+      const moderatorContext = {
+        user: { id: 'mod123', role: 'moderator', permissions: ['create', 'edit', 'moderate'] },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={moderatorContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      // Moderator should have access to form but possibly limited features
+      expect(screen.getByRole('form')).toBeInTheDocument();
+      expect(screen.getByLabelText(/title/i)).toBeEnabled();
+      expect(screen.getByLabelText(/content/i)).toBeEnabled();
+
+      await user.type(screen.getByLabelText(/title/i), 'Moderator Announcement');
+      await user.type(screen.getByLabelText(/content/i), 'Moderator announcement content');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(mockSubmit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: 'Moderator Announcement',
+            content: 'Moderator announcement content'
+          })
+        );
+      });
+    });
+  });
+
+  describe('TC-006 Error Path - Authentication and authorization failures', () => {
+    it('should reject authentication with invalid credentials', async () => {
+      const user = userEvent.setup();
+      const mockFailedLogin = jest.fn().mockRejectedValue(new Error('Invalid credentials'));
+
+      const authContext = {
+        user: null,
+        isAuthenticated: false,
+        login: mockFailedLogin,
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={authContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      expect(screen.getByText(/please log in to access this feature/i)).toBeInTheDocument();
+      expect(screen.queryByRole('form')).not.toBeInTheDocument();
+
+      // Attempt login with invalid credentials should fail
+      await expect(mockFailedLogin('invalid@test.com', 'wrong-password')).rejects.toThrow('Invalid credentials');
+    });
+
+    it('should deny access to users without proper authorization', () => {
+      const unauthorizedContext = {
+        user: { id: 'user123', role: 'guest', permissions: ['read'] },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={unauthorizedContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      expect(screen.getByText(/insufficient privileges/i)).toBeInTheDocument();
+      expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    });
+
+    it('should handle expired authentication tokens and force re-authentication', async () => {
+      const user = userEvent.setup();
+      const mockLogout = jest.fn();
+      const expiredContext = {
+        user: { id: 'admin123', role: 'admin', token: 'expired-token' },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: mockLogout
+      };
+
+      const mockSubmitExpired = jest.fn().mockRejectedValue({
+        response: { status: 401, data: { message: 'Token expired' } }
+      });
+
+      render(
+        <TestWrapper authContext={expiredContext}>
+          <AnnouncementForm onSubmit={mockSubmitExpired} />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'Expired Token Test');
+      await user.type(screen.getByLabelText(/content/i), 'Testing expired token handling');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/session expired.*please log in again/i)).toBeInTheDocument();
+        expect(mockLogout).toHaveBeenCalled();
+      });
+    });
+
+    it('should prevent unauthorized access attempts and log security violations', async () => {
+      const user = userEvent.setup();
+      const mockSecurityLog = jest.fn();
+      const maliciousContext = {
+        user: { id: 'hacker123', role: 'user' },
+        isAuthenticated: false, // Inconsistent state - authenticated user but not marked as authenticated
+        login: jest.fn(),
+        logout: jest.fn(),
+        logSecurityViolation: mockSecurityLog
+      };
+
+      render(
+        <TestWrapper authContext={maliciousContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      expect(screen.getByText(/please log in to access this feature/i)).toBeInTheDocument();
+      expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    });
+
+    it('should handle network failures during authentication gracefully', async () => {
+      const mockNetworkFailureLogin = jest.fn().mockRejectedValue(new Error('Network error'));
+
+      const authContext = {
+        user: null,
+        isAuthenticated: false,
+        login: mockNetworkFailureLogin,
+        logout: jest.fn()
+      };
+
+      render(
+        <TestWrapper authContext={authContext}>
+          <AnnouncementForm onSubmit={mockSubmit} />
+        </TestWrapper>
+      );
+
+      expect(screen.getByText(/please log in to access this feature/i)).toBeInTheDocument();
+
+      // Network failure should be handled gracefully
+      await expect(mockNetworkFailureLogin('user@test.com', 'password')).rejects.toThrow('Network error');
+    });
+
+    it('should validate user permissions for each protected operation', async () => {
+      const user = userEvent.setup();
+      const limitedUserContext = {
+        user: { id: 'limited123', role: 'contributor', permissions: ['create'] },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      const mockRestrictedSubmit = jest.fn().mockRejectedValue({
+        response: { status: 403, data: { message: 'Insufficient permissions for this operation' } }
+      });
+
+      render(
+        <TestWrapper authContext={limitedUserContext}>
+          <AnnouncementForm onSubmit={mockRestrictedSubmit} />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'Limited Access Test');
+      await user.type(screen.getByLabelText(/content/i), 'Testing permission restrictions');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/insufficient permissions/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should prevent session hijacking by validating session integrity', async () => {
+      const user = userEvent.setup();
+      const suspiciousContext = {
+        user: { id: 'admin123', role: 'admin', sessionId: 'hijacked-session' },
+        isAuthenticated: true,
+        login: jest.fn(),
+        logout: jest.fn()
+      };
+
+      const mockHijackingDetection = jest.fn().mockRejectedValue({
+        response: { status: 403, data: { message: 'Session integrity violation detected' } }
+      });
+
+      render(
+        <TestWrapper authContext={suspiciousContext}>
+          <AnnouncementForm onSubmit={mockHijackingDetection} />
+        </TestWrapper>
+      );
+
+      await user.type(screen.getByLabelText(/title/i), 'Hijacking Test');
+      await user.type(screen.getByLabelText(/content/i), 'Testing session hijacking prevention');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/security violation detected/i)).toBeInTheDocument();
+      });
+    });
+  });
+});

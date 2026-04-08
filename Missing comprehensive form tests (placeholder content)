@@ -1,0 +1,147 @@
+// TC-003: Form validation and submission tests
+describe('TC-003: Form validation and submission', () => {
+  beforeEach(() => {
+    // Setup test environment
+    cy.visit('/form');
+  });
+
+  describe('Happy path scenarios', () => {
+    it('should successfully submit form with valid data', () => {
+      // Fill out form with valid data
+      cy.get('[data-testid="name-input"]').type('John Doe');
+      cy.get('[data-testid="email-input"]').type('john.doe@example.com');
+      cy.get('[data-testid="phone-input"]').type('123-456-7890');
+      cy.get('[data-testid="message-input"]').type('This is a test message');
+      
+      // Submit form
+      cy.get('[data-testid="submit-button"]').click();
+      
+      // Verify successful submission
+      cy.get('[data-testid="success-message"]').should('be.visible');
+      cy.get('[data-testid="success-message"]').should('contain', 'Form submitted successfully');
+    });
+
+    it('should clear form after successful submission', () => {
+      // Fill and submit form
+      cy.get('[data-testid="name-input"]').type('Jane Smith');
+      cy.get('[data-testid="email-input"]').type('jane.smith@example.com');
+      cy.get('[data-testid="phone-input"]').type('987-654-3210');
+      cy.get('[data-testid="message-input"]').type('Another test message');
+      cy.get('[data-testid="submit-button"]').click();
+      
+      // Wait for success and verify form is cleared
+      cy.get('[data-testid="success-message"]').should('be.visible');
+      cy.get('[data-testid="name-input"]').should('have.value', '');
+      cy.get('[data-testid="email-input"]').should('have.value', '');
+      cy.get('[data-testid="phone-input"]').should('have.value', '');
+      cy.get('[data-testid="message-input"]').should('have.value', '');
+    });
+  });
+
+  describe('Error path scenarios', () => {
+    it('should show validation errors for empty required fields', () => {
+      // Attempt to submit empty form
+      cy.get('[data-testid="submit-button"]').click();
+      
+      // Verify validation errors appear
+      cy.get('[data-testid="name-error"]').should('be.visible');
+      cy.get('[data-testid="name-error"]').should('contain', 'Name is required');
+      cy.get('[data-testid="email-error"]').should('be.visible');
+      cy.get('[data-testid="email-error"]').should('contain', 'Email is required');
+      cy.get('[data-testid="message-error"]').should('be.visible');
+      cy.get('[data-testid="message-error"]').should('contain', 'Message is required');
+    });
+
+    it('should validate email format', () => {
+      // Fill form with invalid email
+      cy.get('[data-testid="name-input"]').type('Test User');
+      cy.get('[data-testid="email-input"]').type('invalid-email');
+      cy.get('[data-testid="message-input"]').type('Test message');
+      cy.get('[data-testid="submit-button"]').click();
+      
+      // Verify email format error
+      cy.get('[data-testid="email-error"]').should('be.visible');
+      cy.get('[data-testid="email-error"]').should('contain', 'Please enter a valid email address');
+    });
+
+    it('should validate phone number format', () => {
+      // Fill form with invalid phone number
+      cy.get('[data-testid="name-input"]').type('Test User');
+      cy.get('[data-testid="email-input"]').type('test@example.com');
+      cy.get('[data-testid="phone-input"]').type('invalid-phone');
+      cy.get('[data-testid="message-input"]').type('Test message');
+      cy.get('[data-testid="submit-button"]').click();
+      
+      // Verify phone format error
+      cy.get('[data-testid="phone-error"]').should('be.visible');
+      cy.get('[data-testid="phone-error"]').should('contain', 'Please enter a valid phone number');
+    });
+
+    it('should validate message length limits', () => {
+      // Fill form with message exceeding character limit
+      const longMessage = 'a'.repeat(1001); // Assuming 1000 char limit
+      cy.get('[data-testid="name-input"]').type('Test User');
+      cy.get('[data-testid="email-input"]').type('test@example.com');
+      cy.get('[data-testid="message-input"]').type(longMessage);
+      cy.get('[data-testid="submit-button"]').click();
+      
+      // Verify message length error
+      cy.get('[data-testid="message-error"]').should('be.visible');
+      cy.get('[data-testid="message-error"]').should('contain', 'Message must be less than 1000 characters');
+    });
+
+    it('should handle server error gracefully', () => {
+      // Mock server error
+      cy.intercept('POST', '/api/submit-form', {
+        statusCode: 500,
+        body: { error: 'Internal server error' }
+      }).as('submitForm');
+      
+      // Fill and submit form
+      cy.get('[data-testid="name-input"]').type('Test User');
+      cy.get('[data-testid="email-input"]').type('test@example.com');
+      cy.get('[data-testid="message-input"]').type('Test message');
+      cy.get('[data-testid="submit-button"]').click();
+      
+      // Wait for request and verify error handling
+      cy.wait('@submitForm');
+      cy.get('[data-testid="error-message"]').should('be.visible');
+      cy.get('[data-testid="error-message"]').should('contain', 'An error occurred while submitting the form');
+    });
+  });
+
+  describe('Form interaction behaviors', () => {
+    it('should disable submit button while form is being submitted', () => {
+      // Fill form
+      cy.get('[data-testid="name-input"]').type('Test User');
+      cy.get('[data-testid="email-input"]').type('test@example.com');
+      cy.get('[data-testid="message-input"]').type('Test message');
+      
+      // Mock slow API response
+      cy.intercept('POST', '/api/submit-form', {
+        delay: 2000,
+        statusCode: 200,
+        body: { success: true }
+      }).as('submitForm');
+      
+      // Submit and verify button is disabled
+      cy.get('[data-testid="submit-button"]').click();
+      cy.get('[data-testid="submit-button"]').should('be.disabled');
+      cy.get('[data-testid="submit-button"]').should('contain', 'Submitting...');
+      
+      // Wait for completion and verify button is re-enabled
+      cy.wait('@submitForm');
+      cy.get('[data-testid="submit-button"]').should('not.be.disabled');
+    });
+
+    it('should clear validation errors when user starts typing', () => {
+      // Trigger validation errors
+      cy.get('[data-testid="submit-button"]').click();
+      cy.get('[data-testid="name-error"]').should('be.visible');
+      
+      // Start typing and verify error clears
+      cy.get('[data-testid="name-input"]').type('T');
+      cy.get('[data-testid="name-error"]').should('not.exist');
+    });
+  });
+});

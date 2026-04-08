@@ -4,6 +4,7 @@ const { authenticateToken, requireRole } = require('../middleware/auth');
 const Employee = require('../models/Employee');
 const Leave = require('../models/Leave');
 const Asset = require('../models/Asset');
+const Announcement = require('../models/Announcement');
 
 // Dashboard overview - accessible to all authenticated users
 router.get('/', authenticateToken, async (req, res) => {
@@ -12,6 +13,11 @@ router.get('/', authenticateToken, async (req, res) => {
     const userRole = req.user.role;
     
     let dashboardData = {};
+    
+    // Get active announcements for all users
+    const announcements = await Announcement.find({ isActive: true })
+      .sort({ createdAt: -1 })
+      .select('title content publishDate createdAt');
     
     if (userRole === 'admin' || userRole === 'manager') {
       // Admin/Manager dashboard - company overview
@@ -43,6 +49,7 @@ router.get('/', authenticateToken, async (req, res) => {
           assetsNeedingMaintenance
         },
         recentLeaveRequests,
+        announcements,
         userInfo: {
           name: `${req.user.firstName} ${req.user.lastName}`,
           role: userRole,
@@ -74,6 +81,7 @@ router.get('/', authenticateToken, async (req, res) => {
           totalRequests: myLeaves.length
         },
         myRecentLeaves: myLeaves,
+        announcements,
         userInfo: {
           name: `${req.user.firstName} ${req.user.lastName}`,
           role: userRole,
@@ -226,6 +234,7 @@ router.get('/quick-actions', authenticateToken, async (req, res) => {
       actions = [
         { id: 'add-employee', label: 'Add New Employee', icon: 'user-plus', url: '/employees/new' },
         { id: 'review-leaves', label: 'Review Leave Requests', icon: 'clock', url: '/leaves/pending' },
+        { id: 'manage-announcements', label: 'Manage Announcements', icon: 'bullhorn', url: '/announcements' },
         { id: 'view-reports', label: 'Generate Reports', icon: 'chart-bar', url: '/reports' },
         { id: 'manage-assets', label: 'Manage Assets', icon: 'box', url: '/assets' },
         { id: 'system-settings', label: 'System Settings', icon: 'cog', url: '/settings' }

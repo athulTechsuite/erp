@@ -1,0 +1,154 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import AnnouncementForm from '../components/AnnouncementForm';
+
+describe('AnnouncementForm', () => {
+  // TC-002: Announcement form validation and submission
+  describe('TC-002: Announcement form validation and submission', () => {
+    beforeEach(() => {
+      // Mock any necessary dependencies
+      jest.clearAllMocks();
+    });
+
+    // Happy path tests
+    describe('Happy path scenarios', () => {
+      test('should successfully submit form with valid data', async () => {
+        const mockOnSubmit = jest.fn();
+        render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+
+        const titleInput = screen.getByLabelText(/title/i);
+        const contentTextarea = screen.getByLabelText(/content/i);
+        const submitButton = screen.getByRole('button', { name: /submit/i });
+
+        await userEvent.type(titleInput, 'Test Announcement Title');
+        await userEvent.type(contentTextarea, 'This is a test announcement content that meets the minimum requirements.');
+
+        fireEvent.click(submitButton);
+
+        await waitFor(() => {
+          expect(mockOnSubmit).toHaveBeenCalledWith({
+            title: 'Test Announcement Title',
+            content: 'This is a test announcement content that meets the minimum requirements.'
+          });
+        });
+      });
+
+      test('should clear form after successful submission', async () => {
+        const mockOnSubmit = jest.fn().mockResolvedValue({ success: true });
+        render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+
+        const titleInput = screen.getByLabelText(/title/i);
+        const contentTextarea = screen.getByLabelText(/content/i);
+        const submitButton = screen.getByRole('button', { name: /submit/i });
+
+        await userEvent.type(titleInput, 'Test Title');
+        await userEvent.type(contentTextarea, 'Test content');
+        fireEvent.click(submitButton);
+
+        await waitFor(() => {
+          expect(titleInput.value).toBe('');
+          expect(contentTextarea.value).toBe('');
+        });
+      });
+    });
+
+    // Error path tests
+    describe('Error path scenarios', () => {
+      test('should display validation error for empty title', async () => {
+        render(<AnnouncementForm onSubmit={jest.fn()} />);
+
+        const titleInput = screen.getByLabelText(/title/i);
+        const contentTextarea = screen.getByLabelText(/content/i);
+        const submitButton = screen.getByRole('button', { name: /submit/i });
+
+        await userEvent.type(contentTextarea, 'Valid content');
+        fireEvent.click(submitButton);
+
+        await waitFor(() => {
+          expect(screen.getByText(/title is required/i)).toBeInTheDocument();
+        });
+      });
+
+      test('should display validation error for empty content', async () => {
+        render(<AnnouncementForm onSubmit={jest.fn()} />);
+
+        const titleInput = screen.getByLabelText(/title/i);
+        const submitButton = screen.getByRole('button', { name: /submit/i });
+
+        await userEvent.type(titleInput, 'Valid Title');
+        fireEvent.click(submitButton);
+
+        await waitFor(() => {
+          expect(screen.getByText(/content is required/i)).toBeInTheDocument();
+        });
+      });
+
+      test('should display validation error for title exceeding maximum length', async () => {
+        render(<AnnouncementForm onSubmit={jest.fn()} />);
+
+        const titleInput = screen.getByLabelText(/title/i);
+        const longTitle = 'a'.repeat(256); // Assuming 255 char limit
+
+        await userEvent.type(titleInput, longTitle);
+        fireEvent.blur(titleInput);
+
+        await waitFor(() => {
+          expect(screen.getByText(/title must be less than/i)).toBeInTheDocument();
+        });
+      });
+
+      test('should display validation error for content below minimum length', async () => {
+        render(<AnnouncementForm onSubmit={jest.fn()} />);
+
+        const titleInput = screen.getByLabelText(/title/i);
+        const contentTextarea = screen.getByLabelText(/content/i);
+        const submitButton = screen.getByRole('button', { name: /submit/i });
+
+        await userEvent.type(titleInput, 'Valid Title');
+        await userEvent.type(contentTextarea, 'Too short');
+        fireEvent.click(submitButton);
+
+        await waitFor(() => {
+          expect(screen.getByText(/content must be at least/i)).toBeInTheDocument();
+        });
+      });
+
+      test('should handle submission error gracefully', async () => {
+        const mockOnSubmit = jest.fn().mockRejectedValue(new Error('Submission failed'));
+        render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+
+        const titleInput = screen.getByLabelText(/title/i);
+        const contentTextarea = screen.getByLabelText(/content/i);
+        const submitButton = screen.getByRole('button', { name: /submit/i });
+
+        await userEvent.type(titleInput, 'Test Title');
+        await userEvent.type(contentTextarea, 'Test content that is long enough');
+        fireEvent.click(submitButton);
+
+        await waitFor(() => {
+          expect(screen.getByText(/failed to submit announcement/i)).toBeInTheDocument();
+        });
+      });
+
+      test('should prevent multiple submissions while request is pending', async () => {
+        const mockOnSubmit = jest.fn().mockImplementation(() => new Promise(resolve => setTimeout(resolve, 1000)));
+        render(<AnnouncementForm onSubmit={mockOnSubmit} />);
+
+        const titleInput = screen.getByLabelText(/title/i);
+        const contentTextarea = screen.getByLabelText(/content/i);
+        const submitButton = screen.getByRole('button', { name: /submit/i });
+
+        await userEvent.type(titleInput, 'Test Title');
+        await userEvent.type(contentTextarea, 'Test content that is long enough');
+        
+        fireEvent.click(submitButton);
+        fireEvent.click(submitButton);
+        fireEvent.click(submitButton);
+
+        await waitFor(() => {
+          expect(mockOnSubmit).toHaveBeenCalledTimes(1);
+        });
+      });
+    });
+  });
+});

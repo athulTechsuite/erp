@@ -1,0 +1,252 @@
+const request = require('supertest');
+const app = require('../../src/app');
+const { setupTestDb, teardownTestDb } = require('../helpers/db');
+
+describe('API-001: Announcement CRUD operations - Integration Tests', () => {
+  beforeAll(async () => {
+    await setupTestDb();
+  });
+
+  afterAll(async () => {
+    await teardownTestDb();
+  });
+
+  describe('API-001: GET /api/announcements - Read All', () => {
+    it('should return all announcements - happy path', async () => {
+      const response = await request(app)
+        .get('/api/announcements')
+        .expect(200);
+
+      expect(response.body).toHaveProperty('announcements');
+      expect(Array.isArray(response.body.announcements)).toBe(true);
+    });
+
+    it('should handle database errors - error path', async () => {
+      // Mock database error scenario
+      const response = await request(app)
+        .get('/api/announcements?simulate_error=true')
+        .expect(500);
+
+      expect(response.body).toHaveProperty('error');
+    });
+  });
+
+  describe('API-001: GET /api/announcements/:id - Read Single', () => {
+    it('should return specific announcement by ID - happy path', async () => {
+      // First create an announcement to test with
+      const createResponse = await request(app)
+        .post('/api/announcements')
+        .send({
+          title: 'Test Announcement',
+          content: 'Test content',
+          priority: 'normal'
+        });
+
+      const announcementId = createResponse.body.id;
+
+      const response = await request(app)
+        .get(`/api/announcements/${announcementId}`)
+        .expect(200);
+
+      expect(response.body).toHaveProperty('id', announcementId);
+      expect(response.body).toHaveProperty('title', 'Test Announcement');
+    });
+
+    it('should return 404 for non-existent announcement - error path', async () => {
+      const response = await request(app)
+        .get('/api/announcements/99999')
+        .expect(404);
+
+      expect(response.body).toHaveProperty('error', 'Announcement not found');
+    });
+  });
+
+  describe('API-001: POST /api/announcements - Create', () => {
+    it('should create new announcement - happy path', async () => {
+      const newAnnouncement = {
+        title: 'New Test Announcement',
+        content: 'This is a test announcement content',
+        priority: 'high',
+        category: 'general'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(newAnnouncement)
+        .expect(201);
+
+      expect(response.body).toHaveProperty('id');
+      expect(response.body).toHaveProperty('title', newAnnouncement.title);
+      expect(response.body).toHaveProperty('content', newAnnouncement.content);
+      expect(response.body).toHaveProperty('priority', newAnnouncement.priority);
+    });
+
+    it('should return validation error for missing required fields - error path', async () => {
+      const invalidAnnouncement = {
+        content: 'Missing title field'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(invalidAnnouncement)
+        .expect(400);
+
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toContain('title');
+    });
+
+    it('should return validation error for invalid priority - error path', async () => {
+      const invalidAnnouncement = {
+        title: 'Test Title',
+        content: 'Test content',
+        priority: 'invalid_priority'
+      };
+
+      const response = await request(app)
+        .post('/api/announcements')
+        .send(invalidAnnouncement)
+        .expect(400);
+
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toContain('priority');
+    });
+  });
+
+  describe('API-001: PUT /api/announcements/:id - Update', () => {
+    it('should update existing announcement - happy path', async () => {
+      // First create an announcement
+      const createResponse = await request(app)
+        .post('/api/announcements')
+        .send({
+          title: 'Original Title',
+          content: 'Original content',
+          priority: 'normal'
+        });
+
+      const announcementId = createResponse.body.id;
+      const updatedData = {
+        title: 'Updated Title',
+        content: 'Updated content',
+        priority: 'high'
+      };
+
+      const response = await request(app)
+        .put(`/api/announcements/${announcementId}`)
+        .send(updatedData)
+        .expect(200);
+
+      expect(response.body).toHaveProperty('title', updatedData.title);
+      expect(response.body).toHaveProperty('content', updatedData.content);
+      expect(response.body).toHaveProperty('priority', updatedData.priority);
+    });
+
+    it('should return 404 for updating non-existent announcement - error path', async () => {
+      const updatedData = {
+        title: 'Updated Title',
+        content: 'Updated content'
+      };
+
+      const response = await request(app)
+        .put('/api/announcements/99999')
+        .send(updatedData)
+        .expect(404);
+
+      expect(response.body).toHaveProperty('error', 'Announcement not found');
+    });
+
+    it('should return validation error for invalid update data - error path', async () => {
+      // Create announcement first
+      const createResponse = await request(app)
+        .post('/api/announcements')
+        .send({
+          title: 'Test Title',
+          content: 'Test content',
+          priority: 'normal'
+        });
+
+      const announcementId = createResponse.body.id;
+      const invalidData = {
+        title: '', // Empty title should fail validation
+        priority: 'invalid_priority'
+      };
+
+      const response = await request(app)
+        .put(`/api/announcements/${announcementId}`)
+        .send(invalidData)
+        .expect(400);
+
+      expect(response.body).toHaveProperty('error');
+    });
+  });
+
+  describe('API-001: DELETE /api/announcements/:id - Delete', () => {
+    it('should delete existing announcement - happy path', async () => {
+      // First create an announcement
+      const createResponse = await request(app)
+        .post('/api/announcements')
+        .send({
+          title: 'To Be Deleted',
+          content: 'This will be deleted',
+          priority: 'normal'
+        });
+
+      const announcementId = createResponse.body.id;
+
+      const response = await request(app)
+        .delete(`/api/announcements/${announcementId}`)
+        .expect(204);
+
+      // Verify it's deleted
+      await request(app)
+        .get(`/api/announcements/${announcementId}`)
+        .expect(404);
+    });
+
+    it('should return 404 for deleting non-existent announcement - error path', async () => {
+      const response = await request(app)
+        .delete('/api/announcements/99999')
+        .expect(404);
+
+      expect(response.body).toHaveProperty('error', 'Announcement not found');
+    });
+  });
+
+  describe('API-001: GET /api/announcements/search - Search Operation', () => {
+    it('should search announcements by query - happy path', async () => {
+      // Create test announcements
+      await request(app)
+        .post('/api/announcements')
+        .send({
+          title: 'Searchable Announcement',
+          content: 'This is searchable content',
+          priority: 'normal'
+        });
+
+      const response = await request(app)
+        .get('/api/announcements/search?q=searchable')
+        .expect(200);
+
+      expect(response.body).toHaveProperty('announcements');
+      expect(Array.isArray(response.body.announcements)).toBe(true);
+      expect(response.body.announcements.length).toBeGreaterThan(0);
+    });
+
+    it('should return empty results for no matches - error path', async () => {
+      const response = await request(app)
+        .get('/api/announcements/search?q=nonexistentkeyword123')
+        .expect(200);
+
+      expect(response.body).toHaveProperty('announcements');
+      expect(response.body.announcements.length).toBe(0);
+    });
+
+    it('should return validation error for missing query parameter - error path', async () => {
+      const response = await request(app)
+        .get('/api/announcements/search')
+        .expect(400);
+
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toContain('query');
+    });
+  });
+});

@@ -1,0 +1,119 @@
+// TC-003: Form validation test coverage
+describe('TC-003: Form validation', () => {
+  let form;
+  
+  beforeEach(() => {
+    // Setup form element for testing
+    form = document.createElement('form');
+    form.innerHTML = `
+      <input type="email" id="email" name="email" required>
+      <input type="password" id="password" name="password" required>
+      <input type="text" id="username" name="username" required>
+      <button type="submit">Submit</button>
+    `;
+    document.body.appendChild(form);
+  });
+  
+  afterEach(() => {
+    // Cleanup
+    document.body.removeChild(form);
+  });
+  
+  describe('Happy Path - TC-003', () => {
+    test('should validate form with all valid inputs', () => {
+      const emailInput = form.querySelector('#email');
+      const passwordInput = form.querySelector('#password');
+      const usernameInput = form.querySelector('#username');
+      
+      // Set valid values
+      emailInput.value = 'test@example.com';
+      passwordInput.value = 'validPassword123';
+      usernameInput.value = 'validUsername';
+      
+      // Trigger validation
+      const isValid = form.checkValidity();
+      
+      expect(isValid).toBe(true);
+      expect(emailInput.validity.valid).toBe(true);
+      expect(passwordInput.validity.valid).toBe(true);
+      expect(usernameInput.validity.valid).toBe(true);
+    });
+    
+    test('should submit form successfully with valid data', () => {
+      const submitHandler = jest.fn(e => e.preventDefault());
+      form.addEventListener('submit', submitHandler);
+      
+      // Fill with valid data
+      form.querySelector('#email').value = 'user@test.com';
+      form.querySelector('#password').value = 'password123';
+      form.querySelector('#username').value = 'testuser';
+      
+      // Submit form
+      form.dispatchEvent(new Event('submit'));
+      
+      expect(submitHandler).toHaveBeenCalled();
+      expect(form.checkValidity()).toBe(true);
+    });
+  });
+  
+  describe('Error Path - TC-003', () => {
+    test('should fail validation with invalid email format', () => {
+      const emailInput = form.querySelector('#email');
+      emailInput.value = 'invalid-email';
+      
+      const isValid = emailInput.checkValidity();
+      
+      expect(isValid).toBe(false);
+      expect(emailInput.validity.typeMismatch).toBe(true);
+    });
+    
+    test('should fail validation with empty required fields', () => {
+      const emailInput = form.querySelector('#email');
+      const passwordInput = form.querySelector('#password');
+      const usernameInput = form.querySelector('#username');
+      
+      // Leave all fields empty
+      emailInput.value = '';
+      passwordInput.value = '';
+      usernameInput.value = '';
+      
+      const isValid = form.checkValidity();
+      
+      expect(isValid).toBe(false);
+      expect(emailInput.validity.valueMissing).toBe(true);
+      expect(passwordInput.validity.valueMissing).toBe(true);
+      expect(usernameInput.validity.valueMissing).toBe(true);
+    });
+    
+    test('should prevent form submission with invalid data', () => {
+      const submitHandler = jest.fn(e => e.preventDefault());
+      form.addEventListener('submit', submitHandler);
+      
+      // Set invalid email
+      form.querySelector('#email').value = 'not-an-email';
+      form.querySelector('#password').value = '';
+      form.querySelector('#username').value = '';
+      
+      // Attempt to submit
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+      
+      expect(form.checkValidity()).toBe(false);
+    });
+    
+    test('should display validation errors for multiple invalid fields', () => {
+      const emailInput = form.querySelector('#email');
+      const passwordInput = form.querySelector('#password');
+      
+      emailInput.value = 'invalid.email';
+      passwordInput.value = '';
+      
+      // Check individual field validation
+      expect(emailInput.checkValidity()).toBe(false);
+      expect(passwordInput.checkValidity()).toBe(false);
+      
+      // Check overall form validation
+      expect(form.checkValidity()).toBe(false);
+    });
+  });
+});

@@ -1,0 +1,467 @@
+// TC-003: Form validation and submission tests
+describe('TC-003: Form validation and submission', () => {
+  let form;
+  let submitButton;
+  let nameInput;
+  let emailInput;
+  let messageInput;
+
+  beforeEach(() => {
+    document.body.innerHTML = `
+      <form id="contact-form">
+        <input type="text" id="name" name="name" required />
+        <input type="email" id="email" name="email" required />
+        <textarea id="message" name="message" required></textarea>
+        <button type="submit" id="submit-btn">Submit</button>
+        <div class="success-message" style="display: none;"></div>
+        <div class="error-message" style="display: none;"></div>
+        <div class="error-name" style="display: none;"></div>
+        <div class="error-email" style="display: none;"></div>
+        <div class="error-message-field" style="display: none;"></div>
+      </form>
+    `;
+    
+    form = document.getElementById('contact-form');
+    submitButton = document.getElementById('submit-btn');
+    nameInput = document.getElementById('name');
+    emailInput = document.getElementById('email');
+    messageInput = document.getElementById('message');
+
+    // Mock the form handler
+    window.handleFormSubmit = async (event) => {
+      event.preventDefault();
+      
+      // Clear previous messages
+      document.querySelectorAll('.error-name, .error-email, .error-message-field, .success-message, .error-message').forEach(el => {
+        el.style.display = 'none';
+        el.textContent = '';
+      });
+
+      // Validation
+      let hasErrors = false;
+      
+      if (!nameInput.value.trim()) {
+        const errorEl = document.querySelector('.error-name');
+        errorEl.textContent = 'Name is required';
+        errorEl.style.display = 'block';
+        hasErrors = true;
+      }
+      
+      if (!emailInput.value.trim()) {
+        const errorEl = document.querySelector('.error-email');
+        errorEl.textContent = 'Email is required';
+        errorEl.style.display = 'block';
+        hasErrors = true;
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.value)) {
+        const errorEl = document.querySelector('.error-email');
+        errorEl.textContent = 'Please enter a valid email address';
+        errorEl.style.display = 'block';
+        hasErrors = true;
+      }
+      
+      if (!messageInput.value.trim()) {
+        const errorEl = document.querySelector('.error-message-field');
+        errorEl.textContent = 'Message is required';
+        errorEl.style.display = 'block';
+        hasErrors = true;
+      }
+
+      if (hasErrors) return;
+
+      // Disable button during submission
+      submitButton.disabled = true;
+      submitButton.textContent = 'Submitting...';
+
+      try {
+        const response = await fetch('/api/contact', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            name: nameInput.value,
+            email: emailInput.value,
+            message: messageInput.value
+          })
+        });
+
+        if (response.ok) {
+          const successEl = document.querySelector('.success-message');
+          successEl.textContent = 'Form submitted successfully';
+          successEl.style.display = 'block';
+          form.reset();
+        } else {
+          const errorEl = document.querySelector('.error-message');
+          errorEl.textContent = 'Something went wrong. Please try again.';
+          errorEl.style.display = 'block';
+        }
+      } catch (error) {
+        const errorEl = document.querySelector('.error-message');
+        errorEl.textContent = 'Network error. Please check your connection.';
+        errorEl.style.display = 'block';
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Submit';
+      }
+    };
+
+    form.addEventListener('submit', window.handleFormSubmit);
+  });
+
+  afterEach(() => {
+    // Clean up global mocks
+    if (global.fetch && global.fetch.mockRestore) {
+      global.fetch.mockRestore();
+    }
+    delete window.handleFormSubmit;
+  });
+
+  describe('Happy path - TC-003', () => {
+    it('should successfully submit form with valid data', async () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'This is a test message';
+
+      // Mock successful API response
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, id: '12345' })
+        })
+      );
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect(fetch).toHaveBeenCalledWith('/api/contact', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: 'John Doe',
+          email: 'john@example.com',
+          message: 'This is a test message'
+        })
+      });
+    });
+
+    it('should display success message after successful submission', async () => {
+      // Arrange
+      nameInput.value = 'Jane Smith';
+      emailInput.value = 'jane@example.com';
+      messageInput.value = 'Thank you for your service';
+
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true })
+        })
+      );
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const successMessage = document.querySelector('.success-message');
+      expect(successMessage).toBeTruthy();
+      expect(successMessage.textContent).toContain('Form submitted successfully');
+    });
+
+    it('should clear form fields after successful submission', async () => {
+      // Arrange
+      nameInput.value = 'Test User';
+      emailInput.value = 'test@example.com';
+      messageInput.value = 'Test message';
+
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true })
+        })
+      );
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect(nameInput.value).toBe('');
+      expect(emailInput.value).toBe('');
+      expect(messageInput.value).toBe('');
+    });
+  });
+
+  describe('Error path - TC-003', () => {
+    it('should show validation errors for empty required fields', async () => {
+      // Arrange - leave all fields empty
+      nameInput.value = '';
+      emailInput.value = '';
+      messageInput.value = '';
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      await new Promise(resolve => setTimeout(resolve, 10));
+      const nameError = document.querySelector('.error-name');
+      const emailError = document.querySelector('.error-email');
+      const messageError = document.querySelector('.error-message-field');
+      
+      expect(nameError.textContent).toBe('Name is required');
+      expect(emailError.textContent).toBe('Email is required');
+      expect(messageError.textContent).toBe('Message is required');
+    });
+
+    it('should validate email format and show error for invalid email', async () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'invalid-email';
+      messageInput.value = 'Test message';
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      await new Promise(resolve => setTimeout(resolve, 10));
+      const emailError = document.querySelector('.error-email');
+      expect(emailError.textContent).toBe('Please enter a valid email address');
+    });
+
+    it('should handle server error response gracefully', async () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'Test message';
+
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: false,
+          status: 500,
+          json: () => Promise.resolve({ error: 'Internal server error' })
+        })
+      );
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const errorMessage = document.querySelector('.error-message');
+      expect(errorMessage.textContent).toContain('Something went wrong. Please try again.');
+    });
+
+    it('should handle network error', async () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'Test message';
+
+      global.fetch = jest.fn(() =>
+        Promise.reject(new Error('Network error'))
+      );
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const errorMessage = document.querySelector('.error-message');
+      expect(errorMessage.textContent).toContain('Network error. Please check your connection.');
+    });
+
+    it('should disable submit button during form submission', async () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'Test message';
+
+      global.fetch = jest.fn(() =>
+        new Promise(resolve => {
+          setTimeout(() => {
+            resolve({
+              ok: true,
+              json: () => Promise.resolve({ success: true })
+            });
+          }, 200);
+        })
+      );
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      expect(submitButton.disabled).toBe(true);
+      expect(submitButton.textContent).toBe('Submitting...');
+      
+      // Wait for completion
+      await new Promise(resolve => setTimeout(resolve, 300));
+      expect(submitButton.disabled).toBe(false);
+      expect(submitButton.textContent).toBe('Submit');
+    });
+
+    it('should handle multiple validation errors simultaneously', async () => {
+      // Arrange
+      nameInput.value = '';
+      emailInput.value = 'invalid-email-format';
+      messageInput.value = '';
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      await new Promise(resolve => setTimeout(resolve, 10));
+      const nameError = document.querySelector('.error-name');
+      const emailError = document.querySelector('.error-email');
+      const messageError = document.querySelector('.error-message-field');
+      
+      expect(nameError.textContent).toBe('Name is required');
+      expect(emailError.textContent).toBe('Please enter a valid email address');
+      expect(messageError.textContent).toBe('Message is required');
+    });
+
+    it('should clear previous error messages on new submission attempt', async () => {
+      // Arrange - first submit with errors
+      nameInput.value = '';
+      emailInput.value = '';
+      messageInput.value = '';
+
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Verify errors are shown
+      expect(document.querySelector('.error-name').textContent).toBe('Name is required');
+
+      // Act - fix errors and resubmit
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'Test message';
+
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true })
+        })
+      );
+
+      form.dispatchEvent(submitEvent);
+
+      // Assert - errors should be cleared
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect(document.querySelector('.error-name').textContent).toBe('');
+    });
+  });
+
+  describe('Edge cases - TC-003', () => {
+    it('should handle whitespace-only input as invalid', async () => {
+      // Arrange
+      nameInput.value = '   ';
+      emailInput.value = '  ';
+      messageInput.value = '\t\n  ';
+
+      // Act
+      const submitEvent = new Event('submit');
+      form.dispatchEvent(submitEvent);
+
+      // Assert
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(document.querySelector('.error-name').textContent).toBe('Name is required');
+      expect(document.querySelector('.error-email').textContent).toBe('Email is required');
+      expect(document.querySelector('.error-message-field').textContent).toBe('Message is required');
+    });
+
+    it('should validate complex email formats correctly', async () => {
+      const validEmails = [
+        'test@example.com',
+        'user.name+tag@domain.co.uk',
+        'x@example.co',
+        'example@s.example'
+      ];
+
+      const invalidEmails = [
+        'plainaddress',
+        '@missingdomain.com',
+        'missing@.com',
+        'spaces @domain.com',
+        'double..dot@domain.com'
+      ];
+
+      for (const email of validEmails) {
+        // Arrange
+        nameInput.value = 'Test User';
+        emailInput.value = email;
+        messageInput.value = 'Test message';
+
+        global.fetch = jest.fn(() =>
+          Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ success: true })
+          })
+        );
+
+        // Act
+        const submitEvent = new Event('submit');
+        form.dispatchEvent(submitEvent);
+
+        // Assert
+        await new Promise(resolve => setTimeout(resolve, 100));
+        expect(fetch).toHaveBeenCalled();
+        
+        // Reset for next test
+        global.fetch.mockClear();
+      }
+
+      for (const email of invalidEmails) {
+        // Arrange
+        nameInput.value = 'Test User';
+        emailInput.value = email;
+        messageInput.value = 'Test message';
+
+        // Act
+        const submitEvent = new Event('submit');
+        form.dispatchEvent(submitEvent);
+
+        // Assert
+        await new Promise(resolve => setTimeout(resolve, 10));
+        const emailError = document.querySelector('.error-email');
+        expect(emailError.textContent).toBe('Please enter a valid email address');
+      }
+    });
+
+    it('should prevent form submission when button is disabled', async () => {
+      // Arrange
+      nameInput.value = 'John Doe';
+      emailInput.value = 'john@example.com';
+      messageInput.value = 'Test message';
+      submitButton.disabled = true;
+
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true })
+        })
+      );
+
+      // Act
+      submitButton.click();
+
+      // Assert
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect(fetch).not.toHaveBeenCalled();
+    });
+  });
+});

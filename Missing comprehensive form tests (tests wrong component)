@@ -1,0 +1,140 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { Form } from '../components/Form';
+
+describe('Form Component - TC-003: Form validation', () => {
+  beforeEach(() => {
+    render(<Form />);
+  });
+
+  describe('TC-003: Form validation - Happy Path', () => {
+    it('should successfully submit form with valid data', async () => {
+      const user = userEvent.setup();
+      
+      // Fill in valid form data
+      await user.type(screen.getByLabelText(/name/i), 'John Doe');
+      await user.type(screen.getByLabelText(/email/i), 'john.doe@example.com');
+      await user.type(screen.getByLabelText(/phone/i), '555-123-4567');
+      await user.type(screen.getByLabelText(/message/i), 'This is a valid message');
+      
+      // Submit form
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+      await user.click(submitButton);
+      
+      // Verify success
+      await waitFor(() => {
+        expect(screen.getByText(/form submitted successfully/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should accept minimum valid input lengths', async () => {
+      const user = userEvent.setup();
+      
+      await user.type(screen.getByLabelText(/name/i), 'Jo');
+      await user.type(screen.getByLabelText(/email/i), 'a@b.co');
+      await user.type(screen.getByLabelText(/phone/i), '555-1234');
+      await user.type(screen.getByLabelText(/message/i), 'Valid');
+      
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+      await user.click(submitButton);
+      
+      await waitFor(() => {
+        expect(screen.getByText(/form submitted successfully/i)).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('TC-003: Form validation - Error Path', () => {
+    it('should display error for empty required fields', async () => {
+      const user = userEvent.setup();
+      
+      const submitButton = screen.getByRole('button', { name: /submit/i });
+      await user.click(submitButton);
+      
+      await waitFor(() => {
+        expect(screen.getByText(/name is required/i)).toBeInTheDocument();
+        expect(screen.getByText(/email is required/i)).toBeInTheDocument();
+        expect(screen.getByText(/phone is required/i)).toBeInTheDocument();
+        expect(screen.getByText(/message is required/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should display error for invalid email format', async () => {
+      const user = userEvent.setup();
+      
+      await user.type(screen.getByLabelText(/email/i), 'invalid-email');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      
+      await waitFor(() => {
+        expect(screen.getByText(/please enter a valid email address/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should display error for invalid phone format', async () => {
+      const user = userEvent.setup();
+      
+      await user.type(screen.getByLabelText(/phone/i), '123');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      
+      await waitFor(() => {
+        expect(screen.getByText(/please enter a valid phone number/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should display error for name that is too short', async () => {
+      const user = userEvent.setup();
+      
+      await user.type(screen.getByLabelText(/name/i), 'A');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      
+      await waitFor(() => {
+        expect(screen.getByText(/name must be at least 2 characters/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should display error for message that is too short', async () => {
+      const user = userEvent.setup();
+      
+      await user.type(screen.getByLabelText(/message/i), 'Hi');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      
+      await waitFor(() => {
+        expect(screen.getByText(/message must be at least 5 characters/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should prevent form submission when validation fails', async () => {
+      const user = userEvent.setup();
+      
+      await user.type(screen.getByLabelText(/email/i), 'invalid-email');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      
+      await waitFor(() => {
+        expect(screen.getByText(/please enter a valid email address/i)).toBeInTheDocument();
+      });
+      
+      // Verify form was not submitted
+      expect(screen.queryByText(/form submitted successfully/i)).not.toBeInTheDocument();
+    });
+
+    it('should clear error messages when user corrects input', async () => {
+      const user = userEvent.setup();
+      
+      // Trigger validation error
+      await user.type(screen.getByLabelText(/email/i), 'invalid');
+      await user.click(screen.getByRole('button', { name: /submit/i }));
+      
+      await waitFor(() => {
+        expect(screen.getByText(/please enter a valid email address/i)).toBeInTheDocument();
+      });
+      
+      // Correct the input
+      await user.clear(screen.getByLabelText(/email/i));
+      await user.type(screen.getByLabelText(/email/i), 'valid@example.com');
+      
+      await waitFor(() => {
+        expect(screen.queryByText(/please enter a valid email address/i)).not.toBeInTheDocument();
+      });
+    });
+  });
+});

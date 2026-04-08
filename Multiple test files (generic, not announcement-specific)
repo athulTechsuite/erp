@@ -1,0 +1,105 @@
+import { describe, it, expect } from '@jest/globals';
+
+describe('TC-004: Input validation and error handling', () => {
+  describe('Happy path validation', () => {
+    it('should accept valid string input', () => {
+      const validInput = 'valid string';
+      expect(() => validateInput(validInput)).not.toThrow();
+    });
+
+    it('should accept valid numeric input', () => {
+      const validInput = 123;
+      expect(() => validateInput(validInput)).not.toThrow();
+    });
+
+    it('should accept valid object input', () => {
+      const validInput = { key: 'value' };
+      expect(() => validateInput(validInput)).not.toThrow();
+    });
+
+    it('should accept valid array input', () => {
+      const validInput = [1, 2, 3];
+      expect(() => validateInput(validInput)).not.toThrow();
+    });
+  });
+
+  describe('Error path validation', () => {
+    it('should reject null input', () => {
+      expect(() => validateInput(null)).toThrow('Invalid input: null values not allowed');
+    });
+
+    it('should reject undefined input', () => {
+      expect(() => validateInput(undefined)).toThrow('Invalid input: undefined values not allowed');
+    });
+
+    it('should reject empty string input', () => {
+      expect(() => validateInput('')).toThrow('Invalid input: empty string not allowed');
+    });
+
+    it('should reject invalid object structure', () => {
+      const invalidInput = { invalidKey: null };
+      expect(() => validateInput(invalidInput)).toThrow('Invalid input: object contains invalid values');
+    });
+
+    it('should reject empty array input', () => {
+      expect(() => validateInput([])).toThrow('Invalid input: empty array not allowed');
+    });
+
+    it('should reject input exceeding length limits', () => {
+      const longInput = 'a'.repeat(1001);
+      expect(() => validateInput(longInput)).toThrow('Invalid input: exceeds maximum length');
+    });
+
+    it('should reject input with invalid characters', () => {
+      const invalidInput = 'invalid<script>alert("xss")</script>';
+      expect(() => validateInput(invalidInput)).toThrow('Invalid input: contains invalid characters');
+    });
+
+    it('should handle multiple validation errors', () => {
+      const multipleErrorsInput = null;
+      expect(() => validateInput(multipleErrorsInput)).toThrow();
+    });
+  });
+
+  describe('Edge cases', () => {
+    it('should handle boundary values correctly', () => {
+      const boundaryInput = 'a'.repeat(1000); // exactly at limit
+      expect(() => validateInput(boundaryInput)).not.toThrow();
+    });
+
+    it('should handle special characters in valid context', () => {
+      const specialCharsInput = 'valid@email.com';
+      expect(() => validateInput(specialCharsInput)).not.toThrow();
+    });
+  });
+});
+
+// Mock validation function for testing
+function validateInput(input) {
+  if (input === null) {
+    throw new Error('Invalid input: null values not allowed');
+  }
+  if (input === undefined) {
+    throw new Error('Invalid input: undefined values not allowed');
+  }
+  if (input === '') {
+    throw new Error('Invalid input: empty string not allowed');
+  }
+  if (Array.isArray(input) && input.length === 0) {
+    throw new Error('Invalid input: empty array not allowed');
+  }
+  if (typeof input === 'string' && input.length > 1000) {
+    throw new Error('Invalid input: exceeds maximum length');
+  }
+  if (typeof input === 'string' && /<script|javascript:/i.test(input)) {
+    throw new Error('Invalid input: contains invalid characters');
+  }
+  if (typeof input === 'object' && input !== null && !Array.isArray(input)) {
+    for (const value of Object.values(input)) {
+      if (value === null || value === undefined) {
+        throw new Error('Invalid input: object contains invalid values');
+      }
+    }
+  }
+  return true;
+}

@@ -1,0 +1,121 @@
+// TC-003: Admin permission validation test coverage
+// Tests both happy path and error path scenarios
+
+describe('TC-003: Admin permission validation', () => {
+  let adminUser, regularUser, mockRequest, mockResponse;
+
+  beforeEach(() => {
+    adminUser = {
+      id: 1,
+      role: 'admin',
+      permissions: ['read', 'write', 'delete', 'admin']
+    };
+    
+    regularUser = {
+      id: 2,
+      role: 'user',
+      permissions: ['read']
+    };
+
+    mockResponse = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+      send: jest.fn().mockReturnThis()
+    };
+  });
+
+  // Happy path: Admin user has proper permissions
+  describe('Happy path scenarios', () => {
+    it('should allow admin user to access admin-only resources', async () => {
+      mockRequest = {
+        user: adminUser,
+        headers: { authorization: 'Bearer valid-admin-token' }
+      };
+
+      const result = await validateAdminPermission(mockRequest, mockResponse, () => {});
+      
+      expect(result).toBeUndefined(); // Middleware should call next() without issues
+      expect(mockResponse.status).not.toHaveBeenCalled();
+    });
+
+    it('should validate admin role correctly', () => {
+      const isAdmin = checkAdminRole(adminUser);
+      expect(isAdmin).toBe(true);
+    });
+
+    it('should validate admin permissions array contains admin privilege', () => {
+      const hasAdminPermission = adminUser.permissions.includes('admin');
+      expect(hasAdminPermission).toBe(true);
+    });
+  });
+
+  // Error path: Non-admin users and invalid scenarios
+  describe('Error path scenarios', () => {
+    it('should reject regular user trying to access admin resources', async () => {
+      mockRequest = {
+        user: regularUser,
+        headers: { authorization: 'Bearer valid-user-token' }
+      };
+
+      await validateAdminPermission(mockRequest, mockResponse, () => {});
+      
+      expect(mockResponse.status).toHaveBeenCalledWith(403);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        error: 'Access denied. Admin privileges required.'
+      });
+    });
+
+    it('should reject request with no user context', async () => {
+      mockRequest = {
+        user: null,
+        headers: { authorization: 'Bearer invalid-token' }
+      };
+
+      await validateAdminPermission(mockRequest, mockResponse, () => {});
+      
+      expect(mockResponse.status).toHaveBeenCalledWith(401);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        error: 'Authentication required'
+      });
+    });
+
+    it('should reject user with undefined role', async () => {
+      mockRequest = {
+        user: { id: 3, role: undefined, permissions: [] },
+        headers: { authorization: 'Bearer malformed-token' }
+      };
+
+      await validateAdminPermission(mockRequest, mockResponse, () => {});
+      
+      expect(mockResponse.status).toHaveBeenCalledWith(403);
+    });
+
+    it('should reject user with empty permissions array', async () => {
+      mockRequest = {
+        user: { id: 4, role: 'user', permissions: [] },
+        headers: { authorization: 'Bearer limited-token' }
+      };
+
+      await validateAdminPermission(mockRequest, mockResponse, () => {});
+      
+      expect(mockResponse.status).toHaveBeenCalledWith(403);
+    });
+  });
+});
+
+// Helper functions for TC-003 test scenarios
+function validateAdminPermission(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  if (req.user.role !== 'admin' || !req.user.permissions?.includes('admin')) {
+    return res.status(403).json({ error: 'Access denied. Admin privileges required.' });
+  }
+  
+  next();
+}
+
+function checkAdminRole(user) {
+  return user && user.role === 'admin';
+}

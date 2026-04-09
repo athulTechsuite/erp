@@ -1,0 +1,183 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { AnnouncementComponent } from '../components/AnnouncementComponent';
+import { useAuth } from '../hooks/useAuth';
+import { mockApiCall } from '../utils/testUtils';
+
+// Mock the auth hook
+vi.mock('../hooks/useAuth');
+
+describe('TC-005: Announcement component tests', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('Happy path - Announcement display and interactions', () => {
+    it('should render announcement component with correct content', async () => {
+      // Arrange
+      const mockAnnouncements = [
+        {
+          id: 1,
+          title: 'System Maintenance',
+          message: 'Scheduled maintenance on Sunday',
+          type: 'warning',
+          active: true
+        },
+        {
+          id: 2,
+          title: 'New Features',
+          message: 'Check out our latest updates',
+          type: 'info',
+          active: true
+        }
+      ];
+
+      mockApiCall('/api/announcements', { data: mockAnnouncements });
+
+      // Act
+      render(<AnnouncementComponent />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText('System Maintenance')).toBeInTheDocument();
+        expect(screen.getByText('Scheduled maintenance on Sunday')).toBeInTheDocument();
+        expect(screen.getByText('New Features')).toBeInTheDocument();
+        expect(screen.getByText('Check out our latest updates')).toBeInTheDocument();
+      });
+    });
+
+    it('should allow users to dismiss announcements', async () => {
+      // Arrange
+      const mockAnnouncements = [
+        {
+          id: 1,
+          title: 'Dismissible Notice',
+          message: 'This can be dismissed',
+          type: 'info',
+          active: true,
+          dismissible: true
+        }
+      ];
+
+      mockApiCall('/api/announcements', { data: mockAnnouncements });
+      mockApiCall('/api/announcements/1/dismiss', { success: true });
+
+      // Act
+      render(<AnnouncementComponent />);
+      
+      await waitFor(() => {
+        expect(screen.getByText('Dismissible Notice')).toBeInTheDocument();
+      });
+
+      const dismissButton = screen.getByRole('button', { name: 'Dismiss' });
+      fireEvent.click(dismissButton);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.queryByText('Dismissible Notice')).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Error path - Announcement loading and error handling', () => {
+    it('should handle failed announcement loading gracefully', async () => {
+      // Arrange
+      mockApiCall('/api/announcements', { error: 'Failed to load announcements' }, 500);
+
+      // Act
+      render(<AnnouncementComponent />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText('Unable to load announcements')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+      });
+    });
+
+    it('should show empty state when no announcements exist', async () => {
+      // Arrange
+      mockApiCall('/api/announcements', { data: [] });
+
+      // Act
+      render(<AnnouncementComponent />);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText('No announcements at this time')).toBeInTheDocument();
+      });
+    });
+
+    it('should handle dismiss action failure', async () => {
+      // Arrange
+      const mockAnnouncements = [
+        {
+          id: 1,
+          title: 'Test Announcement',
+          message: 'Test message',
+          type: 'info',
+          active: true,
+          dismissible: true
+        }
+      ];
+
+      mockApiCall('/api/announcements', { data: mockAnnouncements });
+      mockApiCall('/api/announcements/1/dismiss', { error: 'Dismiss failed' }, 500);
+
+      // Act
+      render(<AnnouncementComponent />);
+      
+      await waitFor(() => {
+        expect(screen.getByText('Test Announcement')).toBeInTheDocument();
+      });
+
+      const dismissButton = screen.getByRole('button', { name: 'Dismiss' });
+      fireEvent.click(dismissButton);
+
+      // Assert
+      await waitFor(() => {
+        expect(screen.getByText('Failed to dismiss announcement')).toBeInTheDocument();
+        expect(screen.getByText('Test Announcement')).toBeInTheDocument(); // Still visible
+      });
+    });
+
+    it('should display announcements with different priority levels', async () => {
+      // Arrange
+      const mockAnnouncements = [
+        {
+          id: 1,
+          title: 'Critical Alert',
+          message: 'Urgent system issue',
+          type: 'error',
+          priority: 'high',
+          active: true
+        },
+        {
+          id: 2,
+          title: 'General Info',
+          message: 'Regular update',
+          type: 'info',
+          priority: 'low',
+          active: true
+        }
+      ];
+
+      mockApiCall('/api/announcements', { data: mockAnnouncements });
+
+      // Act
+      render(<AnnouncementComponent />);
+
+      // Assert
+      await waitFor(() => {
+        const criticalAlert = screen.getByText('Critical Alert');
+        const generalInfo = screen.getByText('General Info');
+        
+        expect(criticalAlert).toBeInTheDocument();
+        expect(generalInfo).toBeInTheDocument();
+        
+        // Critical announcements should appear first
+        expect(criticalAlert.closest('[data-priority="high"]')).toBeInTheDocument();
+        expect(generalInfo.closest('[data-priority="low"]')).toBeInTheDocument();
+      });
+    });
+  });
+});

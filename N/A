@@ -1,0 +1,134 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { jest } from '@jest/globals';
+import AnnouncementComponent from '../AnnouncementComponent';
+
+describe('Announcement Component Tests', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // Happy path validation
+  it('should render announcement successfully with valid props', async () => {
+    const mockProps = {
+      title: 'System Maintenance Notice',
+      message: 'Scheduled maintenance will occur on Sunday',
+      type: 'info',
+      onDismiss: jest.fn()
+    };
+
+    render(<AnnouncementComponent {...mockProps} />);
+
+    expect(screen.getByText('System Maintenance Notice')).toBeInTheDocument();
+    expect(screen.getByText('Scheduled maintenance will occur on Sunday')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveClass('announcement--info');
+  });
+
+  it('should handle announcement dismissal correctly', async () => {
+    const mockOnDismiss = jest.fn();
+    const props = {
+      title: 'Important Update',
+      message: 'New features are now available',
+      type: 'success',
+      dismissible: true,
+      onDismiss: mockOnDismiss
+    };
+
+    render(<AnnouncementComponent {...props} />);
+
+    const dismissButton = screen.getByRole('button', { name: /dismiss/i });
+    fireEvent.click(dismissButton);
+
+    await waitFor(() => {
+      expect(mockOnDismiss).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Important Update',
+          dismissed: true
+        })
+      );
+    });
+  });
+
+  it('should display different announcement types with correct styling', () => {
+    const types = ['info', 'warning', 'error', 'success'];
+    
+    types.forEach(type => {
+      const { container } = render(
+        <AnnouncementComponent
+          title={`${type} announcement`}
+          message={`This is a ${type} message`}
+          type={type}
+        />
+      );
+      
+      expect(container.querySelector('.announcement')).toHaveClass(`announcement--${type}`);
+    });
+  });
+
+  // Error path validation
+  it('should handle missing required props gracefully', () => {
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    
+    render(<AnnouncementComponent />);
+    
+    expect(screen.getByText(/no announcement to display/i)).toBeInTheDocument();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Announcement title and message are required')
+    );
+    
+    consoleSpy.mockRestore();
+  });
+
+  it('should handle invalid announcement type and fallback to default', () => {
+    const props = {
+      title: 'Test Announcement',
+      message: 'Testing invalid type handling',
+      type: 'invalid-type'
+    };
+
+    render(<AnnouncementComponent {...props} />);
+
+    expect(screen.getByRole('alert')).toHaveClass('announcement--info');
+  });
+
+  it('should handle long announcement messages and display properly', () => {
+    const longMessage = 'This is a very long announcement message that should be displayed properly without breaking the layout or causing any display issues in the user interface.'.repeat(3);
+    
+    const props = {
+      title: 'Long Message Test',
+      message: longMessage,
+      type: 'warning'
+    };
+
+    render(<AnnouncementComponent {...props} />);
+
+    expect(screen.getByText(longMessage)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('should handle announcement with action buttons', async () => {
+    const mockOnAction = jest.fn();
+    const props = {
+      title: 'Action Required',
+      message: 'Please update your profile information',
+      type: 'warning',
+      actions: [
+        { label: 'Update Now', onClick: mockOnAction, primary: true },
+        { label: 'Later', onClick: jest.fn(), secondary: true }
+      ]
+    };
+
+    render(<AnnouncementComponent {...props} />);
+
+    const updateButton = screen.getByRole('button', { name: /update now/i });
+    const laterButton = screen.getByRole('button', { name: /later/i });
+
+    expect(updateButton).toHaveClass('btn--primary');
+    expect(laterButton).toHaveClass('btn--secondary');
+
+    fireEvent.click(updateButton);
+
+    await waitFor(() => {
+      expect(mockOnAction).toHaveBeenCalled();
+    });
+  });
+});

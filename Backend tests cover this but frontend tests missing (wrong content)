@@ -1,0 +1,194 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { AdminPanel } from '../components/AdminPanel';
+import { AuthProvider } from '../contexts/AuthContext';
+import * as authService from '../services/authService';
+
+// Mock the auth service
+vi.mock('../services/authService');
+
+const mockAuthService = vi.mocked(authService);
+
+const renderWithAuth = (component, authState = {}) => {
+  const defaultAuthState = {
+    user: null,
+    isAuthenticated: false,
+    hasAdminPermission: false,
+    ...authState
+  };
+
+  return render(
+    <AuthProvider value={defaultAuthState}>
+      {component}
+    </AuthProvider>
+  );
+};
+
+describe('TC-004: Admin permission validation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('Happy path - Admin user access', () => {
+    it('TC-004: should allow admin user to access admin panel', async () => {
+      const adminUser = {
+        id: 1,
+        username: 'admin',
+        role: 'admin',
+        permissions: ['admin_access', 'user_management']
+      };
+
+      mockAuthService.validateAdminPermission.mockResolvedValue(true);
+
+      renderWithAuth(
+        <AdminPanel />,
+        {
+          user: adminUser,
+          isAuthenticated: true,
+          hasAdminPermission: true
+        }
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('admin-dashboard')).toBeInTheDocument();
+        expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
+        expect(screen.getByText('User Management')).toBeInTheDocument();
+      });
+
+      expect(mockAuthService.validateAdminPermission).toHaveBeenCalledWith(adminUser);
+    });
+
+    it('TC-004: should display admin-only features for authenticated admin', async () => {
+      const adminUser = {
+        id: 1,
+        username: 'admin',
+        role: 'admin',
+        permissions: ['admin_access', 'user_management', 'system_config']
+      };
+
+      mockAuthService.validateAdminPermission.mockResolvedValue(true);
+
+      renderWithAuth(
+        <AdminPanel />,
+        {
+          user: adminUser,
+          isAuthenticated: true,
+          hasAdminPermission: true
+        }
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('user-management-section')).toBeInTheDocument();
+        expect(screen.getByTestId('system-config-section')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /delete user/i })).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Error path - Non-admin user access', () => {
+    it('TC-004: should deny access to non-admin user', async () => {
+      const regularUser = {
+        id: 2,
+        username: 'user',
+        role: 'user',
+        permissions: ['read_access']
+      };
+
+      mockAuthService.validateAdminPermission.mockResolvedValue(false);
+
+      renderWithAuth(
+        <AdminPanel />,
+        {
+          user: regularUser,
+          isAuthenticated: true,
+          hasAdminPermission: false
+        }
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('access-denied')).toBeInTheDocument();
+        expect(screen.getByText('Access Denied')).toBeInTheDocument();
+        expect(screen.getByText('You do not have admin permissions')).toBeInTheDocument();
+        expect(screen.queryByTestId('admin-dashboard')).not.toBeInTheDocument();
+      });
+
+      expect(mockAuthService.validateAdminPermission).toHaveBeenCalledWith(regularUser);
+    });
+
+    it('TC-004: should deny access to unauthenticated user', async () => {
+      renderWithAuth(
+        <AdminPanel />,
+        {
+          user: null,
+          isAuthenticated: false,
+          hasAdminPermission: false
+        }
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('login-required')).toBeInTheDocument();
+        expect(screen.getByText('Please log in to continue')).toBeInTheDocument();
+        expect(screen.queryByTestId('admin-dashboard')).not.toBeInTheDocument();
+      });
+
+      expect(mockAuthService.validateAdminPermission).not.toHaveBeenCalled();
+    });
+
+    it('TC-004: should handle permission validation failure gracefully', async () => {
+      const adminUser = {
+        id: 1,
+        username: 'admin',
+        role: 'admin',
+        permissions: ['admin_access']
+      };
+
+      mockAuthService.validateAdminPermission.mockRejectedValue(
+        new Error('Permission validation failed')
+      );
+
+      renderWithAuth(
+        <AdminPanel />,
+        {
+          user: adminUser,
+          isAuthenticated: true,
+          hasAdminPermission: true
+        }
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('permission-error')).toBeInTheDocument();
+        expect(screen.getByText('Unable to validate permissions')).toBeInTheDocument();
+        expect(screen.queryByTestId('admin-dashboard')).not.toBeInTheDocument();
+      });
+
+      expect(mockAuthService.validateAdminPermission).toHaveBeenCalledWith(adminUser);
+    });
+
+    it('TC-004: should prevent admin actions for users with expired sessions', async () => {
+      const expiredUser = {
+        id: 1,
+        username: 'admin',
+        role: 'admin',
+        permissions: ['admin_access'],
+        sessionExpired: true
+      };
+
+      mockAuthService.validateAdminPermission.mockResolvedValue(false);
+
+      renderWithAuth(
+        <AdminPanel />,
+        {
+          user: expiredUser,
+          isAuthenticated: false,
+          hasAdminPermission: false
+        }
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-expired')).toBeInTheDocument();
+        expect(screen.getByText('Session expired. Please log in again.')).toBeInTheDocument();
+        expect(screen.queryByTestId('admin-dashboard')).not.toBeInTheDocument();
+      });
+    });
+  });
+});

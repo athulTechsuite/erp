@@ -1,12 +1,22 @@
 const Employee = require('../models/Employee');
 const LeaveRequest = require('../models/LeaveRequest');
 const InventoryItem = require('../models/InventoryItem');
+const Announcement = require('../models/Announcement');
 
 class DashboardController {
   // Get main dashboard data for admin/manager view
   async getAdminDashboard(req, res) {
     try {
       const { companyId } = req.user;
+
+      // Get active announcements
+      const announcements = await Announcement.find({
+        companyId,
+        status: 'active'
+      })
+      .populate('authorId', 'firstName lastName')
+      .sort({ createdAt: -1 })
+      .limit(10);
 
       // Get employee count and basic stats
       const totalEmployees = await Employee.countDocuments({ 
@@ -81,6 +91,7 @@ class DashboardController {
         Math.round((totalUsed / totalAllocated) * 100) : 0;
 
       const dashboardData = {
+        announcements,
         overview: {
           totalEmployees,
           pendingLeaves,
@@ -111,7 +122,16 @@ class DashboardController {
   // Get employee dashboard data
   async getEmployeeDashboard(req, res) {
     try {
-      const { userId } = req.user;
+      const { userId, companyId } = req.user;
+
+      // Get active announcements for all users
+      const announcements = await Announcement.find({
+        companyId,
+        status: 'active'
+      })
+      .populate('authorId', 'firstName lastName')
+      .sort({ createdAt: -1 })
+      .limit(10);
 
       // Get employee data
       const employee = await Employee.findOne({ userId })
@@ -153,6 +173,7 @@ class DashboardController {
       const totalDaysTaken = approvedThisYear.reduce((sum, leave) => sum + leave.totalDays, 0);
 
       const dashboardData = {
+        announcements,
         profile: {
           name: `${employee.firstName} ${employee.lastName}`,
           email: employee.email,

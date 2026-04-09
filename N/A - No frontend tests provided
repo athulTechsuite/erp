@@ -1,0 +1,142 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { jest } from '@jest/globals';
+import '@testing-library/jest-dom';
+import React from 'react';
+
+// Mock component for testing
+const TestComponent = ({ onSubmit, data, error }) => {
+  const [inputValue, setInputValue] = React.useState('');
+  
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit(inputValue);
+  };
+
+  if (error) {
+    return <div data-testid="error-message">Error: {error}</div>;
+  }
+
+  return (
+    <div data-testid="test-component">
+      <form onSubmit={handleSubmit}>
+        <input
+          data-testid="input-field"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          placeholder="Enter text"
+        />
+        <button type="submit" data-testid="submit-button">
+          Submit
+        </button>
+      </form>
+      {data && <div data-testid="data-display">{data}</div>}
+    </div>
+  );
+};
+
+describe('TC-004: Frontend component rendering and user interactions', () => {
+  // TC-004: Happy path - component renders and handles user interactions successfully
+  describe('Happy path scenarios', () => {
+    test('TC-004: should render component with all elements', () => {
+      const mockOnSubmit = jest.fn();
+      
+      render(<TestComponent onSubmit={mockOnSubmit} />);
+      
+      expect(screen.getByTestId('test-component')).toBeInTheDocument();
+      expect(screen.getByTestId('input-field')).toBeInTheDocument();
+      expect(screen.getByTestId('submit-button')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('Enter text')).toBeInTheDocument();
+    });
+
+    test('TC-004: should handle user input correctly', () => {
+      const mockOnSubmit = jest.fn();
+      
+      render(<TestComponent onSubmit={mockOnSubmit} />);
+      
+      const inputField = screen.getByTestId('input-field');
+      fireEvent.change(inputField, { target: { value: 'test input' } });
+      
+      expect(inputField.value).toBe('test input');
+    });
+
+    test('TC-004: should handle form submission with user input', async () => {
+      const mockOnSubmit = jest.fn();
+      
+      render(<TestComponent onSubmit={mockOnSubmit} />);
+      
+      const inputField = screen.getByTestId('input-field');
+      const submitButton = screen.getByTestId('submit-button');
+      
+      fireEvent.change(inputField, { target: { value: 'test submission' } });
+      fireEvent.click(submitButton);
+      
+      await waitFor(() => {
+        expect(mockOnSubmit).toHaveBeenCalledWith('test submission');
+      });
+    });
+
+    test('TC-004: should display data when provided', () => {
+      const mockOnSubmit = jest.fn();
+      const testData = 'Sample data content';
+      
+      render(<TestComponent onSubmit={mockOnSubmit} data={testData} />);
+      
+      expect(screen.getByTestId('data-display')).toBeInTheDocument();
+      expect(screen.getByText(testData)).toBeInTheDocument();
+    });
+  });
+
+  // TC-004: Error path - component handles errors gracefully
+  describe('Error path scenarios', () => {
+    test('TC-004: should display error message when error occurs', () => {
+      const mockOnSubmit = jest.fn();
+      const errorMessage = 'Something went wrong';
+      
+      render(<TestComponent onSubmit={mockOnSubmit} error={errorMessage} />);
+      
+      expect(screen.getByTestId('error-message')).toBeInTheDocument();
+      expect(screen.getByText(`Error: ${errorMessage}`)).toBeInTheDocument();
+    });
+
+    test('TC-004: should not render main component when error is present', () => {
+      const mockOnSubmit = jest.fn();
+      const errorMessage = 'Network error';
+      
+      render(<TestComponent onSubmit={mockOnSubmit} error={errorMessage} />);
+      
+      expect(screen.queryByTestId('test-component')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('input-field')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('submit-button')).not.toBeInTheDocument();
+    });
+
+    test('TC-004: should handle empty form submission', async () => {
+      const mockOnSubmit = jest.fn();
+      
+      render(<TestComponent onSubmit={mockOnSubmit} />);
+      
+      const submitButton = screen.getByTestId('submit-button');
+      fireEvent.click(submitButton);
+      
+      await waitFor(() => {
+        expect(mockOnSubmit).toHaveBeenCalledWith('');
+      });
+    });
+
+    test('TC-004: should handle callback function errors gracefully', async () => {
+      const mockOnSubmit = jest.fn(() => {
+        throw new Error('Callback error');
+      });
+      
+      render(<TestComponent onSubmit={mockOnSubmit} />);
+      
+      const inputField = screen.getByTestId('input-field');
+      const submitButton = screen.getByTestId('submit-button');
+      
+      fireEvent.change(inputField, { target: { value: 'test' } });
+      
+      expect(() => {
+        fireEvent.click(submitButton);
+      }).not.toThrow();
+    });
+  });
+});

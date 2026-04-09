@@ -1,0 +1,237 @@
+const { expect } = require('chai');
+const sinon = require('sinon');
+const AnnouncementService = require('../src/services/AnnouncementService');
+const AnnouncementController = require('../src/controllers/AnnouncementController');
+
+describe('Announcement System', () => {
+  describe('AnnouncementService', () => {
+    let announcementService;
+    
+    beforeEach(() => {
+      announcementService = new AnnouncementService();
+    });
+
+    it('should create a new announcement', async () => {
+      const announcementData = {
+        title: 'System Maintenance',
+        message: 'Scheduled maintenance tonight',
+        type: 'warning',
+        priority: 'high'
+      };
+
+      const result = await announcementService.createAnnouncement(announcementData);
+      
+      expect(result).to.have.property('id');
+      expect(result.title).to.equal('System Maintenance');
+      expect(result.type).to.equal('warning');
+    });
+
+    it('should retrieve all active announcements', async () => {
+      await announcementService.createAnnouncement({
+        title: 'Test 1',
+        message: 'Message 1',
+        type: 'info'
+      });
+      
+      await announcementService.createAnnouncement({
+        title: 'Test 2',
+        message: 'Message 2',
+        type: 'success'
+      });
+
+      const announcements = await announcementService.getActiveAnnouncements();
+      expect(announcements).to.have.length(2);
+    });
+
+    it('should filter announcements by type', async () => {
+      await announcementService.createAnnouncement({
+        title: 'Warning',
+        message: 'Warning message',
+        type: 'warning'
+      });
+      
+      await announcementService.createAnnouncement({
+        title: 'Info',
+        message: 'Info message',
+        type: 'info'
+      });
+
+      const warningAnnouncements = await announcementService.getAnnouncementsByType('warning');
+      expect(warningAnnouncements).to.have.length(1);
+      expect(warningAnnouncements[0].type).to.equal('warning');
+    });
+
+    it('should update announcement status', async () => {
+      const announcement = await announcementService.createAnnouncement({
+        title: 'Test',
+        message: 'Test message',
+        type: 'info'
+      });
+
+      const updated = await announcementService.updateAnnouncementStatus(announcement.id, 'inactive');
+      expect(updated.status).to.equal('inactive');
+    });
+
+    it('should delete announcement', async () => {
+      const announcement = await announcementService.createAnnouncement({
+        title: 'To Delete',
+        message: 'Delete this',
+        type: 'info'
+      });
+
+      await announcementService.deleteAnnouncement(announcement.id);
+      const announcements = await announcementService.getActiveAnnouncements();
+      
+      expect(announcements.find(a => a.id === announcement.id)).to.be.undefined;
+    });
+  });
+
+  describe('AnnouncementController', () => {
+    let controller;
+    let mockService;
+    let req;
+    let res;
+
+    beforeEach(() => {
+      mockService = {
+        createAnnouncement: sinon.stub(),
+        getActiveAnnouncements: sinon.stub(),
+        getAnnouncementsByType: sinon.stub(),
+        updateAnnouncementStatus: sinon.stub(),
+        deleteAnnouncement: sinon.stub()
+      };
+      
+      controller = new AnnouncementController(mockService);
+      
+      req = {
+        body: {},
+        params: {},
+        query: {}
+      };
+      
+      res = {
+        json: sinon.stub().returnsThis(),
+        status: sinon.stub().returnsThis(),
+        send: sinon.stub()
+      };
+    });
+
+    it('should handle POST /announcements', async () => {
+      const announcementData = {
+        title: 'New Announcement',
+        message: 'Test message',
+        type: 'info'
+      };
+
+      req.body = announcementData;
+      mockService.createAnnouncement.resolves({ id: '123', ...announcementData });
+
+      await controller.createAnnouncement(req, res);
+
+      expect(mockService.createAnnouncement.calledWith(announcementData)).to.be.true;
+      expect(res.status.calledWith(201)).to.be.true;
+      expect(res.json.called).to.be.true;
+    });
+
+    it('should handle GET /announcements', async () => {
+      const mockAnnouncements = [
+        { id: '1', title: 'Test 1', type: 'info' },
+        { id: '2', title: 'Test 2', type: 'warning' }
+      ];
+
+      mockService.getActiveAnnouncements.resolves(mockAnnouncements);
+
+      await controller.getAnnouncements(req, res);
+
+      expect(mockService.getActiveAnnouncements.called).to.be.true;
+      expect(res.json.calledWith(mockAnnouncements)).to.be.true;
+    });
+
+    it('should handle GET /announcements with type filter', async () => {
+      req.query.type = 'warning';
+      const mockAnnouncements = [{ id: '1', title: 'Warning', type: 'warning' }];
+
+      mockService.getAnnouncementsByType.resolves(mockAnnouncements);
+
+      await controller.getAnnouncements(req, res);
+
+      expect(mockService.getAnnouncementsByType.calledWith('warning')).to.be.true;
+      expect(res.json.calledWith(mockAnnouncements)).to.be.true;
+    });
+
+    it('should handle PUT /announcements/:id/status', async () => {
+      req.params.id = '123';
+      req.body.status = 'inactive';
+
+      const updatedAnnouncement = { id: '123', status: 'inactive' };
+      mockService.updateAnnouncementStatus.resolves(updatedAnnouncement);
+
+      await controller.updateAnnouncementStatus(req, res);
+
+      expect(mockService.updateAnnouncementStatus.calledWith('123', 'inactive')).to.be.true;
+      expect(res.json.calledWith(updatedAnnouncement)).to.be.true;
+    });
+
+    it('should handle DELETE /announcements/:id', async () => {
+      req.params.id = '123';
+      mockService.deleteAnnouncement.resolves();
+
+      await controller.deleteAnnouncement(req, res);
+
+      expect(mockService.deleteAnnouncement.calledWith('123')).to.be.true;
+      expect(res.status.calledWith(204)).to.be.true;
+      expect(res.send.called).to.be.true;
+    });
+
+    it('should handle errors gracefully', async () => {
+      req.body = { title: 'Test' };
+      mockService.createAnnouncement.rejects(new Error('Database error'));
+
+      await controller.createAnnouncement(req, res);
+
+      expect(res.status.calledWith(500)).to.be.true;
+      expect(res.json.calledWith({ error: 'Internal server error' })).to.be.true;
+    });
+  });
+
+  describe('Announcement Validation', () => {
+    it('should validate required fields', () => {
+      const { validateAnnouncement } = require('../src/validators/announcementValidator');
+      
+      const invalidData = { message: 'No title' };
+      const result = validateAnnouncement(invalidData);
+      
+      expect(result.isValid).to.be.false;
+      expect(result.errors).to.include('Title is required');
+    });
+
+    it('should validate announcement type', () => {
+      const { validateAnnouncement } = require('../src/validators/announcementValidator');
+      
+      const invalidData = {
+        title: 'Test',
+        message: 'Test message',
+        type: 'invalid-type'
+      };
+      
+      const result = validateAnnouncement(invalidData);
+      expect(result.isValid).to.be.false;
+      expect(result.errors).to.include('Invalid announcement type');
+    });
+
+    it('should accept valid announcement data', () => {
+      const { validateAnnouncement } = require('../src/validators/announcementValidator');
+      
+      const validData = {
+        title: 'Valid Title',
+        message: 'Valid message',
+        type: 'info',
+        priority: 'medium'
+      };
+      
+      const result = validateAnnouncement(validData);
+      expect(result.isValid).to.be.true;
+      expect(result.errors).to.be.empty;
+    });
+  });
+});

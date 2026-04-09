@@ -12,10 +12,15 @@ import {
   AlertCircle,
   CheckCircle,
   XCircle,
-  PendingIcon
+  PendingIcon,
+  Megaphone,
+  Plus,
+  Edit,
+  Trash2
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { dashboardService } from '@/services/dashboardService';
+import { announcementService } from '@/services/announcementService';
 
 const Overview = () => {
   const { user } = useAuth();
@@ -35,8 +40,15 @@ const Overview = () => {
     error: null
   });
 
+  const [announcements, setAnnouncements] = useState({
+    data: [],
+    loading: true,
+    error: null
+  });
+
   useEffect(() => {
     fetchDashboardData();
+    fetchAnnouncements();
   }, []);
 
   const fetchDashboardData = async () => {
@@ -55,6 +67,40 @@ const Overview = () => {
         loading: false,
         error: 'Failed to load dashboard data'
       }));
+    }
+  };
+
+  const fetchAnnouncements = async () => {
+    try {
+      setAnnouncements(prev => ({ ...prev, loading: true }));
+      const data = await announcementService.getAll();
+      setAnnouncements({
+        data: data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+        loading: false,
+        error: null
+      });
+    } catch (error) {
+      setAnnouncements({
+        data: [],
+        loading: false,
+        error: 'Failed to load announcements'
+      });
+    }
+  };
+
+  const handleDeleteAnnouncement = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this announcement?')) {
+      return;
+    }
+
+    try {
+      await announcementService.delete(id);
+      setAnnouncements(prev => ({
+        ...prev,
+        data: prev.data.filter(announcement => announcement.id !== id)
+      }));
+    } catch (error) {
+      console.error('Failed to delete announcement:', error);
     }
   };
 
@@ -110,6 +156,165 @@ const Overview = () => {
     </Card>
   );
 
+  const AnnouncementsSection = () => {
+    const isAdmin = user?.role === 'admin';
+    
+    if (announcements.loading) {
+      return (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Megaphone className="h-5 w-5 mr-2" />
+              Company Announcements
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="animate-pulse space-y-3">
+              {[...Array(2)].map((_, i) => (
+                <div key={i} className="p-4 border rounded-lg">
+                  <div className="h-4 bg-gray-300 rounded w-3/4 mb-2"></div>
+                  <div className="h-3 bg-gray-300 rounded w-1/2"></div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    if (announcements.error) {
+      return (
+        <Card className="border-red-200 bg-red-50">
+          <CardHeader>
+            <CardTitle className="flex items-center text-red-800">
+              <AlertCircle className="h-5 w-5 mr-2" />
+              Error Loading Announcements
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-red-700 text-sm">{announcements.error}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchAnnouncements}
+              className="mt-2"
+            >
+              Try Again
+            </Button>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    if (announcements.data.length === 0) {
+      return isAdmin ? (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center">
+              <Megaphone className="h-5 w-5 mr-2" />
+              Company Announcements
+            </CardTitle>
+            <Button size="sm" onClick={() => window.location.href = '/dashboard/announcements'}>
+              <Plus className="h-4 w-4 mr-1" />
+              Create Announcement
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="text-center py-6">
+              <Megaphone className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+              <p className="text-muted-foreground">No announcements yet</p>
+              <p className="text-sm text-muted-foreground">Create your first company announcement</p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null;
+    }
+
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="flex items-center">
+            <Megaphone className="h-5 w-5 mr-2" />
+            Company Announcements
+          </CardTitle>
+          {isAdmin && (
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => window.location.href = '/dashboard/announcements'}>
+                Manage All
+              </Button>
+              <Button size="sm" onClick={() => window.location.href = '/dashboard/announcements'}>
+                <Plus className="h-4 w-4 mr-1" />
+                New
+              </Button>
+            </div>
+          )}
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {announcements.data.slice(0, 3).map((announcement) => (
+              <div key={announcement.id} className="p-4 border rounded-lg bg-blue-50 border-blue-200">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-blue-900 mb-2">
+                      {announcement.content}
+                    </p>
+                    <div className="flex items-center text-xs text-blue-700">
+                      <span>
+                        Posted {new Date(announcement.createdAt).toLocaleDateString()} at{' '}
+                        {new Date(announcement.createdAt).toLocaleTimeString([], { 
+                          hour: '2-digit', 
+                          minute: '2-digit' 
+                        })}
+                      </span>
+                      {announcement.author && (
+                        <span className="ml-2">
+                          by {announcement.author.firstName} {announcement.author.lastName}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {isAdmin && (
+                    <div className="flex gap-1 ml-4">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => window.location.href = `/dashboard/announcements/${announcement.id}/edit`}
+                        className="h-8 w-8 p-0"
+                      >
+                        <Edit className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDeleteAnnouncement(announcement.id)}
+                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            
+            {announcements.data.length > 3 && (
+              <div className="pt-2 border-t">
+                <Button 
+                  variant="outline" 
+                  className="w-full" 
+                  size="sm"
+                  onClick={() => window.location.href = '/dashboard/announcements'}
+                >
+                  View All {announcements.data.length} Announcements
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   if (dashboardData.loading) {
     return (
       <div className="p-6 space-y-6">
@@ -156,6 +361,9 @@ const Overview = () => {
           Refresh Data
         </Button>
       </div>
+
+      {/* Company Announcements */}
+      <AnnouncementsSection />
 
       {/* Key Metrics */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">

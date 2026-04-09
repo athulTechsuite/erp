@@ -4,6 +4,7 @@ const { authenticateToken, requireRole } = require('../middleware/auth');
 const Employee = require('../models/Employee');
 const Leave = require('../models/Leave');
 const Asset = require('../models/Asset');
+const Announcement = require('../models/Announcement');
 
 // Dashboard overview - accessible to all authenticated users
 router.get('/', authenticateToken, async (req, res) => {
@@ -12,6 +13,12 @@ router.get('/', authenticateToken, async (req, res) => {
     const userRole = req.user.role;
     
     let dashboardData = {};
+    
+    // Get active announcements for all users
+    const activeAnnouncements = await Announcement.find({ isActive: true })
+      .sort({ createdAt: -1 })
+      .populate('createdBy', 'firstName lastName')
+      .limit(10);
     
     if (userRole === 'admin' || userRole === 'manager') {
       // Admin/Manager dashboard - company overview
@@ -43,6 +50,7 @@ router.get('/', authenticateToken, async (req, res) => {
           assetsNeedingMaintenance
         },
         recentLeaveRequests,
+        announcements: activeAnnouncements,
         userInfo: {
           name: `${req.user.firstName} ${req.user.lastName}`,
           role: userRole,
@@ -74,6 +82,7 @@ router.get('/', authenticateToken, async (req, res) => {
           totalRequests: myLeaves.length
         },
         myRecentLeaves: myLeaves,
+        announcements: activeAnnouncements,
         userInfo: {
           name: `${req.user.firstName} ${req.user.lastName}`,
           role: userRole,
@@ -93,6 +102,146 @@ router.get('/', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error loading dashboard data',
+      error: error.message
+    });
+  }
+});
+
+// Announcements endpoints
+
+// Get all announcements (admin only for management, all users for viewing)
+router.get('/announcements', authenticateToken, async (req, res) => {
+  try {
+    const userRole = req.user.role;
+    let query = {};
+    
+    // Non-admin users can only see active announcements
+    if (userRole !== 'admin') {
+      query.isActive = true;
+    }
+    
+    const announcements = await Announcement.find(query)
+      .populate('createdBy', 'firstName lastName')
+      .sort({ createdAt: -1 });
+    
+    res.json({
+      success: true,
+      data: announcements
+    });
+    
+  } catch (error) {
+    console.error('Get announcements error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error loading announcements',
+      error: error.message
+    });
+  }
+});
+
+// Create announcement (admin only)
+router.post('/announcements', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { title, content, priority } = req.body;
+    
+    if (!title || !content) {
+      return res.status(400).json({
+        success: false,
+        message: 'Title and content are required'
+      });
+    }
+    
+    const announcement = new Announcement({
+      title,
+      content,
+      priority: priority || 'normal',
+      createdBy: req.user.id,
+      isActive: true
+    });
+    
+    await announcement.save();
+    await announcement.populate('createdBy', 'firstName lastName');
+    
+    res.status(201).json({
+      success: true,
+      message: 'Announcement created successfully',
+      data: announcement
+    });
+    
+  } catch (error) {
+    console.error('Create announcement error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating announcement',
+      error: error.message
+    });
+  }
+});
+
+// Update announcement (admin only)
+router.put('/announcements/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, content, priority, isActive } = req.body;
+    
+    const announcement = await Announcement.findById(id);
+    if (!announcement) {
+      return res.status(404).json({
+        success: false,
+        message: 'Announcement not found'
+      });
+    }
+    
+    if (title !== undefined) announcement.title = title;
+    if (content !== undefined) announcement.content = content;
+    if (priority !== undefined) announcement.priority = priority;
+    if (isActive !== undefined) announcement.isActive = isActive;
+    announcement.updatedAt = new Date();
+    
+    await announcement.save();
+    await announcement.populate('createdBy', 'firstName lastName');
+    
+    res.json({
+      success: true,
+      message: 'Announcement updated successfully',
+      data: announcement
+    });
+    
+  } catch (error) {
+    console.error('Update announcement error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating announcement',
+      error: error.message
+    });
+  }
+});
+
+// Delete announcement (admin only)
+router.delete('/announcements/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const announcement = await Announcement.findById(id);
+    if (!announcement) {
+      return res.status(404).json({
+        success: false,
+        message: 'Announcement not found'
+      });
+    }
+    
+    await Announcement.findByIdAndDelete(id);
+    
+    res.json({
+      success: true,
+      message: 'Announcement deleted successfully'
+    });
+    
+  } catch (error) {
+    console.error('Delete announcement error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting announcement',
       error: error.message
     });
   }
@@ -228,6 +377,7 @@ router.get('/quick-actions', authenticateToken, async (req, res) => {
         { id: 'review-leaves', label: 'Review Leave Requests', icon: 'clock', url: '/leaves/pending' },
         { id: 'view-reports', label: 'Generate Reports', icon: 'chart-bar', url: '/reports' },
         { id: 'manage-assets', label: 'Manage Assets', icon: 'box', url: '/assets' },
+        { id: 'create-announcement', label: 'Create Announcement', icon: 'megaphone', url: '/announcements/new' },
         { id: 'system-settings', label: 'System Settings', icon: 'cog', url: '/settings' }
       ];
     } else if (userRole === 'manager') {

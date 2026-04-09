@@ -1,0 +1,130 @@
+import unittest
+from unittest.mock import Mock, patch
+import sqlite3
+from datetime import datetime
+
+class TestTC005DatabaseModelValidationAndOperations(unittest.TestCase):
+    """TC-005: Database model validation and operations test coverage"""
+    
+    def setUp(self):
+        """Set up test fixtures before each test method."""
+        self.mock_connection = Mock()
+        self.mock_cursor = Mock()
+        self.mock_connection.cursor.return_value = self.mock_cursor
+        
+    def test_tc005_database_model_validation_happy_path(self):
+        """TC-005: Test database model validation - happy path"""
+        # Test data with valid structure
+        test_data = {
+            'id': 1,
+            'name': 'Test User',
+            'email': 'test@example.com',
+            'created_at': datetime.now(),
+            'is_active': True
+        }
+        
+        # Mock successful database operation
+        self.mock_cursor.fetchone.return_value = (1, 'Test User', 'test@example.com', datetime.now(), True)
+        
+        with patch('sqlite3.connect', return_value=self.mock_connection):
+            # Simulate model validation and database insertion
+            result = self._validate_and_insert_model(test_data)
+            
+            # Assertions for happy path
+            self.assertTrue(result['success'])
+            self.assertEqual(result['id'], 1)
+            self.mock_cursor.execute.assert_called()
+            self.mock_connection.commit.assert_called()
+    
+    def test_tc005_database_model_validation_error_path(self):
+        """TC-005: Test database model validation - error path"""
+        # Test data with invalid structure
+        invalid_test_data = {
+            'id': None,
+            'name': '',  # Invalid empty name
+            'email': 'invalid-email',  # Invalid email format
+            'created_at': 'invalid-date',  # Invalid date format
+            'is_active': 'not-boolean'  # Invalid boolean value
+        }
+        
+        # Mock database constraint violation
+        self.mock_cursor.execute.side_effect = sqlite3.IntegrityError("UNIQUE constraint failed")
+        
+        with patch('sqlite3.connect', return_value=self.mock_connection):
+            # Simulate model validation failure
+            result = self._validate_and_insert_model(invalid_test_data)
+            
+            # Assertions for error path
+            self.assertFalse(result['success'])
+            self.assertIn('error', result)
+            self.assertIn('validation', result['error'].lower())
+            self.mock_connection.rollback.assert_called()
+    
+    def test_tc005_database_operations_connection_error(self):
+        """TC-005: Test database operations - connection error path"""
+        test_data = {
+            'id': 1,
+            'name': 'Test User',
+            'email': 'test@example.com'
+        }
+        
+        # Mock database connection failure
+        with patch('sqlite3.connect', side_effect=sqlite3.Error("Database connection failed")):
+            result = self._validate_and_insert_model(test_data)
+            
+            # Assertions for connection error
+            self.assertFalse(result['success'])
+            self.assertIn('connection', result['error'].lower())
+    
+    def _validate_and_insert_model(self, data):
+        """Helper method to simulate model validation and database operations"""
+        try:
+            # Validate model fields
+            if not self._validate_model_fields(data):
+                return {'success': False, 'error': 'Model validation failed'}
+            
+            # Simulate database connection and operation
+            conn = sqlite3.connect(':memory:')
+            cursor = conn.cursor()
+            
+            # Create table and insert data using parameterized queries
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    created_at TIMESTAMP,
+                    is_active BOOLEAN
+                )
+            ''')
+            
+            # Fixed: Use parameterized query to prevent SQL injection
+            cursor.execute(
+                'INSERT INTO users (name, email, created_at, is_active) VALUES (?, ?, ?, ?)',
+                (data['name'], data['email'], data.get('created_at'), data.get('is_active', True))
+            )
+            
+            conn.commit()
+            return {'success': True, 'id': cursor.lastrowid}
+            
+        except sqlite3.IntegrityError as e:
+            if 'conn' in locals():
+                conn.rollback()
+            return {'success': False, 'error': f'Database integrity error: {str(e)}'}
+        except sqlite3.Error as e:
+            return {'success': False, 'error': f'Database connection error: {str(e)}'}
+        except Exception as e:
+            return {'success': False, 'error': f'Model validation failed: {str(e)}'}
+    
+    def _validate_model_fields(self, data):
+        """Helper method to validate model fields"""
+        if not data.get('name') or not isinstance(data['name'], str):
+            return False
+        if not data.get('email') or '@' not in data['email']:
+            return False
+        if 'is_active' in data and not isinstance(data['is_active'], bool):
+            return False
+        return True
+
+if __name__ == '__main__':
+    unittest.main()

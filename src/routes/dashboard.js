@@ -4,6 +4,7 @@ const { authenticateToken, requireRole } = require('../middleware/auth');
 const Employee = require('../models/Employee');
 const Leave = require('../models/Leave');
 const Asset = require('../models/Asset');
+const Announcement = require('../models/Announcement');
 
 // Dashboard overview - accessible to all authenticated users
 router.get('/', authenticateToken, async (req, res) => {
@@ -93,6 +94,187 @@ router.get('/', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error loading dashboard data',
+      error: error.message
+    });
+  }
+});
+
+// Company announcements - accessible to all authenticated users
+router.get('/announcements', authenticateToken, async (req, res) => {
+  try {
+    const announcements = await Announcement.find({ 
+      isPublished: true 
+    })
+    .sort({ createdAt: -1 })
+    .limit(5)
+    .select('title content createdAt');
+    
+    res.json({
+      success: true,
+      data: announcements
+    });
+    
+  } catch (error) {
+    console.error('Announcements error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error loading announcements',
+      error: error.message
+    });
+  }
+});
+
+// Manage announcements - admin only
+router.get('/announcements/manage', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const announcements = await Announcement.find({})
+      .sort({ createdAt: -1 })
+      .populate('createdBy', 'firstName lastName email');
+    
+    res.json({
+      success: true,
+      data: announcements
+    });
+    
+  } catch (error) {
+    console.error('Manage announcements error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error loading announcements for management',
+      error: error.message
+    });
+  }
+});
+
+// Create announcement - admin only
+router.post('/announcements', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { title, content, isPublished = false } = req.body;
+    
+    // Validation
+    if (!title || !title.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Title is required',
+        field: 'title'
+      });
+    }
+    
+    if (!content || !content.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Content is required',
+        field: 'content'
+      });
+    }
+    
+    const announcement = new Announcement({
+      title: title.trim(),
+      content: content.trim(),
+      isPublished,
+      createdBy: req.user.id
+    });
+    
+    await announcement.save();
+    await announcement.populate('createdBy', 'firstName lastName email');
+    
+    res.status(201).json({
+      success: true,
+      message: 'Announcement created successfully',
+      data: announcement
+    });
+    
+  } catch (error) {
+    console.error('Create announcement error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating announcement',
+      error: error.message
+    });
+  }
+});
+
+// Update announcement - admin only
+router.put('/announcements/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, content, isPublished } = req.body;
+    
+    // Validation
+    if (!title || !title.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Title is required',
+        field: 'title'
+      });
+    }
+    
+    if (!content || !content.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Content is required',
+        field: 'content'
+      });
+    }
+    
+    const announcement = await Announcement.findByIdAndUpdate(
+      id,
+      {
+        title: title.trim(),
+        content: content.trim(),
+        isPublished: Boolean(isPublished),
+        updatedAt: new Date()
+      },
+      { new: true, runValidators: true }
+    ).populate('createdBy', 'firstName lastName email');
+    
+    if (!announcement) {
+      return res.status(404).json({
+        success: false,
+        message: 'Announcement not found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Announcement updated successfully',
+      data: announcement
+    });
+    
+  } catch (error) {
+    console.error('Update announcement error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating announcement',
+      error: error.message
+    });
+  }
+});
+
+// Delete announcement - admin only
+router.delete('/announcements/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const announcement = await Announcement.findByIdAndDelete(id);
+    
+    if (!announcement) {
+      return res.status(404).json({
+        success: false,
+        message: 'Announcement not found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Announcement deleted successfully'
+    });
+    
+  } catch (error) {
+    console.error('Delete announcement error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting announcement',
       error: error.message
     });
   }
@@ -228,6 +410,7 @@ router.get('/quick-actions', authenticateToken, async (req, res) => {
         { id: 'review-leaves', label: 'Review Leave Requests', icon: 'clock', url: '/leaves/pending' },
         { id: 'view-reports', label: 'Generate Reports', icon: 'chart-bar', url: '/reports' },
         { id: 'manage-assets', label: 'Manage Assets', icon: 'box', url: '/assets' },
+        { id: 'manage-announcements', label: 'Manage Announcements', icon: 'bullhorn', url: '/dashboard/announcements/manage' },
         { id: 'system-settings', label: 'System Settings', icon: 'cog', url: '/settings' }
       ];
     } else if (userRole === 'manager') {

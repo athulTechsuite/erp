@@ -14,7 +14,37 @@ const authenticateToken = async (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Validate JWT_SECRET exists
+    if (!process.env.JWT_SECRET) {
+      console.error('JWT_SECRET environment variable is not set');
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Authentication configuration error' 
+      });
+    }
+
+    // Verify token with additional options for security
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+      algorithms: ['HS256'], // Explicitly specify allowed algorithms
+      clockTolerance: 30, // Allow 30 seconds clock skew
+      ignoreExpiration: false // Ensure expiration is checked
+    });
+
+    // Validate token payload structure
+    if (!decoded.userId || typeof decoded.userId !== 'string') {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid token payload' 
+      });
+    }
+
+    // Check token expiration explicitly (additional safety check)
+    if (decoded.exp && Date.now() >= decoded.exp * 1000) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Token has expired' 
+      });
+    }
     
     // Fetch user from database to ensure they still exist and are active
     const user = await User.findById(decoded.userId).select('-password');
@@ -33,24 +63,53 @@ const authenticateToken = async (req, res, next) => {
       });
     }
 
+    // Optional: Check if token was issued before user's last password change
+    if (user.passwordChangedAt && decoded.iat && 
+        new Date(user.passwordChangedAt).getTime() > decoded.iat * 1000) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Token is no longer valid - please login again' 
+      });
+    }
+
     req.user = user;
     next();
   } catch (error) {
+    // Handle specific JWT errors with proper messages
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({ 
         success: false, 
-        message: 'Token has expired' 
+        message: 'Token has expired',
+        code: 'TOKEN_EXPIRED'
       });
     } else if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({ 
         success: false, 
-        message: 'Invalid token' 
+        message: 'Invalid token format or signature',
+        code: 'INVALID_TOKEN'
+      });
+    } else if (error.name === 'NotBeforeError') {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Token is not active yet',
+        code: 'TOKEN_NOT_ACTIVE'
+      });
+    } else if (error.name === 'CastError') {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid user identifier in token',
+        code: 'INVALID_USER_ID'
       });
     } else {
-      console.error('Authentication error:', error);
+      console.error('Authentication error:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
       return res.status(500).json({ 
         success: false, 
-        message: 'Authentication failed' 
+        message: 'Authentication failed',
+        code: 'AUTH_ERROR'
       });
     }
   }
@@ -112,18 +171,33 @@ const optionalAuth = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
-    if (token) {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.userId).select('-password');
+    if (token && process.env.JWT_SECRET) {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+        algorithms: ['HS256'],
+        clockTolerance: 30,
+        ignoreExpiration: false
+      });
       
-      if (user && user.isActive) {
-        req.user = user;
+      if (decoded.userId && typeof decoded.userId === 'string') {
+        const user = await User.findById(decoded.userId).select('-password');
+        
+        if (user && user.isActive) {
+          // Check password change timestamp for optional auth too
+          if (!user.passwordChangedAt || !decoded.iat || 
+              new Date(user.passwordChangedAt).getTime() <= decoded.iat * 1000) {
+            req.user = user;
+          }
+        }
       }
     }
     
     next();
   } catch (error) {
     // Silently continue without authentication for optional auth
+    // But log potential security issues
+    if (error.name !== 'TokenExpiredError') {
+      console.warn('Optional auth warning:', error.message);
+    }
     next();
   }
 };
@@ -158,6 +232,26 @@ const canManageLeave = (req, res, next) => {
       message: 'Insufficient permissions for leave management' 
     });
   }
+};
+
+// Middleware to check if user can manage announcements
+const canManageAnnouncements = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ 
+      success: false, 
+      message: 'Authentication required' 
+    });
+  }
+
+  // Only admins can create, edit, or delete announcements
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ 
+      success: false, 
+      message: 'Only administrators can manage announcements' 
+    });
+  }
+
+  next();
 };
 
 // Rate limiting middleware for sensitive operations
@@ -207,6 +301,7 @@ module.exports = {
   requireOwnershipOrAdmin,
   optionalAuth,
   canManageLeave,
+  canManageAnnouncements,
   createRateLimit,
   logActivity
 };

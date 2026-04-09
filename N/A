@@ -1,0 +1,131 @@
+const request = require('supertest');
+const app = require('../app');
+
+describe('TC-003: API error handling', () => {
+  // Happy path: API returns successful response
+  it('should handle successful API responses correctly', async () => {
+    const response = await request(app)
+      .get('/api/users/1')
+      .expect(200);
+    
+    expect(response.body).toHaveProperty('id');
+    expect(response.body.id).toBe(1);
+  });
+
+  // Error path: API returns 404 for non-existent resource
+  it('should handle 404 errors gracefully', async () => {
+    const response = await request(app)
+      .get('/api/users/999999')
+      .expect(404);
+    
+    expect(response.body).toHaveProperty('error');
+    expect(response.body.error).toBe('User not found');
+  });
+
+  // Error path: API returns 500 for server errors
+  it('should handle internal server errors', async () => {
+    const response = await request(app)
+      .get('/api/error-test')
+      .expect(500);
+    
+    expect(response.body).toHaveProperty('error');
+    expect(response.body.error).toBe('Internal server error');
+  });
+
+  // Error path: API returns 400 for bad requests
+  it('should handle malformed requests', async () => {
+    const response = await request(app)
+      .post('/api/users')
+      .send({ invalid: 'data' })
+      .expect(400);
+    
+    expect(response.body).toHaveProperty('error');
+    expect(response.body.error).toContain('validation');
+  });
+});
+
+describe('TC-005: Authentication and authorization', () => {
+  let authToken;
+  
+  beforeAll(async () => {
+    // Get auth token for authenticated tests
+    const loginResponse = await request(app)
+      .post('/api/auth/login')
+      .send({
+        username: 'testuser',
+        password: 'testpass'
+      });
+    authToken = loginResponse.body.token;
+  });
+
+  // Happy path: Successful authentication
+  it('should authenticate users with valid credentials', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        username: 'testuser',
+        password: 'testpass'
+      })
+      .expect(200);
+    
+    expect(response.body).toHaveProperty('token');
+    expect(response.body.token).toBeTruthy();
+  });
+
+  // Happy path: Authorized access to protected resource
+  it('should allow access to protected resources with valid token', async () => {
+    const response = await request(app)
+      .get('/api/protected/profile')
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(200);
+    
+    expect(response.body).toHaveProperty('user');
+    expect(response.body.user.username).toBe('testuser');
+  });
+
+  // Error path: Authentication fails with invalid credentials
+  it('should reject authentication with invalid credentials', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        username: 'invalid',
+        password: 'wrongpass'
+      })
+      .expect(401);
+    
+    expect(response.body).toHaveProperty('error');
+    expect(response.body.error).toBe('Invalid credentials');
+  });
+
+  // Error path: Unauthorized access without token
+  it('should deny access to protected resources without token', async () => {
+    const response = await request(app)
+      .get('/api/protected/profile')
+      .expect(401);
+    
+    expect(response.body).toHaveProperty('error');
+    expect(response.body.error).toBe('Access token required');
+  });
+
+  // Error path: Unauthorized access with invalid token
+  it('should deny access with invalid or expired token', async () => {
+    const response = await request(app)
+      .get('/api/protected/profile')
+      .set('Authorization', 'Bearer invalid-token')
+      .expect(401);
+    
+    expect(response.body).toHaveProperty('error');
+    expect(response.body.error).toBe('Invalid token');
+  });
+
+  // Error path: Insufficient privileges
+  it('should deny access to admin resources for regular users', async () => {
+    const response = await request(app)
+      .get('/api/admin/users')
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(403);
+    
+    expect(response.body).toHaveProperty('error');
+    expect(response.body.error).toBe('Insufficient privileges');
+  });
+});

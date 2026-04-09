@@ -1,6 +1,7 @@
 const Employee = require('../models/Employee');
 const LeaveRequest = require('../models/LeaveRequest');
 const InventoryItem = require('../models/InventoryItem');
+const Announcement = require('../models/Announcement');
 
 class DashboardController {
   // Get main dashboard data for admin/manager view
@@ -62,6 +63,21 @@ class DashboardController {
         inventoryStats = { totalItems: 0, lowStockItems: 0 };
       }
 
+      // Get company announcements
+      let announcements = [];
+      try {
+        announcements = await Announcement.find({
+          companyId,
+          isPublished: true
+        })
+        .select('title content createdAt')
+        .sort({ createdAt: -1 })
+        .limit(5);
+      } catch (error) {
+        console.warn('Failed to fetch announcements:', error.message);
+        announcements = [];
+      }
+
       // Calculate leave utilization rate
       const allEmployees = await Employee.find({ 
         companyId, 
@@ -90,6 +106,7 @@ class DashboardController {
         recentLeaveRequests,
         lowLeaveBalanceEmployees,
         inventory: inventoryStats,
+        announcements,
         lastUpdated: new Date()
       };
 
@@ -111,7 +128,7 @@ class DashboardController {
   // Get employee dashboard data
   async getEmployeeDashboard(req, res) {
     try {
-      const { userId } = req.user;
+      const { userId, companyId } = req.user;
 
       // Get employee data
       const employee = await Employee.findOne({ userId })
@@ -140,6 +157,21 @@ class DashboardController {
       .sort({ startDate: 1 })
       .limit(5);
 
+      // Get company announcements
+      let announcements = [];
+      try {
+        announcements = await Announcement.find({
+          companyId,
+          isPublished: true
+        })
+        .select('title content createdAt')
+        .sort({ createdAt: -1 })
+        .limit(5);
+      } catch (error) {
+        console.warn('Failed to fetch announcements:', error.message);
+        announcements = [];
+      }
+
       // Calculate leave statistics
       const thisYearLeaves = await LeaveRequest.find({
         employeeId: employee._id,
@@ -167,6 +199,7 @@ class DashboardController {
         },
         recentRequests: myLeaveRequests,
         upcomingLeaves,
+        announcements,
         lastUpdated: new Date()
       };
 
@@ -180,6 +213,217 @@ class DashboardController {
       res.status(500).json({
         success: false,
         message: 'Failed to fetch employee dashboard data',
+        error: error.message
+      });
+    }
+  }
+
+  // Get company announcements for dashboard widget
+  async getAnnouncements(req, res) {
+    try {
+      const { companyId } = req.user;
+
+      const announcements = await Announcement.find({
+        companyId,
+        isPublished: true
+      })
+      .select('title content createdAt')
+      .sort({ createdAt: -1 })
+      .limit(5);
+
+      res.json({
+        success: true,
+        data: announcements
+      });
+
+    } catch (error) {
+      console.error('Announcements fetch error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch announcements',
+        error: error.message
+      });
+    }
+  }
+
+  // Create new announcement (admin only)
+  async createAnnouncement(req, res) {
+    try {
+      const { companyId, role } = req.user;
+      const { title, content, isPublished = true } = req.body;
+
+      // Check if user is admin
+      if (role !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. Admin privileges required.'
+        });
+      }
+
+      // Validate required fields
+      if (!title || !content) {
+        return res.status(400).json({
+          success: false,
+          message: 'Title and content are required fields',
+          errors: {
+            title: !title ? 'Title is required' : null,
+            content: !content ? 'Content is required' : null
+          }
+        });
+      }
+
+      const announcement = new Announcement({
+        companyId,
+        title: title.trim(),
+        content: content.trim(),
+        isPublished: Boolean(isPublished)
+      });
+
+      await announcement.save();
+
+      res.status(201).json({
+        success: true,
+        message: 'Announcement created successfully',
+        data: announcement
+      });
+
+    } catch (error) {
+      console.error('Create announcement error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to create announcement',
+        error: error.message
+      });
+    }
+  }
+
+  // Update announcement (admin only)
+  async updateAnnouncement(req, res) {
+    try {
+      const { companyId, role } = req.user;
+      const { id } = req.params;
+      const { title, content, isPublished } = req.body;
+
+      // Check if user is admin
+      if (role !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. Admin privileges required.'
+        });
+      }
+
+      // Validate required fields
+      if (!title || !content) {
+        return res.status(400).json({
+          success: false,
+          message: 'Title and content are required fields',
+          errors: {
+            title: !title ? 'Title is required' : null,
+            content: !content ? 'Content is required' : null
+          }
+        });
+      }
+
+      const announcement = await Announcement.findOneAndUpdate(
+        { _id: id, companyId },
+        {
+          title: title.trim(),
+          content: content.trim(),
+          isPublished: Boolean(isPublished)
+        },
+        { new: true, runValidators: true }
+      );
+
+      if (!announcement) {
+        return res.status(404).json({
+          success: false,
+          message: 'Announcement not found'
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Announcement updated successfully',
+        data: announcement
+      });
+
+    } catch (error) {
+      console.error('Update announcement error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update announcement',
+        error: error.message
+      });
+    }
+  }
+
+  // Delete announcement (admin only)
+  async deleteAnnouncement(req, res) {
+    try {
+      const { companyId, role } = req.user;
+      const { id } = req.params;
+
+      // Check if user is admin
+      if (role !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. Admin privileges required.'
+        });
+      }
+
+      const announcement = await Announcement.findOneAndDelete({
+        _id: id,
+        companyId
+      });
+
+      if (!announcement) {
+        return res.status(404).json({
+          success: false,
+          message: 'Announcement not found'
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Announcement deleted successfully'
+      });
+
+    } catch (error) {
+      console.error('Delete announcement error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to delete announcement',
+        error: error.message
+      });
+    }
+  }
+
+  // Get all announcements for admin management (admin only)
+  async getAnnouncementsForAdmin(req, res) {
+    try {
+      const { companyId, role } = req.user;
+
+      // Check if user is admin
+      if (role !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. Admin privileges required.'
+        });
+      }
+
+      const announcements = await Announcement.find({ companyId })
+        .sort({ createdAt: -1 });
+
+      res.json({
+        success: true,
+        data: announcements
+      });
+
+    } catch (error) {
+      console.error('Get admin announcements error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch announcements',
         error: error.message
       });
     }

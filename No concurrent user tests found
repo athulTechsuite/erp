@@ -1,0 +1,186 @@
+const { expect } = require('chai');
+const sinon = require('sinon');
+const User = require('../models/User');
+const userService = require('../services/userService');
+
+describe('Concurrent User Operations - RACE-CONDITIONS', function() {
+    let sandbox;
+    
+    beforeEach(function() {
+        sandbox = sinon.createSandbox();
+    });
+    
+    afterEach(function() {
+        sandbox.restore();
+    });
+
+    describe('TC-RACE-001: Concurrent user creation with same email', function() {
+        it('should handle concurrent user creation - happy path', async function() {
+            const userData1 = { email: 'test@example.com', name: 'User1' };
+            const userData2 = { email: 'different@example.com', name: 'User2' };
+            
+            const createUserStub = sandbox.stub(User, 'create');
+            createUserStub.onCall(0).resolves({ id: 1, ...userData1 });
+            createUserStub.onCall(1).resolves({ id: 2, ...userData2 });
+            
+            const promises = [
+                userService.createUser(userData1),
+                userService.createUser(userData2)
+            ];
+            
+            const results = await Promise.all(promises);
+            
+            expect(results).to.have.length(2);
+            expect(results[0].email).to.equal('test@example.com');
+            expect(results[1].email).to.equal('different@example.com');
+        });
+        
+        it('should handle concurrent user creation - error path with duplicate email', async function() {
+            const userData = { email: 'duplicate@example.com', name: 'User' };
+            
+            const createUserStub = sandbox.stub(User, 'create');
+            createUserStub.onCall(0).resolves({ id: 1, ...userData });
+            createUserStub.onCall(1).rejects(new Error('Duplicate email'));
+            
+            const promises = [
+                userService.createUser(userData),
+                userService.createUser(userData)
+            ];
+            
+            const results = await Promise.allSettled(promises);
+            
+            expect(results[0].status).to.equal('fulfilled');
+            expect(results[1].status).to.equal('rejected');
+            expect(results[1].reason.message).to.equal('Duplicate email');
+        });
+    });
+
+    describe('TC-RACE-002: Concurrent user updates', function() {
+        it('should handle concurrent user updates - happy path', async function() {
+            const userId = 1;
+            const updateData1 = { name: 'Updated Name 1' };
+            const updateData2 = { email: 'updated@example.com' };
+            
+            const updateUserStub = sandbox.stub(User, 'findByIdAndUpdate');
+            updateUserStub.onCall(0).resolves({ id: userId, ...updateData1 });
+            updateUserStub.onCall(1).resolves({ id: userId, ...updateData2 });
+            
+            const promises = [
+                userService.updateUser(userId, updateData1),
+                userService.updateUser(userId, updateData2)
+            ];
+            
+            const results = await Promise.all(promises);
+            
+            expect(results).to.have.length(2);
+            expect(updateUserStub.calledTwice).to.be.true;
+        });
+        
+        it('should handle concurrent user updates - error path with version conflict', async function() {
+            const userId = 1;
+            const updateData = { name: 'Updated Name' };
+            
+            const updateUserStub = sandbox.stub(User, 'findByIdAndUpdate');
+            updateUserStub.onCall(0).resolves({ id: userId, ...updateData });
+            updateUserStub.onCall(1).rejects(new Error('Version conflict'));
+            
+            const promises = [
+                userService.updateUser(userId, updateData),
+                userService.updateUser(userId, updateData)
+            ];
+            
+            const results = await Promise.allSettled(promises);
+            
+            expect(results[0].status).to.equal('fulfilled');
+            expect(results[1].status).to.equal('rejected');
+            expect(results[1].reason.message).to.equal('Version conflict');
+        });
+    });
+
+    describe('TC-RACE-003: Concurrent user deletion', function() {
+        it('should handle concurrent user deletion - happy path', async function() {
+            const userId1 = 1;
+            const userId2 = 2;
+            
+            const deleteUserStub = sandbox.stub(User, 'findByIdAndDelete');
+            deleteUserStub.onCall(0).resolves({ id: userId1 });
+            deleteUserStub.onCall(1).resolves({ id: userId2 });
+            
+            const promises = [
+                userService.deleteUser(userId1),
+                userService.deleteUser(userId2)
+            ];
+            
+            const results = await Promise.all(promises);
+            
+            expect(results).to.have.length(2);
+            expect(results[0].id).to.equal(userId1);
+            expect(results[1].id).to.equal(userId2);
+        });
+        
+        it('should handle concurrent user deletion - error path with same user', async function() {
+            const userId = 1;
+            
+            const deleteUserStub = sandbox.stub(User, 'findByIdAndDelete');
+            deleteUserStub.onCall(0).resolves({ id: userId });
+            deleteUserStub.onCall(1).resolves(null);
+            
+            const promises = [
+                userService.deleteUser(userId),
+                userService.deleteUser(userId)
+            ];
+            
+            const results = await Promise.allSettled(promises);
+            
+            expect(results[0].status).to.equal('fulfilled');
+            expect(results[1].status).to.equal('fulfilled');
+            expect(results[1].value).to.be.null;
+        });
+    });
+
+    describe('TC-RACE-004: Mixed concurrent operations', function() {
+        it('should handle mixed concurrent operations - happy path', async function() {
+            const userData = { email: 'mixed@example.com', name: 'Mixed User' };
+            const userId = 1;
+            
+            const createStub = sandbox.stub(User, 'create').resolves({ id: userId, ...userData });
+            const findStub = sandbox.stub(User, 'findById').resolves({ id: userId, ...userData });
+            const updateStub = sandbox.stub(User, 'findByIdAndUpdate').resolves({ id: userId, name: 'Updated' });
+            
+            const promises = [
+                userService.createUser(userData),
+                userService.getUserById(userId),
+                userService.updateUser(userId, { name: 'Updated' })
+            ];
+            
+            const results = await Promise.all(promises);
+            
+            expect(results).to.have.length(3);
+            expect(createStub.calledOnce).to.be.true;
+            expect(findStub.calledOnce).to.be.true;
+            expect(updateStub.calledOnce).to.be.true;
+        });
+        
+        it('should handle mixed concurrent operations - error path', async function() {
+            const userData = { email: 'error@example.com', name: 'Error User' };
+            const userId = 999;
+            
+            const createStub = sandbox.stub(User, 'create').rejects(new Error('Database error'));
+            const findStub = sandbox.stub(User, 'findById').resolves(null);
+            const updateStub = sandbox.stub(User, 'findByIdAndUpdate').rejects(new Error('User not found'));
+            
+            const promises = [
+                userService.createUser(userData),
+                userService.getUserById(userId),
+                userService.updateUser(userId, { name: 'Updated' })
+            ];
+            
+            const results = await Promise.allSettled(promises);
+            
+            expect(results[0].status).to.equal('rejected');
+            expect(results[1].status).to.equal('fulfilled');
+            expect(results[1].value).to.be.null;
+            expect(results[2].status).to.equal('rejected');
+        });
+    });
+});

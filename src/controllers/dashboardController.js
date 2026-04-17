@@ -1,6 +1,7 @@
 const Employee = require('../models/Employee');
 const LeaveRequest = require('../models/LeaveRequest');
 const InventoryItem = require('../models/InventoryItem');
+const Announcement = require('../models/Announcement');
 
 class DashboardController {
   // Get main dashboard data for admin/manager view
@@ -62,6 +63,14 @@ class DashboardController {
         inventoryStats = { totalItems: 0, lowStockItems: 0 };
       }
 
+      // Get active announcements
+      const announcements = await Announcement.find({
+        companyId,
+        isActive: true
+      })
+      .populate('createdBy', 'firstName lastName')
+      .sort({ createdAt: -1 });
+
       // Calculate leave utilization rate
       const allEmployees = await Employee.find({ 
         companyId, 
@@ -90,6 +99,7 @@ class DashboardController {
         recentLeaveRequests,
         lowLeaveBalanceEmployees,
         inventory: inventoryStats,
+        announcements,
         lastUpdated: new Date()
       };
 
@@ -111,7 +121,7 @@ class DashboardController {
   // Get employee dashboard data
   async getEmployeeDashboard(req, res) {
     try {
-      const { userId } = req.user;
+      const { userId, companyId } = req.user;
 
       // Get employee data
       const employee = await Employee.findOne({ userId })
@@ -140,6 +150,14 @@ class DashboardController {
       .sort({ startDate: 1 })
       .limit(5);
 
+      // Get active announcements
+      const announcements = await Announcement.find({
+        companyId,
+        isActive: true
+      })
+      .populate('createdBy', 'firstName lastName')
+      .sort({ createdAt: -1 });
+
       // Calculate leave statistics
       const thisYearLeaves = await LeaveRequest.find({
         employeeId: employee._id,
@@ -167,6 +185,7 @@ class DashboardController {
         },
         recentRequests: myLeaveRequests,
         upcomingLeaves,
+        announcements,
         lastUpdated: new Date()
       };
 
@@ -265,10 +284,17 @@ class DashboardController {
         status: 'active'
       });
 
+      // Active announcements count
+      const activeAnnouncements = await Announcement.countDocuments({
+        companyId,
+        isActive: true
+      });
+
       const quickStats = {
         employeesOnLeaveToday,
         newRequestsThisMonth,
         activeEmployees,
+        activeAnnouncements,
         timestamp: new Date()
       };
 

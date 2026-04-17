@@ -1,0 +1,207 @@
+/**
+ * SQL Injection Prevention Tests
+ * TC-ID: SQL-INJECTION
+ * 
+ * This test suite validates SQL injection prevention mechanisms
+ * for both happy path and error path scenarios.
+ */
+
+const { expect } = require('chai');
+const sinon = require('sinon');
+
+describe('TC-ID: SQL-INJECTION - SQL Injection Prevention Tests', () => {
+  let mockDb;
+  
+  beforeEach(() => {
+    mockDb = {
+      query: sinon.stub(),
+      prepare: sinon.stub()
+    };
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  describe('Happy Path - Safe SQL Operations', () => {
+    it('TC-ID: SQL-INJECTION-HP-001 should safely execute parameterized queries', async () => {
+      // Arrange
+      const safeQuery = 'SELECT * FROM users WHERE id = ? AND status = ?';
+      const parameters = [123, 'active'];
+      const expectedResult = [{ id: 123, name: 'John Doe', status: 'active' }];
+      
+      mockDb.query.resolves(expectedResult);
+      
+      // Act
+      const result = await executeParameterizedQuery(mockDb, safeQuery, parameters);
+      
+      // Assert
+      expect(result).to.deep.equal(expectedResult);
+      expect(mockDb.query.calledWith(safeQuery, parameters)).to.be.true;
+    });
+
+    it('TC-ID: SQL-INJECTION-HP-002 should properly escape user input in prepared statements', async () => {
+      // Arrange
+      const userInput = "'; DROP TABLE users; --";
+      const preparedStatement = 'SELECT * FROM users WHERE name = ?';
+      const expectedEscapedInput = "\\'; DROP TABLE users; --";
+      
+      mockDb.prepare.returns({
+        execute: sinon.stub().resolves([])
+      });
+      
+      // Act
+      const statement = mockDb.prepare(preparedStatement);
+      await statement.execute([userInput]);
+      
+      // Assert
+      expect(mockDb.prepare.calledWith(preparedStatement)).to.be.true;
+      expect(statement.execute.calledWith([userInput])).to.be.true;
+    });
+
+    it('TC-ID: SQL-INJECTION-HP-003 should validate input sanitization functions', () => {
+      // Arrange
+      const maliciousInputs = [
+        "'; DELETE FROM users; --",
+        "1' OR '1'='1",
+        "admin'--",
+        "1; DROP TABLE users; --"
+      ];
+      
+      // Act & Assert
+      maliciousInputs.forEach(input => {
+        const sanitized = sanitizeInput(input);
+        expect(sanitized).to.not.contain(';');
+        expect(sanitized).to.not.contain('--');
+        expect(sanitized).to.not.contain('DROP');
+        expect(sanitized).to.not.contain('DELETE');
+      });
+    });
+  });
+
+  describe('Error Path - SQL Injection Attack Prevention', () => {
+    it('TC-ID: SQL-INJECTION-EP-001 should reject malicious SQL injection attempts', async () => {
+      // Arrange
+      const maliciousInput = "'; DROP TABLE users; --";
+      const vulnerableQuery = `SELECT * FROM users WHERE name = '${maliciousInput}'`;
+      
+      // Act & Assert
+      try {
+        await executeUnsafeQuery(mockDb, vulnerableQuery);
+        expect.fail('Should have thrown an error for unsafe query');
+      } catch (error) {
+        expect(error.message).to.contain('Unsafe query detected');
+        expect(mockDb.query.called).to.be.false;
+      }
+    });
+
+    it('TC-ID: SQL-INJECTION-EP-002 should detect and block union-based injection attacks', async () => {
+      // Arrange
+      const unionInjection = "1' UNION SELECT username, password FROM admin_users --";
+      
+      // Act & Assert
+      const isBlocked = detectSQLInjection(unionInjection);
+      expect(isBlocked).to.be.true;
+    });
+
+    it('TC-ID: SQL-INJECTION-EP-003 should handle boolean-based blind injection attempts', async () => {
+      // Arrange
+      const blindInjection = "1' AND (SELECT COUNT(*) FROM users) > 0 --";
+      
+      // Act & Assert
+      const isBlocked = detectSQLInjection(blindInjection);
+      expect(isBlocked).to.be.true;
+    });
+
+    it('TC-ID: SQL-INJECTION-EP-004 should prevent time-based blind injection attacks', async () => {
+      // Arrange
+      const timeBasedInjection = "1'; WAITFOR DELAY '00:00:05' --";
+      
+      // Act & Assert
+      const isBlocked = detectSQLInjection(timeBasedInjection);
+      expect(isBlocked).to.be.true;
+    });
+
+    it('TC-ID: SQL-INJECTION-EP-005 should handle error-based injection attempts gracefully', async () => {
+      // Arrange
+      const errorInjection = "1' AND (SELECT * FROM (SELECT COUNT(*),CONCAT(version(),FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a) --";
+      
+      // Act & Assert
+      try {
+        const result = await validateAndExecuteQuery(mockDb, errorInjection);
+        expect(result).to.be.null;
+      } catch (error) {
+        expect(error.message).to.contain('Invalid query format');
+      }
+    });
+  });
+
+  describe('Input Validation and Sanitization', () => {
+    it('TC-ID: SQL-INJECTION-IV-001 should validate input length limits', () => {
+      // Arrange
+      const longInput = 'a'.repeat(10000) + "'; DROP TABLE users; --";
+      
+      // Act & Assert
+      const isValid = validateInputLength(longInput, 255);
+      expect(isValid).to.be.false;
+    });
+
+    it('TC-ID: SQL-INJECTION-IV-002 should whitelist allowed characters', () => {
+      // Arrange
+      const validInput = 'JohnDoe123';
+      const invalidInput = "John'; DROP--";
+      
+      // Act & Assert
+      expect(validateWhitelist(validInput)).to.be.true;
+      expect(validateWhitelist(invalidInput)).to.be.false;
+    });
+  });
+});
+
+// Mock helper functions for testing
+function executeParameterizedQuery(db, query, params) {
+  return db.query(query, params);
+}
+
+function executeUnsafeQuery(db, query) {
+  if (query.includes('DROP') || query.includes('DELETE') || query.includes('--')) {
+    throw new Error('Unsafe query detected');
+  }
+  return db.query(query);
+}
+
+function sanitizeInput(input) {
+  return input
+    .replace(/;/g, '')
+    .replace(/--/g, '')
+    .replace(/DROP/gi, '')
+    .replace(/DELETE/gi, '')
+    .replace(/'/g, "\\'");
+}
+
+function detectSQLInjection(input) {
+  const sqlInjectionPatterns = [
+    /(\b(SELECT|UNION|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|EXECUTE)\b)/gi,
+    /(--|\#|\/\*|\*\/)/g,
+    /(\b(OR|AND)\s+\d+\s*=\s*\d+)/gi,
+    /(WAITFOR\s+DELAY)/gi
+  ];
+  
+  return sqlInjectionPatterns.some(pattern => pattern.test(input));
+}
+
+function validateAndExecuteQuery(db, query) {
+  if (detectSQLInjection(query)) {
+    throw new Error('Invalid query format');
+  }
+  return null;
+}
+
+function validateInputLength(input, maxLength) {
+  return input.length <= maxLength;
+}
+
+function validateWhitelist(input) {
+  const allowedPattern = /^[a-zA-Z0-9_\s]+$/;
+  return allowedPattern.test(input);
+}

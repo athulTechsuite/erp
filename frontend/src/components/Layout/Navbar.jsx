@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNotifications } from '../../contexts/NotificationsContext';
 import {
   AppBar,
   Toolbar,
@@ -32,11 +33,13 @@ import {
   Settings as SettingsIcon,
   Logout as LogoutIcon,
   Notifications as NotificationsIcon,
-  Badge
+  Badge,
+  Announcement as AnnouncementIcon
 } from '@mui/icons-material';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
@@ -72,6 +75,39 @@ const Navbar = () => {
     setMobileDrawerOpen(!mobileDrawerOpen);
   };
 
+  const handleNotificationClick = (notificationId) => {
+    markAsRead(notificationId);
+  };
+
+  const handleMarkAllAsRead = () => {
+    markAllAsRead();
+    handleNotificationsClose();
+  };
+
+  const getNotificationIcon = (type) => {
+    switch (type) {
+      case 'announcement':
+        return <AnnouncementIcon fontSize="small" color="primary" />;
+      case 'leave':
+        return <LeaveIcon fontSize="small" color="secondary" />;
+      case 'system':
+        return <SettingsIcon fontSize="small" color="action" />;
+      default:
+        return <NotificationsIcon fontSize="small" />;
+    }
+  };
+
+  const formatNotificationTime = (timestamp) => {
+    const now = new Date();
+    const notificationTime = new Date(timestamp);
+    const diffInMinutes = Math.floor((now - notificationTime) / (1000 * 60));
+    
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes} minutes ago`;
+    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)} hours ago`;
+    return `${Math.floor(diffInMinutes / 1440)} days ago`;
+  };
+
   const navigationItems = [
     { title: 'Dashboard', path: '/dashboard', icon: <DashboardIcon />, roles: ['admin', 'employee'] },
     { title: 'Employees', path: '/employees', icon: <PeopleIcon />, roles: ['admin'] },
@@ -80,6 +116,16 @@ const Navbar = () => {
     { title: 'Inventory', path: '/inventory', icon: <InventoryIcon />, roles: ['admin'] },
     { title: 'Finance', path: '/finance', icon: <FinanceIcon />, roles: ['admin'] }
   ];
+
+  // Add Company Announcements to navigation for admins
+  if (user?.role?.toLowerCase() === 'admin') {
+    navigationItems.push({
+      title: 'Announcements',
+      path: '/announcements',
+      icon: <AnnouncementIcon />,
+      roles: ['admin']
+    });
+  }
 
   const filteredNavItems = navigationItems.filter(item => 
     item.roles.includes(user?.role?.toLowerCase())
@@ -206,7 +252,7 @@ const Navbar = () => {
               onClick={handleNotificationsOpen}
               aria-label="notifications"
             >
-              <Badge badgeContent={3} color="error">
+              <Badge badgeContent={unreadCount} color="error">
                 <NotificationsIcon />
               </Badge>
             </IconButton>
@@ -301,38 +347,86 @@ const Navbar = () => {
           elevation: 3,
           sx: {
             mt: 1.5,
-            minWidth: 300,
-            maxHeight: 400,
+            minWidth: 350,
+            maxHeight: 500,
           },
         }}
         transformOrigin={{ horizontal: 'right', vertical: 'top' }}
         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
       >
-        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6">Notifications</Typography>
+          {unreadCount > 0 && (
+            <Button size="small" onClick={handleMarkAllAsRead}>
+              Mark all read
+            </Button>
+          )}
         </Box>
-        <MenuItem onClick={handleNotificationsClose}>
-          <Box>
-            <Typography variant="body2">New leave request from John Doe</Typography>
-            <Typography variant="caption" color="text.secondary">2 minutes ago</Typography>
+        
+        {notifications.length === 0 ? (
+          <Box sx={{ p: 3, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              No notifications
+            </Typography>
           </Box>
-        </MenuItem>
-        <MenuItem onClick={handleNotificationsClose}>
-          <Box>
-            <Typography variant="body2">Monthly report is ready</Typography>
-            <Typography variant="caption" color="text.secondary">1 hour ago</Typography>
-          </Box>
-        </MenuItem>
-        <MenuItem onClick={handleNotificationsClose}>
-          <Box>
-            <Typography variant="body2">System maintenance scheduled</Typography>
-            <Typography variant="caption" color="text.secondary">1 day ago</Typography>
-          </Box>
-        </MenuItem>
-        <Divider />
-        <MenuItem component={Link} to="/notifications" onClick={handleNotificationsClose}>
-          <Typography variant="body2" color="primary">View all notifications</Typography>
-        </MenuItem>
+        ) : (
+          <>
+            {notifications.slice(0, 10).map((notification) => (
+              <MenuItem
+                key={notification._id}
+                onClick={() => handleNotificationClick(notification._id)}
+                sx={{
+                  backgroundColor: notification.read ? 'transparent' : 'action.hover',
+                  borderLeft: notification.read ? 'none' : '3px solid',
+                  borderLeftColor: 'primary.main',
+                  '&:hover': {
+                    backgroundColor: 'action.hover',
+                  },
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, width: '100%' }}>
+                  {getNotificationIcon(notification.type)}
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        fontWeight: notification.read ? 'normal' : 'medium',
+                        mb: 0.5
+                      }}
+                    >
+                      {notification.title}
+                    </Typography>
+                    <Typography 
+                      variant="body2" 
+                      color="text.secondary" 
+                      sx={{ 
+                        fontSize: '0.875rem',
+                        lineHeight: 1.4,
+                        mb: 0.5
+                      }}
+                    >
+                      {notification.message}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {formatNotificationTime(notification.createdAt)}
+                    </Typography>
+                  </Box>
+                </Box>
+              </MenuItem>
+            ))}
+            
+            {notifications.length > 10 && (
+              <>
+                <Divider />
+                <MenuItem component={Link} to="/notifications" onClick={handleNotificationsClose}>
+                  <Typography variant="body2" color="primary" sx={{ textAlign: 'center', width: '100%' }}>
+                    View all {notifications.length} notifications
+                  </Typography>
+                </MenuItem>
+              </>
+            )}
+          </>
+        )}
       </Menu>
     </>
   );

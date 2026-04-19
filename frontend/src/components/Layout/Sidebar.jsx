@@ -11,7 +11,8 @@ import {
   CogIcon,
   LogoutIcon,
   MenuIcon,
-  XIcon
+  XIcon,
+  SpeakerphoneIcon
 } from '@heroicons/react/outline';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -21,6 +22,9 @@ const Sidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+
+  // Mock unread announcements count - in real implementation, this would come from context/API
+  const unreadAnnouncementsCount = 3;
 
   const handleLogout = async () => {
     try {
@@ -39,6 +43,13 @@ const Sidebar = () => {
       roles: ['admin', 'employee']
     },
     {
+      name: 'Announcements',
+      path: '/announcements',
+      icon: SpeakerphoneIcon,
+      roles: ['admin', 'employee'],
+      badge: unreadAnnouncementsCount
+    },
+    {
       name: 'Employees',
       path: '/employees',
       icon: UsersIcon,
@@ -48,7 +59,7 @@ const Sidebar = () => {
       name: 'Leave Management',
       path: '/leave',
       icon: CalendarIcon,
-      roles: ['admin', 'employee']
+      roles: ['admin']
     },
     {
       name: 'My Leave',
@@ -152,7 +163,7 @@ const Sidebar = () => {
               key={item.path}
               to={item.path}
               onClick={() => setIsMobileMenuOpen(false)}
-              className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors relative ${
                 isActive(item.path)
                   ? 'bg-blue-600 text-white'
                   : 'text-gray-300 hover:bg-gray-700 hover:text-white'
@@ -161,6 +172,17 @@ const Sidebar = () => {
             >
               <Icon className="w-5 h-5 flex-shrink-0" />
               {!isCollapsed && <span className="ml-3">{item.name}</span>}
+              
+              {/* Badge for notifications */}
+              {item.badge && item.badge > 0 && (
+                <span className={`${
+                  isCollapsed 
+                    ? 'absolute -top-1 -right-1' 
+                    : 'ml-auto'
+                } inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 bg-red-600 rounded-full`}>
+                  {item.badge > 99 ? '99+' : item.badge}
+                </span>
+              )}
             </Link>
           );
         })}

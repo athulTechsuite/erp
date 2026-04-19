@@ -39,6 +39,20 @@ class EmailService {
     }
   }
 
+  // Company announcement notifications
+  async sendAnnouncementEmail(announcement, employees) {
+    const subject = `Company Announcement: ${announcement.title}`;
+    const html = this.generateAnnouncementTemplate(announcement);
+    
+    const employeeEmails = employees.map(employee => employee.email);
+    
+    return await this.sendEmail({
+      to: employeeEmails,
+      subject,
+      html
+    });
+  }
+
   // Leave request notifications
   async sendLeaveRequestNotification(leaveRequest, employee, approvers) {
     const subject = `New Leave Request - ${employee.firstName} ${employee.lastName}`;
@@ -113,6 +127,36 @@ class EmailService {
   }
 
   // Template generators
+  generateAnnouncementTemplate(announcement) {
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #007bff; border-bottom: 2px solid #007bff; padding-bottom: 10px;">
+          📢 Company Announcement
+        </h2>
+        <div style="background: #e7f3ff; padding: 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #007bff;">
+          <h3 style="margin-top: 0; color: #007bff;">${announcement.title}</h3>
+          <p style="color: #6c757d; font-size: 14px; margin: 0;">
+            Published on ${this.formatDate(announcement.createdAt)}
+          </p>
+        </div>
+        <div style="background: #fff; padding: 20px; border: 1px solid #dee2e6; border-radius: 5px; line-height: 1.6;">
+          ${announcement.content.split('\n').map(paragraph => 
+            paragraph.trim() ? `<p style="margin-bottom: 15px;">${paragraph.trim()}</p>` : ''
+          ).join('')}
+        </div>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${process.env.FRONTEND_URL}/dashboard" 
+             style="background: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+            View on Dashboard
+          </a>
+        </div>
+        <p style="color: #6c757d; font-size: 12px; text-align: center; margin-top: 30px;">
+          This announcement is also available on your ERP dashboard.
+        </p>
+      </div>
+    `;
+  }
+
   generateLeaveRequestTemplate(leaveRequest, employee) {
     return `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">

@@ -1,6 +1,7 @@
 const Employee = require('../models/Employee');
 const LeaveRequest = require('../models/LeaveRequest');
 const InventoryItem = require('../models/InventoryItem');
+const Announcement = require('../models/Announcement');
 
 class DashboardController {
   // Get main dashboard data for admin/manager view
@@ -43,6 +44,19 @@ class DashboardController {
         status: 'active',
         'leaveBalance.annual': { $lt: 5 }
       }).select('firstName lastName email leaveBalance');
+
+      // Get recent announcements for dashboard widget
+      const recentAnnouncements = await Announcement.find({
+        companyId,
+        isActive: true,
+        $or: [
+          { expiresAt: null },
+          { expiresAt: { $gte: new Date() } }
+        ]
+      })
+      .populate('createdBy', 'firstName lastName')
+      .sort({ createdAt: -1 })
+      .limit(3);
 
       // Get inventory items count (if inventory module is used)
       let inventoryStats = null;
@@ -89,6 +103,7 @@ class DashboardController {
         },
         recentLeaveRequests,
         lowLeaveBalanceEmployees,
+        recentAnnouncements,
         inventory: inventoryStats,
         lastUpdated: new Date()
       };
@@ -111,7 +126,7 @@ class DashboardController {
   // Get employee dashboard data
   async getEmployeeDashboard(req, res) {
     try {
-      const { userId } = req.user;
+      const { userId, companyId } = req.user;
 
       // Get employee data
       const employee = await Employee.findOne({ userId })
@@ -138,6 +153,19 @@ class DashboardController {
         startDate: { $gte: new Date() }
       })
       .sort({ startDate: 1 })
+      .limit(5);
+
+      // Get active announcements for employee
+      const announcements = await Announcement.find({
+        companyId,
+        isActive: true,
+        $or: [
+          { expiresAt: null },
+          { expiresAt: { $gte: new Date() } }
+        ]
+      })
+      .populate('createdBy', 'firstName lastName')
+      .sort({ createdAt: -1 })
       .limit(5);
 
       // Calculate leave statistics
@@ -167,6 +195,7 @@ class DashboardController {
         },
         recentRequests: myLeaveRequests,
         upcomingLeaves,
+        announcements,
         lastUpdated: new Date()
       };
 
@@ -180,6 +209,199 @@ class DashboardController {
       res.status(500).json({
         success: false,
         message: 'Failed to fetch employee dashboard data',
+        error: error.message
+      });
+    }
+  }
+
+  // Create new announcement (admin only)
+  async createAnnouncement(req, res) {
+    try {
+      const { companyId, userId, role } = req.user;
+      const { title, content, expiresAt } = req.body;
+
+      // Check admin permissions
+      if (!['admin', 'hr_admin', 'manager'].includes(role)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Insufficient permissions to create announcements'
+        });
+      }
+
+      // Validate required fields
+      if (!title || !content) {
+        return res.status(400).json({
+          success: false,
+          message: 'Title and content are required'
+        });
+      }
+
+      const announcement = new Announcement({
+        title: title.trim(),
+        content: content.trim(),
+        companyId,
+        createdBy: userId,
+        expiresAt: expiresAt ? new Date(expiresAt) : null
+      });
+
+      await announcement.save();
+      await announcement.populate('createdBy', 'firstName lastName');
+
+      res.status(201).json({
+        success: true,
+        data: announcement,
+        message: 'Announcement created successfully'
+      });
+
+    } catch (error) {
+      console.error('Create announcement error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to create announcement',
+        error: error.message
+      });
+    }
+  }
+
+  // Get all announcements for company
+  async getAnnouncements(req, res) {
+    try {
+      const { companyId } = req.user;
+      const { page = 1, limit = 10, includeExpired = 'false' } = req.query;
+
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+      
+      let filter = { companyId };
+      
+      // Filter out expired and inactive announcements unless requested
+      if (includeExpired !== 'true') {
+        filter = {
+          ...filter,
+          isActive: true,
+          $or: [
+            { expiresAt: null },
+            { expiresAt: { $gte: new Date() } }
+          ]
+        };
+      }
+
+      const [announcements, total] = await Promise.all([
+        Announcement.find(filter)
+          .populate('createdBy', 'firstName lastName')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(parseInt(limit)),
+        Announcement.countDocuments(filter)
+      ]);
+
+      res.json({
+        success: true,
+        data: {
+          announcements,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(total / parseInt(limit)),
+            totalItems: total,
+            itemsPerPage: parseInt(limit)
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('Get announcements error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch announcements',
+        error: error.message
+      });
+    }
+  }
+
+  // Update announcement (admin only)
+  async updateAnnouncement(req, res) {
+    try {
+      const { companyId, role } = req.user;
+      const { id } = req.params;
+      const { title, content, expiresAt, isActive } = req.body;
+
+      // Check admin permissions
+      if (!['admin', 'hr_admin', 'manager'].includes(role)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Insufficient permissions to update announcements'
+        });
+      }
+
+      const announcement = await Announcement.findOne({ _id: id, companyId });
+      
+      if (!announcement) {
+        return res.status(404).json({
+          success: false,
+          message: 'Announcement not found'
+        });
+      }
+
+      // Update fields if provided
+      if (title !== undefined) announcement.title = title.trim();
+      if (content !== undefined) announcement.content = content.trim();
+      if (expiresAt !== undefined) announcement.expiresAt = expiresAt ? new Date(expiresAt) : null;
+      if (isActive !== undefined) announcement.isActive = isActive;
+
+      announcement.updatedAt = new Date();
+      await announcement.save();
+      await announcement.populate('createdBy', 'firstName lastName');
+
+      res.json({
+        success: true,
+        data: announcement,
+        message: 'Announcement updated successfully'
+      });
+
+    } catch (error) {
+      console.error('Update announcement error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update announcement',
+        error: error.message
+      });
+    }
+  }
+
+  // Delete announcement (admin only)
+  async deleteAnnouncement(req, res) {
+    try {
+      const { companyId, role } = req.user;
+      const { id } = req.params;
+
+      // Check admin permissions
+      if (!['admin', 'hr_admin', 'manager'].includes(role)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Insufficient permissions to delete announcements'
+        });
+      }
+
+      const announcement = await Announcement.findOne({ _id: id, companyId });
+      
+      if (!announcement) {
+        return res.status(404).json({
+          success: false,
+          message: 'Announcement not found'
+        });
+      }
+
+      await Announcement.findByIdAndDelete(id);
+
+      res.json({
+        success: true,
+        message: 'Announcement deleted successfully'
+      });
+
+    } catch (error) {
+      console.error('Delete announcement error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to delete announcement',
         error: error.message
       });
     }
@@ -265,10 +487,21 @@ class DashboardController {
         status: 'active'
       });
 
+      // Active announcements count
+      const activeAnnouncements = await Announcement.countDocuments({
+        companyId,
+        isActive: true,
+        $or: [
+          { expiresAt: null },
+          { expiresAt: { $gte: today } }
+        ]
+      });
+
       const quickStats = {
         employeesOnLeaveToday,
         newRequestsThisMonth,
         activeEmployees,
+        activeAnnouncements,
         timestamp: new Date()
       };
 

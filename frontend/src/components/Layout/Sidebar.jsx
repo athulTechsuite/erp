@@ -11,7 +11,8 @@ import {
   CogIcon,
   LogoutIcon,
   MenuIcon,
-  XIcon
+  XIcon,
+  SpeakerphoneIcon
 } from '@heroicons/react/outline';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -36,6 +37,12 @@ const Sidebar = () => {
       name: 'Dashboard',
       path: '/dashboard',
       icon: HomeIcon,
+      roles: ['admin', 'employee']
+    },
+    {
+      name: 'Announcements',
+      path: '/announcements',
+      icon: SpeakerphoneIcon,
       roles: ['admin', 'employee']
     },
     {

@@ -1,0 +1,107 @@
+const { test, expect } = require('@playwright/test');
+
+// TC-005: Dashboard integration tests
+test.describe('TC-005: Dashboard Integration Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    // Setup common test data and navigation
+    await page.goto('/dashboard');
+  });
+
+  // Happy path tests
+  test('TC-005-001: Dashboard loads successfully with valid user session', async ({ page }) => {
+    // Verify dashboard loads
+    await expect(page).toHaveTitle(/Dashboard/);
+    await expect(page.locator('[data-testid="dashboard-container"]')).toBeVisible();
+    
+    // Verify key dashboard components are present
+    await expect(page.locator('[data-testid="dashboard-header"]')).toBeVisible();
+    await expect(page.locator('[data-testid="dashboard-navigation"]')).toBeVisible();
+    await expect(page.locator('[data-testid="dashboard-content"]')).toBeVisible();
+  });
+
+  test('TC-005-002: Dashboard widgets render correctly', async ({ page }) => {
+    // Wait for dashboard to load
+    await page.waitForLoadState('networkidle');
+    
+    // Verify widgets are rendered
+    await expect(page.locator('[data-testid="widget-stats"]')).toBeVisible();
+    await expect(page.locator('[data-testid="widget-charts"]')).toBeVisible();
+    await expect(page.locator('[data-testid="widget-recent-activity"]')).toBeVisible();
+    
+    // Verify widget data is loaded
+    await expect(page.locator('[data-testid="stats-value"]')).not.toBeEmpty();
+  });
+
+  test('TC-005-003: Dashboard navigation menu functions properly', async ({ page }) => {
+    // Test main navigation items
+    await page.click('[data-testid="nav-reports"]');
+    await expect(page).toHaveURL(/.*\/reports/);
+    
+    await page.goBack();
+    await page.click('[data-testid="nav-settings"]');
+    await expect(page).toHaveURL(/.*\/settings/);
+  });
+
+  // Error path tests
+  test('TC-005-004: Dashboard handles unauthorized access gracefully', async ({ page, context }) => {
+    // Clear session/cookies to simulate unauthorized state
+    await context.clearCookies();
+    
+    await page.goto('/dashboard');
+    
+    // Should redirect to login or show unauthorized message
+    await expect(page).toHaveURL(/.*\/(login|unauthorized)/);
+    await expect(page.locator('[data-testid="error-message"]')).toBeVisible();
+  });
+
+  test('TC-005-005: Dashboard handles API failures gracefully', async ({ page }) => {
+    // Mock API failure
+    await page.route('**/api/dashboard/**', route => {
+      route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Internal server error' })
+      });
+    });
+    
+    await page.goto('/dashboard');
+    
+    // Verify error handling
+    await expect(page.locator('[data-testid="error-banner"]')).toBeVisible();
+    await expect(page.locator('[data-testid="error-banner"]')).toContainText(/unable to load dashboard data/i);
+  });
+
+  test('TC-005-006: Dashboard handles network timeout errors', async ({ page }) => {
+    // Mock slow network response
+    await page.route('**/api/dashboard/**', route => {
+      setTimeout(() => {
+        route.fulfill({
+          status: 408,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Request timeout' })
+        });
+      }, 30000);
+    });
+    
+    await page.goto('/dashboard');
+    
+    // Verify timeout handling
+    await expect(page.locator('[data-testid="loading-spinner"]')).toBeVisible();
+    await expect(page.locator('[data-testid="timeout-message"]')).toBeVisible({ timeout: 35000 });
+  });
+
+  test('TC-005-007: Dashboard responsive design works on mobile', async ({ page }) => {
+    // Set mobile viewport
+    await page.setViewportSize({ width: 375, height: 667 });
+    
+    await page.goto('/dashboard');
+    
+    // Verify mobile layout
+    await expect(page.locator('[data-testid="mobile-menu-toggle"]')).toBeVisible();
+    await expect(page.locator('[data-testid="dashboard-sidebar"]')).toBeHidden();
+    
+    // Test mobile menu
+    await page.click('[data-testid="mobile-menu-toggle"]');
+    await expect(page.locator('[data-testid="dashboard-sidebar"]')).toBeVisible();
+  });
+});

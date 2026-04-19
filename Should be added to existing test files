@@ -1,0 +1,118 @@
+// TC-004: Error handling and graceful degradation tests
+describe('TC-004: Error Handling and Graceful Degradation', () => {
+  
+  describe('Happy Path - Normal Error Recovery', () => {
+    it('should handle network timeouts gracefully', async () => {
+      // Test network timeout recovery
+      const mockRequest = jest.fn().mockRejectedValueOnce(new Error('Network timeout'));
+      const result = await handleNetworkRequest(mockRequest);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('timeout');
+      expect(result.fallback).toBeDefined();
+    });
+
+    it('should provide fallback data when primary source fails', async () => {
+      const mockPrimarySource = jest.fn().mockRejectedValue(new Error('Primary source unavailable'));
+      const mockFallbackSource = jest.fn().mockResolvedValue({ data: 'fallback_data' });
+      
+      const result = await getDataWithFallback(mockPrimarySource, mockFallbackSource);
+      expect(result.data).toBe('fallback_data');
+      expect(mockFallbackSource).toHaveBeenCalled();
+    });
+
+    it('should maintain system stability during partial failures', async () => {
+      const services = ['service1', 'service2', 'service3'];
+      const mockFailingService = jest.fn().mockRejectedValue(new Error('Service unavailable'));
+      const mockWorkingService = jest.fn().mockResolvedValue({ status: 'ok' });
+      
+      const results = await checkServicesHealth(services, {
+        service1: mockWorkingService,
+        service2: mockFailingService,
+        service3: mockWorkingService
+      });
+      
+      expect(results.overall).toBe('degraded');
+      expect(results.working.length).toBe(2);
+      expect(results.failed.length).toBe(1);
+    });
+  });
+
+  describe('Error Path - Critical Failure Scenarios', () => {
+    it('should handle cascading failures appropriately', async () => {
+      const mockServices = {
+        primary: jest.fn().mockRejectedValue(new Error('Primary failed')),
+        secondary: jest.fn().mockRejectedValue(new Error('Secondary failed')),
+        tertiary: jest.fn().mockRejectedValue(new Error('Tertiary failed'))
+      };
+      
+      const result = await handleCascadingFailure(mockServices);
+      expect(result.success).toBe(false);
+      expect(result.failureMode).toBe('cascade');
+      expect(result.emergencyMode).toBe(true);
+    });
+
+    it('should prevent resource exhaustion during error bursts', async () => {
+      const errorBurst = Array(100).fill().map(() => 
+        Promise.reject(new Error('Burst error'))
+      );
+      
+      const result = await handleErrorBurst(errorBurst);
+      expect(result.processed).toBeLessThan(100);
+      expect(result.circuitBreaker).toBe('open');
+      expect(result.resourcesPreserved).toBe(true);
+    });
+
+    it('should maintain data integrity during system degradation', async () => {
+      const mockDatabase = {
+        write: jest.fn().mockRejectedValue(new Error('Database connection lost')),
+        read: jest.fn().mockResolvedValue({ cached: true })
+      };
+      
+      const result = await performCriticalOperation(mockDatabase);
+      expect(result.dataIntegrity).toBe('maintained');
+      expect(result.operationStatus).toBe('deferred');
+      expect(result.rollbackCompleted).toBe(true);
+    });
+
+    it('should handle memory pressure gracefully', async () => {
+      const largeDataSet = generateLargeDataSet(1000000);
+      const memoryConstraint = { maxMemory: '100MB' };
+      
+      const result = await processWithMemoryLimit(largeDataSet, memoryConstraint);
+      expect(result.memoryExceeded).toBe(false);
+      expect(result.processingStrategy).toBe('streaming');
+      expect(result.completed).toBe(true);
+    });
+  });
+
+  describe('Recovery and Resilience Validation', () => {
+    it('should recover automatically after transient errors', async () => {
+      let attemptCount = 0;
+      const mockService = jest.fn().mockImplementation(() => {
+        attemptCount++;
+        if (attemptCount < 3) {
+          return Promise.reject(new Error('Transient error'));
+        }
+        return Promise.resolve({ success: true, attempts: attemptCount });
+      });
+      
+      const result = await retryWithBackoff(mockService, { maxRetries: 5 });
+      expect(result.success).toBe(true);
+      expect(result.attempts).toBe(3);
+      expect(attemptCount).toBe(3);
+    });
+
+    it('should maintain service level agreements during degradation', async () => {
+      const slaRequirements = {
+        responseTime: 500, // ms
+        availability: 0.99,
+        errorRate: 0.01
+      };
+      
+      const result = await validateSLADuringDegradation(slaRequirements);
+      expect(result.responseTime).toBeLessThanOrEqual(slaRequirements.responseTime);
+      expect(result.availability).toBeGreaterThanOrEqual(slaRequirements.availability);
+      expect(result.errorRate).toBeLessThanOrEqual(slaRequirements.errorRate);
+    });
+  });
+});

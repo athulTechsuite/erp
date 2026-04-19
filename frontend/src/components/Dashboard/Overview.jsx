@@ -12,10 +12,12 @@ import {
   AlertCircle,
   CheckCircle,
   XCircle,
-  PendingIcon
+  PendingIcon,
+  Megaphone
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { dashboardService } from '@/services/dashboardService';
+import { announcementService } from '@/services/announcementService';
 
 const Overview = () => {
   const { user } = useAuth();
@@ -35,8 +37,15 @@ const Overview = () => {
     error: null
   });
 
+  const [announcements, setAnnouncements] = useState({
+    data: [],
+    loading: true,
+    error: null
+  });
+
   useEffect(() => {
     fetchDashboardData();
+    fetchAnnouncements();
   }, []);
 
   const fetchDashboardData = async () => {
@@ -55,6 +64,25 @@ const Overview = () => {
         loading: false,
         error: 'Failed to load dashboard data'
       }));
+    }
+  };
+
+  const fetchAnnouncements = async () => {
+    try {
+      setAnnouncements(prev => ({ ...prev, loading: true }));
+      const data = await announcementService.getAnnouncements();
+      setAnnouncements({
+        data,
+        loading: false,
+        error: null
+      });
+    } catch (error) {
+      console.error('Failed to load announcements:', error);
+      setAnnouncements({
+        data: [],
+        loading: false,
+        error: 'Failed to load announcements'
+      });
     }
   };
 
@@ -156,6 +184,38 @@ const Overview = () => {
           Refresh Data
         </Button>
       </div>
+
+      {/* Company Announcements */}
+      {!announcements.loading && announcements.data.length > 0 && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardHeader>
+            <CardTitle className="flex items-center text-blue-800">
+              <Megaphone className="h-5 w-5 mr-2" />
+              Company Announcements
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {announcements.data.slice(0, 3).map((announcement) => (
+                <div key={announcement.id} className="bg-white p-4 rounded-lg border border-blue-200">
+                  <h4 className="font-semibold text-blue-900 mb-2">{announcement.title}</h4>
+                  <p className="text-sm text-blue-800 mb-2">{announcement.message}</p>
+                  <p className="text-xs text-blue-600">
+                    {new Date(announcement.createdAt).toLocaleDateString()} at {new Date(announcement.createdAt).toLocaleTimeString()}
+                  </p>
+                </div>
+              ))}
+              {announcements.data.length > 3 && (
+                <div className="text-center pt-2">
+                  <p className="text-xs text-blue-600">
+                    +{announcements.data.length - 3} more announcement{announcements.data.length - 3 !== 1 ? 's' : ''}
+                  </p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Key Metrics */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
